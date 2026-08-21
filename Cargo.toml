@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wb-core",
+    "crates/wb-daemon",
+    "crates/wb-cli",
+    "crates/wb-hook",
+    "crates/wb-mcp",
+    "crates/wb-panel",
+    "crates/wb-plugin-sdk",
+    "crates/wb-plugin-host",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+rust-version = "1.85"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

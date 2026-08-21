@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;background:transparent;font-family:'Segoe UI Variable','Microsoft YaHei',sans-serif}
+  .panel{box-sizing:border-box;height:100%;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .card{flex:1;background:rgba(18,18,28,.62);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:16px;color:#f5f5f5;display:flex;flex-direction:column;gap:10px}
+  input{width:100%;box-sizing:border-box;padding:12px 16px;font-size:15px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.10);color:#fff;outline:none}
+  input::placeholder{color:rgba(255,255,255,.55)}
+  .row{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:10px 14px;font-size:13.5px}
+  .dim{opacity:.6;font-size:12px}
+  .probe{background:rgba(255,0,80,.35);border-radius:10px;padding:6px 14px;font-size:12px;color:#fff}
+</style>
+</head>
+<body>
+<div class="panel"><div class="card">
+  <input placeholder="WB PoC — 搜索应用 / 文件 / 剪贴板 / 问 AI…" autofocus>
+  <div class="row">✅ WebView2 透明背景 + Mica 底材验证页（file:// 加载）</div>
+  <div class="row">卡片外圈透出的磨砂感来自 DWM backdrop，不是 WebView2 画的。</div>
+  <div class="probe">洋红半透明探针：能看见桌面透上来的颜色 = 透明链路 OK</div>
+  <div class="dim">Esc 隐藏 · 这是 PoC 2b 内嵌页面</div>
+</div></div>
+</body>
+</html>

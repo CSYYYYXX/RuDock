@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:transparent;font-family:"Segoe UI Variable Text","Microsoft YaHei UI",sans-serif}
+.wrap{height:100%;display:flex;flex-direction:column;gap:16px;padding:16px}
+.card{flex:1;border-radius:16px;border:1px solid rgba(255,255,255,.18);color:#fff;padding:18px}
+.a{background:rgba(40,40,55,.45);backdrop-filter:blur(24px) saturate(150%)}
+.b{background:rgba(40,40,55,.45)}
+.c{background:rgba(40,40,55,.45);backdrop-filter:blur(8px) saturate(140%)}
+.t{font-size:13px;opacity:.85}
+</style></head><body><div class="wrap">
+<div class="card a"><div class="t">A: backdrop-filter blur(24px) — 壁纸应该被模糊</div></div>
+<div class="card b"><div class="t">B: 仅半透明 无 blur（对照组）</div></div>
+<div class="card c"><div class="t">C: blur(8px) 轻磨砂</div></div>
+</div></body></html>

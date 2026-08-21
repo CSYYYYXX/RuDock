@@ -1,0 +1,10 @@
+[package]
+name = "wb-plugin-host"
+description = "Plugin sandbox runtime: process isolation, watchdog, permission enforcement. (Stub in M1)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wb-plugin-sdk = { path = "../wb-plugin-sdk" }
+serde_json = { workspace = true }

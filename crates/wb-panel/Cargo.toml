@@ -1,0 +1,39 @@
+[package]
+name = "wb-panel"
+description = "WB panel host: DWM Mica/Acrylic window + WebView2 embed (PoC 2)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "wb-panel"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+wb-core = { path = "../wb-core" }
+wb-plugin-sdk = { path = "../wb-plugin-sdk" }
+interprocess = "2"
+miniz_oxide = "0.8"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Com",
+    "Win32_System_Variant",
+    "Win32_UI_Controls",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_SystemInformation",
+    "Win32_System_Power",
+    "Win32_Storage_FileSystem",
+    "Media_Control",
+    "Storage_Streams",
+    "Foundation",
+] }

@@ -1,0 +1,28 @@
+<div class="wrap">
+  <div class="big"><b id="n">–</b><span>条历史</span></div>
+  <div class="latest" id="latest">读取中…</div>
+  <button id="btn">刷 新</button>
+</div>
+<style>
+  .wrap { height: 100%; display: flex; flex-direction: column; padding: 10px 16px 14px; gap: 8px; }
+  .big b { font-size: 30px; font-weight: 200; font-variant-numeric: tabular-nums; }
+  .big span { color: #9aa4b8; font-size: 12px; margin-left: 6px; }
+  .latest { flex: 1; color: #9aa4b8; font-size: 12px; line-height: 1.5; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
+  button { align-self: flex-start; background: rgba(255,255,255,.08); color: #eaf0ff;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 4px 14px;
+    font-size: 12px; cursor: pointer; transition: background .15s; }
+  button:hover { background: rgba(255,255,255,.16); }
+</style>
+<script>
+  function load() {
+    wbRpc('clip.get', { last: 8 }).then(function (d) {
+      var arr = (d && d.result) || [];
+      document.getElementById('n').textContent = arr.length;
+      var latest = (arr[0] && arr[0].content) ? String(arr[0].content) : '（空）';
+      document.getElementById('latest').textContent = '最近：' + latest.slice(0, 120);
+    });
+  }
+  document.getElementById('btn').addEventListener('click', load);
+  load();
+</script>

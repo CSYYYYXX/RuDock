@@ -1,0 +1,30 @@
+{
+  "id": "hello-assistant",
+  "name": "Hello 小助手",
+  "version": "0.1.0",
+  "description": "WB 插件格式示例：一条命令，三处可用（面板 > 命令模式 / AI 工具 / wb CLI）",
+  "author": "WB 社区",
+  "handler": "main.ps1",
+  "commands": [
+    {
+      "id": "util.hello",
+      "title": "打招呼",
+      "hint": "插件示例：向你问好",
+      "arg": { "name": "name", "prompt": "跟谁打招呼？" },
+      "ai": {
+        "description": "向某人打招呼（WB 插件示例命令）。用户说「跟xxx打个招呼」时调用。",
+        "properties": { "name": { "type": "string", "description": "要打招呼的名字" } },
+        "required": ["name"]
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "greeting",
+      "name": "打招呼插件说明",
+      "description": "说明如何选择和调用这个插件的打招呼能力。",
+      "file": "SKILL.md",
+      "tags": ["example", "greeting"]
+    }
+  ]
+}
