@@ -236,9 +236,17 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .board { position: absolute; inset: 0; padding: 6px 18px 18px; }
 
 /* 插件页：社区组件的开放网格（自动行，卡片宽高与内置一致） */
-#page-plugins .pgrid { position: absolute; inset: 0; padding: 6px 18px 18px; display: grid; gap: 12px;
+#page-plugins .plugin-head { position: absolute; left: 18px; right: 18px; top: 2px; height: 30px; display: flex;
+  align-items: center; gap: 8px; color: var(--fg-2); font-size: 13px; font-weight: 650; z-index: 2; }
+#page-plugins .plugin-head .status { color: var(--fg-4); font-size: 11px; font-weight: 400; }
+#page-plugins .plugin-head button { margin-left: auto; width: 28px; height: 28px; border: 1px solid var(--stroke-soft);
+  border-radius: 8px; background: rgba(255,255,255,.07); color: var(--fg-2); font-size: 17px; line-height: 1;
+  cursor: pointer; }
+#page-plugins .plugin-head button:hover { background: var(--hover); color: var(--fg); }
+#page-plugins .plugin-head button:disabled { opacity: .45; cursor: default; }
+#page-plugins .pgrid { position: absolute; inset: 34px 0 0; padding: 6px 18px 18px; display: grid; gap: 12px;
   grid-template-columns: repeat(6, 1fr); grid-auto-rows: 1fr; }
-#page-plugins .ph-empty { position: absolute; inset: 0; display: none; flex-direction: column; gap: 8px;
+#page-plugins .ph-empty { position: absolute; inset: 34px 0 0; display: none; flex-direction: column; gap: 8px;
   align-items: center; justify-content: center; color: var(--fg-3); font-size: 14px; }
 #page-plugins .ph-empty .sub { font-size: 12px; opacity: .8; }
 #page-plugins.empty .ph-empty { display: flex; }
@@ -508,6 +516,8 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   </div>
 
   <div class="page" id="page-plugins">
+    <div class="plugin-head"><span>🧩 插件</span><span class="status" id="plugin-status"></span>
+      <button id="plugin-refresh" title="刷新插件">↻</button></div>
     <div class="pgrid" id="pgrid"></div>
     <div class="ph-empty">🧩 还没有插件组件
       <div class="sub">把插件文件夹放进 %LOCALAPPDATA%\WB\plugins，然后运行 wb plugin reload</div>
@@ -1388,17 +1398,36 @@ window.addEventListener('message', ev => {
   });
 });
 
-let pluginsLoaded = false;
-function loadPluginWidgets() {
-  if (pluginsLoaded) return; pluginsLoaded = true;
+const pluginWidgetIds = new Set();
+let pluginListSignature = '', pluginLoadSeq = 0, pluginRefreshing = false;
+function pluginStatus(text) { const el = $('#plugin-status'); if (el) el.textContent = text || ''; }
+function clearPluginWidgets() {
+  pluginWidgetIds.forEach(id => {
+    const el = document.getElementById(id); if (el) el.remove();
+    const i = WIDGETS.findIndex(x => x[0] === id); if (i >= 0) WIDGETS.splice(i, 1);
+  });
+  pluginWidgetIds.clear();
+}
+function loadPluginWidgets(force) {
+  if (pluginRefreshing && !force) return;
+  const seq = ++pluginLoadSeq;
+  if (force) { pluginRefreshing = true; pluginStatus('刷新中…'); }
   rpc('plugin.list', {}).then(m => {
+    if (seq !== pluginLoadSeq) return;
     const list = (m && Array.isArray(m.result)) ? m.result : [];
     const withW = list.filter(p => p.widget);
-    if (!withW.length) { $('#page-plugins').classList.add('empty'); return; }
+    const signature = JSON.stringify(withW.map(p => [p.id, p.version, p.widget.title, p.widget.span]));
+    if (!force && signature === pluginListSignature) return;
+    pluginListSignature = signature;
+    clearPluginWidgets();
+    const page = $('#page-plugins');
+    page.classList.toggle('empty', !withW.length);
+    if (!withW.length) { pluginStatus(''); pluginRefreshing = false; return; }
     let idx = 16; // 入场动画序号接在内置组件后面
+    let pending = withW.length;
     withW.forEach(p => {
       rpc('plugin.widget', { id: p.id }).then(wm => {
-        if (!wm || !wm.result || wm.error) return;
+        if (seq !== pluginLoadSeq || !wm || !wm.result || wm.error) return;
         const w = wm.result;
         const card = document.createElement('div');
         card.className = 'w span' + (w.span || 2);
@@ -1412,13 +1441,23 @@ function loadPluginWidgets() {
         f.srcdoc = PLUGIN_SHIM + w.html;
         card.querySelector('.pluginbd').appendChild(f);
         $('#pgrid').appendChild(card);
+        pluginWidgetIds.add(card.id);
         WIDGETS.push([card.id, (w.title || p.name) + '（插件）']);
         applyWidgetVisibility();
+      }).finally(() => {
+        if (--pending === 0 && seq === pluginLoadSeq) {
+          pluginRefreshing = false; pluginStatus(withW.length + ' 个组件');
+        }
       });
     });
-  });
+  }).catch(() => { if (seq === pluginLoadSeq) { pluginRefreshing = false; pluginStatus('连接失败'); } });
 }
-loadPluginWidgets();
+$('#plugin-refresh').addEventListener('click', () => {
+  const btn = $('#plugin-refresh'); btn.disabled = true;
+  rpc('plugin.reload', {}).then(() => loadPluginWidgets(true)).finally(() => { btn.disabled = false; });
+});
+loadPluginWidgets(false);
+setInterval(() => loadPluginWidgets(false), 3000);
 
 /* ---------- 秒表 ---------- */
 (function () {
