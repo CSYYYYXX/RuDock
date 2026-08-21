@@ -14,7 +14,7 @@
 | wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由） | ✅ 可用 |
 | wb-mcp（M3 MCP 适配层） | 🔜 stub |
 | wb-plugin-sdk / wb-plugin-host（M4 插件系统） | ✅ 可用（发现/校验/进程执行/挂件桥） |
-| 插件生态（M5 第一阶段） | ✅ 可用（Skill / pack / install / remove / daemon 热重载 / AI Skill 工具） |
+| 插件生态（M5 第一阶段） | ✅ 可用（Skill / pack / install / remove / daemon 热重载 / 面板挂件热加载 / AI Skill 工具） |
 
 ### PoC 结果（验证于本机 Win11 26200，WebView2 Runtime 151）
 
@@ -119,7 +119,7 @@
 - **格式**：一个文件夹 + `plugin.json`（`wb-plugin-sdk` 定义 manifest 与校验，5 个单测）。两个示例在 `plugins/`：`hello-assistant`（命令插件，PowerShell handler）与 `clip-insight`（挂件插件）。完整格式文档：`plugins/README.md`。
 - **命令插件**：manifest 声明 `commands`（id/title/hint/arg/ai 描述），handler 子进程契约——stdin 收 `{"command", "args"}`、stdout 吐 JSON、10s 超时强杀；`.ps1/.js/.py/.exe` 按扩展名映射解释器（ps1 强制控制台 UTF-8 + 脚本需带 BOM）。**声明一次三处可用**：面板 `>` 模式、`wb cmd run`、AI function calling（daemon `cmd.tools` 合并注册表内建 + 插件 ai 命令；工具名点换下划线，执行时还原，面板 AI 一律走 `cmd.run` 不再分辨内建/插件）。
 - **挂件插件**：manifest 声明 `widget`（单文件 HTML）→ 面板新增**第三页「插件」页**（三页拖动/圆点/滑动动画全套），挂件以 sandboxed iframe（`allow-scripts` + srcdoc）装进玻璃卡；内置 `wbRpc(method, params)` 桥——iframe postMessage → 父页中继 → daemon JSON-RPC，插件组件可直接调 daemon 能力（clip-insight 演示读剪贴板统计）。插件卡自动注册进组件定制（⚙ 可隐藏）。
-- **daemon 新方法**：`plugin.list` / `plugin.run` / `plugin.reload` / `plugin.install` / `plugin.remove` / `plugin.widget` / `cmd.tools` / `skill.list` / `skill.get`；插件目录 = `%LOCALAPPDATA%/WB/plugins`（用户）+ 仓库 `plugins/`（开发，exe 上三级自动发现）；安装会校验并复制目录或 ZIP，随后立即刷新插件池。
+- **daemon 新方法**：`plugin.list` / `plugin.run` / `plugin.reload` / `plugin.install` / `plugin.remove` / `plugin.widget` / `cmd.tools` / `skill.list` / `skill.get`；插件目录 = `%LOCALAPPDATA%/WB/plugins`（用户）+ 仓库 `plugins/`（开发，exe 上三级自动发现）；安装会校验并复制目录或 ZIP，随后立即刷新插件池。插件列表带 widget revision，面板插件页据此自动热加载。
 - **实测**（2026-08-22）：`wb cmd run util.hello --arg name=WB` 中文往返无乱码；AI 实测 `?跟 Luna 打个招呼` → 模型自主调 `util_hello` → PS1 插件执行 → 自然语言确认；插件页挂件正常渲染。截图：`docs-assets/m4-ai-plugin.png`、`docs-assets/m4-plugins-page.png`。
 - **边界**：插件是用户自装的本地代码，v1 权限仅声明不强制；破坏性命令不暴露 `ai` 段即可避开模型。
 - **Skill**：插件可以随附 Markdown Skill 文档；面板 AI 通过 `skill_list` / `skill_get` 读取工作流说明，再调用插件命令完成任务。Skill 不拥有额外执行权限。

@@ -191,6 +191,22 @@ fn discover_plugins() -> Vec<LoadedPlugin> {
     all
 }
 
+fn plugin_revision(p: &LoadedPlugin) -> u128 {
+    let mut revision = 0u128;
+    let mut consider = |path: PathBuf| {
+        if let Ok(modified) = std::fs::metadata(path).and_then(|m| m.modified()) {
+            if let Ok(ms) = modified.duration_since(UNIX_EPOCH) {
+                revision = revision.max(ms.as_millis());
+            }
+        }
+    };
+    consider(p.dir.join("plugin.json"));
+    if let Some(widget) = &p.manifest.widget {
+        consider(p.dir.join(&widget.file));
+    }
+    revision
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("wb-daemon fatal: {e}");
@@ -469,6 +485,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                         "widget": p.manifest.widget.as_ref().map(|w| serde_json::json!({
                             "title": w.title, "span": w.span.unwrap_or(2),
                         })),
+                        "revision": plugin_revision(p),
                         "skills": p.manifest.skills.iter().map(|s| serde_json::json!({
                             "id": s.id, "name": s.name, "description": s.description, "tags": s.tags,
                         })).collect::<Vec<_>>(),

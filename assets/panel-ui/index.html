@@ -1416,7 +1416,7 @@ function loadPluginWidgets(force) {
     if (seq !== pluginLoadSeq) return;
     const list = (m && Array.isArray(m.result)) ? m.result : [];
     const withW = list.filter(p => p.widget);
-    const signature = JSON.stringify(withW.map(p => [p.id, p.version, p.widget.title, p.widget.span]));
+    const signature = JSON.stringify(withW.map(p => [p.id, p.version, p.revision, p.widget.title, p.widget.span]));
     if (!force && signature === pluginListSignature) return;
     pluginListSignature = signature;
     clearPluginWidgets();
