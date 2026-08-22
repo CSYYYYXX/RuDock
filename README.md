@@ -115,6 +115,14 @@ RuDock 目前处于 Preview 阶段。便携版不需要安装 Rust；程序、�
 .\wb.exe daemon start
 ```
 
+如果希望从开始菜单启动，也可以安装到当前用户目录（不需要管理员权限）：
+
+```powershell
+.\install.ps1
+```
+
+安装脚本会创建开始菜单快捷方式和“应用和功能”卸载项；升级时会替换程序目录，但保留 `%APPDATA%\WB` 与 `%LOCALAPPDATA%\WB` 数据。卸载可在 Windows 设置中执行，或运行安装目录里的 `uninstall.ps1`。只有显式添加 `-PurgeData` 才会删除个人数据。
+
 后台服务会预先建立应用索引，并管理面板、托盘图标和 Win 键监听。首次启动后，在设置中开启 **接管 Win 键** 和 **开机启动**，也可以使用 CLI：
 
 ```powershell

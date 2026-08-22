@@ -129,6 +129,9 @@ try {
             Copy-Item -LiteralPath $source -Destination $stageDir
         }
     }
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "scripts\install-portable.ps1") -Destination (Join-Path $stageDir "install.ps1")
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "scripts\uninstall-portable.ps1") -Destination (Join-Path $stageDir "uninstall.ps1")
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "scripts\start-hidden.vbs") -Destination (Join-Path $stageDir "start-hidden.vbs")
     [IO.File]::WriteAllText((Join-Path $stageDir "VERSION"), "$Version`r`n", $Utf8NoBom)
 
     $manifestLines = Get-ChildItem -LiteralPath $stageDir -File -Recurse |
@@ -169,6 +172,9 @@ try {
             "plugins\stopwatch\plugin.json",
             "README.md",
             "LICENSE",
+            "install.ps1",
+            "uninstall.ps1",
+            "start-hidden.vbs",
             "SHA256SUMS.txt"
         )) {
             $path = Join-Path $expanded $required
