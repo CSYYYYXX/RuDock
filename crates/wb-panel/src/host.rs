@@ -3,6 +3,7 @@
 //! threads enqueue JSON and poke the host window with WM_WB_POST).
 
 use std::ffi::c_void;
+use std::os::windows::process::CommandExt;
 use std::sync::Mutex;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
@@ -213,9 +214,42 @@ fn handle_action(msg: &serde_json::Value) {
                 }
             }
         }
+        "reveal" => {
+            if let Some(path) = msg.get("path").and_then(|p| p.as_str()) {
+                match reveal_in_explorer(path) {
+                    Ok(()) => request_hide(),
+                    Err(error) => enqueue_post(
+                        serde_json::json!({"kind":"toast","text":error}),
+                    ),
+                }
+            }
+        }
         "hide" => request_hide(),
         _ => {}
     }
+}
+
+fn reveal_in_explorer(path: &str) -> Result<(), String> {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let target = std::path::Path::new(path);
+    if !target.exists() {
+        return Err("文件已经移动或删除".into());
+    }
+    let explorer = std::env::var_os("SYSTEMROOT")
+        .map(std::path::PathBuf::from)
+        .map(|root| root.join("explorer.exe"))
+        .unwrap_or_else(|| "explorer.exe".into());
+    let mut command = std::process::Command::new(explorer);
+    if target.is_dir() {
+        command.arg(target);
+    } else {
+        command.arg(format!("/select,{}", target.to_string_lossy()));
+    }
+    command
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "无法在资源管理器中定位文件".into())
 }
 
 fn set_clipboard_text(text: &str) -> Result<(), ()> {

@@ -364,10 +364,12 @@ mod tests {
     #[test]
     fn search_hits_local_stores() {
         let st = Storage::open_memory().unwrap();
-        st.note_add(&Note::new(new_id(), "周报模板在这里".into(), vec![])).unwrap();
+        let content = format!("周报模板在这里{}", "正文".repeat(2_500));
+        st.note_add(&Note::new(new_id(), content, vec![])).unwrap();
         let s = crate::search::Searcher::new(&st, &[]);
         let hits = s.search("周报", 10);
-        assert!(hits.iter().any(|r| r.source == "notes"));
+        let note = hits.iter().find(|r| r.source == "notes").unwrap();
+        assert_eq!(note.preview.as_ref().unwrap().chars().count(), 4_000);
         assert!(s.search("", 10).is_empty());
         assert!(s.search("绝不存在xyz", 10).is_empty());
     }
@@ -379,10 +381,12 @@ mod tests {
             kind: ResultKind::App,
             title: "Snapshot Calculator".into(),
             subtitle: Some("app".into()),
+            preview: None,
             path: Some("shell:AppsFolder\\snapshot.calculator".into()),
             score: 0.8,
             source: "test-snapshot".into(),
         }];
+        assert!(serde_json::to_value(&apps[0]).unwrap().get("preview").is_none());
         let hits = crate::search::Searcher::new(&st, &apps).search("calculator", 10);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].source, "test-snapshot");

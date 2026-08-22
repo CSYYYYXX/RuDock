@@ -245,6 +245,7 @@ fn parse_reply(bytes: &[u8], query: &str, limit: usize) -> Result<Vec<SearchResu
             kind: ResultKind::File,
             title: filename,
             subtitle: (!parent.is_empty()).then_some(parent),
+            preview: None,
             path: Some(full_path),
             score: if title.starts_with(&q) { 0.84 } else { 0.72 },
             source: "everything".into(),

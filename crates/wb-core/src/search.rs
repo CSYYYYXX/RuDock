@@ -41,7 +41,8 @@ impl<'a> Searcher<'a> {
             .map(|n| SearchResult {
                 kind: ResultKind::Note,
                 title: n.content.chars().take(60).collect(),
-                subtitle: Some(format!("note · {}", n.created_at.format("%Y-%m-%d"))),
+                subtitle: Some(format!("随手记 · {}", n.created_at.format("%Y-%m-%d"))),
+                preview: Some(n.content.chars().take(4_000).collect()),
                 path: Some(format!("wb://note/{}", n.id)),
                 score: 0.6,
                 source: "notes".into(),
@@ -58,7 +59,8 @@ impl<'a> Searcher<'a> {
             .map(|t| SearchResult {
                 kind: ResultKind::Todo,
                 title: t.title,
-                subtitle: Some(if t.done { "todo · done".into() } else { "todo".into() }),
+                subtitle: Some(if t.done { "待办 · 已完成".into() } else { "待办".into() }),
+                preview: None,
                 path: Some(format!("wb://todo/{}", t.id)),
                 score: 0.6,
                 source: "todos".into(),
@@ -72,13 +74,21 @@ impl<'a> Searcher<'a> {
             .clip_list(200)?
             .into_iter()
             .filter(|c| c.content.to_lowercase().contains(q))
-            .map(|c| SearchResult {
-                kind: ResultKind::Clip,
-                title: c.content.chars().take(60).collect(),
-                subtitle: Some(format!("clipboard · {:?}", c.kind)),
-                path: Some(format!("wb://clip/{}", c.id)),
-                score: 0.5,
-                source: "clips".into(),
+            .map(|c| {
+                let kind = match c.kind {
+                    crate::models::ClipKind::Text => "文本",
+                    crate::models::ClipKind::Image => "图片",
+                    crate::models::ClipKind::Files => "文件",
+                };
+                SearchResult {
+                    kind: ResultKind::Clip,
+                    title: c.content.chars().take(60).collect(),
+                    subtitle: Some(format!("剪贴板 · {kind}")),
+                    preview: Some(c.content.chars().take(4_000).collect()),
+                    path: Some(format!("wb://clip/{}", c.id)),
+                    score: 0.5,
+                    source: "clips".into(),
+                }
             })
             .collect())
     }
@@ -174,7 +184,8 @@ fn list_start_apps_uwp() -> Vec<SearchResult> {
             Some(SearchResult {
                 kind: ResultKind::App,
                 title: name,
-                subtitle: Some("app".into()),
+                subtitle: Some("应用".into()),
+                preview: None,
                 path: Some(format!("shell:AppsFolder\\{appid}")),
                 score: 0.8,
                 source: "start-apps".into(),
@@ -209,6 +220,7 @@ pub fn list_recent_files(limit: usize) -> Vec<SearchResult> {
                 kind: ResultKind::File,
                 title: stem,
                 subtitle: Some("最近使用".into()),
+                preview: None,
                 path: Some(p.to_string_lossy().to_string()),
                 score: 0.7,
                 source: "recent".into(),
@@ -255,6 +267,7 @@ pub fn index_files_from_roots(roots: &[std::path::PathBuf], limit: usize) -> Vec
                 kind: ResultKind::File,
                 title,
                 subtitle: path.parent().map(|p| p.to_string_lossy().to_string()),
+                preview: None,
                 path: Some(path.to_string_lossy().to_string()),
                 score: 0.72,
                 source: "files".into(),
@@ -303,7 +316,8 @@ fn visit(dir: &std::path::Path, out: &mut Vec<SearchResult>, depth: u32) {
             out.push(SearchResult {
                 kind: ResultKind::App,
                 title: stem,
-                subtitle: Some("app".into()),
+                subtitle: Some("应用".into()),
+                preview: None,
                 path: Some(p.to_string_lossy().to_string()),
                 score: 0.8,
                 source: "start-menu".into(),

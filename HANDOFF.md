@@ -61,7 +61,7 @@ E:\cctest\wb\
 - **单一事实源 = wb-daemon**（JSON-RPC over 命名管道）。面板/CLI/MCP 都是平等客户端。方法表见 `wb-core/src/protocol.rs` schema()。
 - **命令注册表**（`wb-core/src/commands.rs`）：10 条内建命令。同一份数据三处用：`list_json()`（页面 `>` 模式 + CLI）、`tools_json()`（AI function calling）、方法名直映射（cmd.run 转发）。破坏性命令（clip.clear/system.lock）不暴露给 AI。
 - **插件**（M4/M5）：daemon 启动时发现 `%LOCALAPPDATA%/WB/plugins` + 仓库 `plugins/`。带权限插件默认不可见、不可执行，`plugin.approve/revoke` 的授权绑定版本、权限集合和 SHA-256 内容指纹。命令 handler 进程从启动起并发排空 stdout/stderr（每路 1MB、10s 超时），所有插件文件 canonical path 必须留在根目录。工具执行统一走 `cmd.tool.run` 的真实注册表。挂件的 `wbRpc` 经 `plugin.rpc` 身份、批准、权限、白名单四层检查，iframe 默认 CSP 禁止外联。
-- **面板视觉**：v11 整屏 veil 磨砂（dwm.rs）：24 张亚克力窗的池，只用第 1 张拉满工作区钉在面板下，显隐各一次定位+淡入淡出，动画期零窗口操作（165Hz 下逐卡跟踪会卡，别回去；WB_CARD_FROST=1 可 A/B）。显隐动画协议：页面先冻结在第 0 帧（hold）→ 宿主亮窗发 "go" → 动画起点即亮窗帧（消灭"先闪一下"）。主看板内置组件统一标题、图标和正文留白；天气/日历在矮窗口下自适应，AI 输入框有低亮度光路与 `?` 模式增强呼吸光效。
+- **面板视觉**：v11 整屏 veil 磨砂（dwm.rs）：24 张亚克力窗的池，只用第 1 张拉满工作区钉在面板下，显隐各一次定位+淡入淡出，动画期零窗口操作（165Hz 下逐卡跟踪会卡，别回去；WB_CARD_FROST=1 可 A/B）。显隐动画协议：页面先冻结在第 0 帧（hold）→ 宿主亮窗发 "go" → 动画起点即亮窗帧（消灭"先闪一下"）。主看板内置组件统一标题、图标和正文留白；天气/日历按卡片实际尺寸经 ResizeObserver 切换密度，月份位于标题栏、日期严格七行等分，720p 加大首行保留小时预报，极矮窗口改为看板滚动而不裁内容。AI 输入框有低亮度光路与 `?` 模式增强呼吸光效。
 - **AI 链路**：面板 `?` → ai.rs 起线程 curl SSE 流式（系统 curl.exe 零依赖，body 走 stdin）；function calling 回合制最多 3 轮、末轮不带 tools 强制纯文本收尾；daemon 侧 `agent.ask` 走 `wb-core::ai::ask_sync`（非流式）。
 
 ## 5. 当前状态：M5 主链路已接通
@@ -73,7 +73,7 @@ E:\cctest\wb\
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
-- Spotlight 搜索：应用索引在 daemon 启动阶段同步建立，开始处理命名管道请求前已完成，之后每 5 分钟后台刷新；`apps.list` 和统一搜索只读内存快照，首次打开面板/搜索不会现场扫描或启动 `Get-StartApps`。`wb daemon status` 暴露 `apps_indexed` / `apps_index_ready`。文件类请求优先通过 Everything 1.4/1.5 Unicode v1 IPC 做全盘查询，单次最多 200 条，发送/回包各 1.5 秒超时并严格校验回包；Everything 不可用、数据库未就绪或 IPC 失败时自动降级到 Desktop/Documents/Downloads/OneDrive 的后台有界索引（最多 50,000 项）。结果继续与应用、剪贴板、笔记、待办、插件命令合并排序；状态接口同时暴露 Everything 进程/数据库两个状态。真实 E2E 已验证 `source=everything` 命中独立测试文件及 Everything 离线后 `source=files` 降级。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费，视觉验收截图 `docs-assets/m5-spotlight-plugin-search-fixed.png`。
+- Spotlight 搜索：应用索引在 daemon 启动阶段同步建立，开始处理命名管道请求前已完成，之后每 5 分钟后台刷新；`apps.list` 和统一搜索只读内存快照，首次打开面板/搜索不会现场扫描或启动 `Get-StartApps`。`wb daemon status` 暴露 `apps_indexed` / `apps_index_ready`。文件类请求优先通过 Everything 1.4/1.5 Unicode v1 IPC 做全盘查询，单次最多 200 条，发送/回包各 1.5 秒超时并严格校验回包；Everything 不可用、数据库未就绪或 IPC 失败时自动降级到 Desktop/Documents/Downloads/OneDrive 的后台有界索引（最多 50,000 项）。结果继续与应用、剪贴板、笔记、待办、插件命令合并排序；状态接口同时暴露 Everything 进程/数据库两个状态。结果 UI 现显示人类可读的来源徽标、选中项详情和真实文件图标；文件支持打开、资源管理器定位、复制路径，笔记/剪贴板支持复制正文，待办可直接完成，`Ctrl+K` / `→` 进入动作区。选择频率与最近使用时间只写本机 `localStorage` 并参与同类结果排序。搜索协议的可选 `preview` 最多 4000 字符，临时隔离配置 E2E 已验证笔记预览和 `wb://todo/<id>` 动作标识。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费。视觉回归可用完全脱敏的 `#test-search` 固定数据入口。
 - 面板单实例：正常启动使用 `Local\WBPanelSingleInstance` mutex，次实例向 `WBPanelPoc` 发送 `WM_WB_SHOW` 后退出；8 路并发启动实测最终仅 1 个进程，稳定态重复启动日志为 `{"event":"already_running","awakened":true}`。`--bench` 和显式 `--allow-multiple` 绕过该限制供自动化诊断。
 - 托盘与退出：daemon 创建 `WBTrayWindow` 通知区入口，左键打开面板，右键菜单提供“打开 WB / 退出 WB”；`wb daemon start|status|stop` 已闭环。status/stop 离线时不隐式启动，stop 在 RPC 响应 flush 后退出，并停止 hook、向 panel 发 `WM_CLOSE`、显式移除托盘图标。CLI stop、重复 stop、托盘退出均真实验证三进程归零。
 - 社区远程分发：`plugin.install` 支持 HTTP(S) URL 且强制 SHA-256；`wb plugin pack` 直接返回 `sha256:<hex>`。远程归档限 32MB，解压树限 64MB / 512 文件 / 16 层 / 单文件 16MB；`zip` 解析器在写盘前/写盘中拒绝越界路径、特殊文件、ADS、设备名、大小写冲突和超限内容。下载、解压、staging、backup 均与正式发现目录隔离，安装/卸载事务串行，daemon 重启清理遗留临时工作区，升级提交失败会回滚。极端回滚失败的旧版本保留在 `%LOCALAPPDATA%\WB\plugin-backups\`，只有正式目标存在时才自动清理。真实本机 HTTP E2E 已验证错误哈希拒绝、正确安装/执行/卸载，以及 0.1.0→0.2.0 升级后授权失效和重新批准。
@@ -96,9 +96,9 @@ E:\cctest\wb\
 
 1. **Agent 生态深化**：MCP 动态工具/Skill 目录、写策略、elicitation 和脱敏事件长轮询已接通；下一步做安装级接入体验和更通用的事件订阅。
 2. **插件生态深化**：继续把天气、倒数日等内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
-3. **搜索体验深化**：补文件动作菜单、预览、来源展示与本地选择行为排序，利用已接通的 Everything 全盘结果继续提升 Spotlight。
+3. **搜索体验深化**：来源、详情、文件动作与本地选择行为排序已完成；下一步可做图片/文本文件内容预览、结果分组折叠与钉到看板。
 4. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。
 
 ## 8. 上次会话最后在做的事
 
-刚完成应用索引启动预热：daemon 在开始处理命名管道请求前同步建立 `.lnk + Get-StartApps` 完整快照，统一搜索与 `apps.list` 只读 `Ctx.apps`，后台每 5 分钟原子刷新。`daemon.ping` 返回 `apps_index_ready/apps_indexed`；本机验证就绪即 341 项，列表约 53 ms、应用搜索约 45 ms，两条热路径均未创建 PowerShell 进程。新增快照注入单测，当前共 58 个测试。随后完成主看板 widget 晋升、秒表官方插件、统一小组件标题与 AI 光效；下一步优先做真实 WebView2 视觉回归和 GitHub 发布核对。
+刚完成 Spotlight 结果交互深化：来源徽标、详情侧栏、真实文件图标、文件打开/定位/复制路径、笔记与剪贴板复制、待办就地完成，以及只存在本机的选择排序学习均已接入；搜索协议增加向后兼容的有界 `preview` 字段，隔离临时配置的真实 daemon E2E 通过。新增 `#test-search` 脱敏固定数据入口。随后按用户实机反馈再次重排天气/日历：取消 84px 固定日历和 760px 直接隐藏小时预报的旧策略，改为卡片尺寸驱动密度、720p 扩大第一行、极矮窗口滚动兜底。workspace 58 项测试和隔离 target build 通过（既有 11 条 panel warning），前端 JS 语法通过；当前隔离桌面会话无法创建 WebView2 controller，因此这次未生成有效视觉截图，需在用户桌面重启正式 panel 完成最终肉眼验收。README 同时改为纯用户视角，首图已替换为脱敏截图；文档提交 `d55287f` 与本次功能提交仍需用户终端的 GitHub 凭据推送。

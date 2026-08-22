@@ -1631,6 +1631,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                             kind: ResultKind::Plugin,
                             title: command.title.clone(),
                             subtitle: Some(format!("{} · {}", plugin.manifest.name, command.hint)),
+                            preview: Some(command.hint.clone()),
                             path: Some(format!("wb://cmd/{}", command.id)),
                             score: if command.title.to_lowercase().starts_with(&q) {
                                 0.86

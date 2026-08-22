@@ -71,6 +71,9 @@ pub struct SearchResult {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<String>,
+    /// Bounded content used by human-facing clients for the selected-result preview.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     /// Higher is better; local learning adjusts this later.
