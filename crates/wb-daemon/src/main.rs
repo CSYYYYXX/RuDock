@@ -20,6 +20,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 mod clipboard;
+mod everything;
 mod panelctl;
 mod tray;
 
@@ -1327,7 +1328,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     clipboard::start(storage);
     tray::start();
-    log_everything_presence();
+    eprintln!(
+        "wb-daemon: Everything IPC available: {}, database loaded: {}",
+        everything::available(),
+        everything::database_loaded()
+    );
     eprintln!(
         "wb-daemon listening on named pipe: {}",
         wb_core::paths::pipe_name()
@@ -1389,19 +1394,6 @@ fn handle_conn(stream: interprocess::local_socket::Stream, ctx: Arc<Ctx>) -> wb_
 
 fn io_err(e: std::io::Error) -> CoreError {
     CoreError::new(ErrorCode::Internal, format!("io: {e}"))
-}
-
-/// Everything (voidtools) detection — WM_COPYDATA query client lands in M1.5;
-/// absent → search degrades to local stores + Start-menu apps (by design).
-fn log_everything_presence() {
-    unsafe {
-        let hwnd = windows::Win32::UI::WindowsAndMessaging::FindWindowW(
-            windows::core::w!("EVERYTHING_TASKBAR_NOTIFICATION"),
-            None,
-        );
-        let present = hwnd.is_ok() && !hwnd.unwrap_or_default().0.is_null();
-        eprintln!("wb-daemon: Everything present: {present}");
-    }
 }
 
 fn dispatch(ctx: &Ctx, req: Request) -> Response {
@@ -1509,6 +1501,8 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             "version": env!("CARGO_PKG_VERSION"),
             "status": "ok",
             "files_indexed": ctx.files.read().unwrap().len(),
+            "everything_available": everything::available(),
+            "everything_database_loaded": everything::database_loaded(),
         })),
 
         "daemon.stop" => {
@@ -1574,7 +1568,11 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
 
         "search" => {
             let query = str_param(params, "query")?;
-            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+            let limit = params
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20)
+                .clamp(1, 200) as usize;
             let q = query.trim().to_lowercase();
             if q.is_empty() {
                 return Err(CoreError::new(ErrorCode::NoResults, "empty search query"));
@@ -1588,11 +1586,21 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 limit.max(100)
             };
             let mut results = Searcher::new(&ctx.storage).search(query, provider_limit);
-            results.extend(wb_core::search::search_indexed_files(
-                &ctx.files.read().unwrap(),
-                query,
-                provider_limit,
-            ));
+            let include_files = params
+                .get("type")
+                .and_then(|v| v.as_str())
+                .is_none_or(|kind| kind == "file");
+            if include_files {
+                let file_limit = limit.max(100).min(200);
+                match everything::search(query, file_limit) {
+                    Ok(files) => results.extend(files),
+                    Err(_) => results.extend(wb_core::search::search_indexed_files(
+                        &ctx.files.read().unwrap(),
+                        query,
+                        provider_limit,
+                    )),
+                }
+            }
             let settings = read_settings();
             for plugin in ctx.plugins.read().unwrap().iter() {
                 if !plugin_approved(plugin, &settings) {

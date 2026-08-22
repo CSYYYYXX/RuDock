@@ -1,6 +1,6 @@
-//! Search aggregation: local stores (notes/todos/clips) + Start-menu apps.
-//! Everything IPC can replace the background user-file index later; provider isolation
-//! rule: every provider returns Result and a failure must never block others.
+//! Search aggregation primitives for local stores, apps, and the bounded file fallback.
+//! The daemon adds Everything IPC as its primary file provider; provider isolation rule:
+//! a source failure must never block results from the others.
 
 use crate::models::{ResultKind, SearchResult};
 use crate::storage::Storage;

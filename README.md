@@ -7,8 +7,8 @@
 
 | 组件 | 状态 |
 | --- | --- |
-| wb-core（模型/存储/搜索/协议） | ✅ 含 8 个单元测试 |
-| wb-daemon（JSON-RPC over Named Pipe） | ✅ 可用，托盘常驻 + 完整 start/status/stop 生命周期 |
+| wb-core（模型/存储/搜索/协议） | ✅ 含 11 个单元测试 |
+| wb-daemon（JSON-RPC over Named Pipe） | ✅ 可用，托盘常驻 + Everything IPC + 完整 start/status/stop 生命周期 |
 | wb-cli（`wb.exe` 全命令面 + `--json` 契约） | ✅ 可用 |
 | wb-hook（**Win 键钩子：接管开关 / 开机自启 / 单实例**） | ✅ 可用 |
 | wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由/单实例） | ✅ 可用 |
@@ -26,7 +26,7 @@
   - 踩坑记录见方案文档 §10.1（WebView2.h 的 propget 解析坑等 5 条）。
 - **剪贴板实时监听**：daemon 内嵌 message-only 窗口 + `WM_CLIPBOARDUPDATE`，复制即入库（去重、10 万字符上限），E2E 已验证。
 - **托盘与进程生命周期**：daemon 创建常驻通知区入口，左键打开面板，右键可“打开 WB / 退出 WB”。`wb daemon start|status|stop` 已完整实现；stop 会响应后退出 daemon，并一并停止 Win 键 hook、关闭 panel，重复 stop 幂等且不会误拉起 daemon。
-- **文件搜索降级**：Everything 未接入时，daemon 后台广度优先索引 Desktop/Documents/Downloads/OneDrive（最多 50,000 个文件），搜索请求不被扫描阻塞；Everything IPC 仍是后续的全盘毫秒级方案。
+- **全盘文件搜索**：daemon 通过 Everything 1.4/1.5 Unicode IPC 实时查询，单次最多 200 条、发送与回包各 1.5 秒超时；Everything 未运行、数据库未就绪或 IPC 失败时自动降级到 Desktop/Documents/Downloads/OneDrive 的后台有界索引（最多 50,000 项），搜索请求不被扫描阻塞。`wb daemon status` 暴露 `everything_available` 与 `everything_database_loaded`。
 
 ### M2 面板（已验证链路）
 
@@ -130,9 +130,10 @@
 - **Agent 风险元数据**：内建和插件命令共用 MCP Tool Annotations（只读 / 破坏性 / 幂等 / 开放世界）；`tools/list` 会把标准 Hint 交给客户端用于调用前风险展示和确认。插件未声明时按最保守风险处理，面板 Responses API 仍只收到纯 OpenAI function schema。
 - **MCP 写策略**：设置页和 `wb settings mcp client|ask|read-only` 提供三档服务端策略。`client` 沿用客户端确认；`ask` 要求 MCP 2025-06-18 客户端声明 elicitation，并在每次非只读工具前发 `elicitation/create`，仅 `accept + confirm=true` 执行；`read-only` 在 WB 侧阻止所有非只读工具。拒绝与业务失败均返回 MCP `isError:true`，成功结果同时提供 `structuredContent`。
 - **脱敏事件流**：daemon 审计只保存 actor、方法、状态、错误码、耗时和参数结构，不保存笔记、剪贴板、prompt 等正文；启动迁移会一次性脱敏旧格式记录，日志上限 5000 条。`wb events --after <cursor> --wait-ms <ms>` 与 MCP `events_tail` 支持最多 30 秒长轮询，供 CLI/Agent 增量观察系统动作。
+- **Everything IPC**：文件类搜索优先走官方 Unicode v1 `WM_COPYDATA` 协议，严格校验 32MB 回包、条目表、字符串偏移和 UTF-16 终止符，结果标记 `source: "everything"`。Everything 不可用时保留原有用户常用目录索引作为无感降级；非文件类型搜索不会触发 Everything。
 - **社区分发底座**：`wb plugin pack` 返回归档 SHA-256；`wb plugin install <http(s)-url> --sha256 <hex>` 支持远程安装且强制校验。安装器用结构化 ZIP 解析逐项拒绝路径穿越、NTFS ADS、设备名、符号链接和大小写冲突，并在写盘前/写盘中限制归档、解压树和单文件；staging/backup 与正式发现目录隔离，升级提交失败会恢复旧版本。
 - **开放插件市场**：官方与社区共用版本化 JSON Schema；市场源持久化在设置中，CLI 可聚合最多 8 个源，也可用 `--index` 临时指定来源。面板第三页提供“已安装 / 市场”双视图、搜索、来源管理、安装、更新与卸载；市场安装会在提交前同时核对 SHA-256、插件 id 与版本。截图：`docs-assets/m5-market-page.png`、`docs-assets/m5-market-sources.png`、`docs-assets/m5-plugins-installed-uninstall.png`。
-- **测试基线**（2026-08-22）：wb-core 11 + wb-daemon 11 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 4，共 50 个单测；workspace test/build 通过。真实 MCP E2E 已覆盖 read-only 阻断、ask 无能力拒绝、elicitation 接受后写入、事件长轮询和审计正文不落盘。设置页截图：`docs-assets/m5-mcp-write-policy.png`。
+- **测试基线**（2026-08-22）：wb-core 11 + wb-daemon 14 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 4，共 53 个单测；workspace test/build 通过。真实 MCP E2E 已覆盖 read-only 阻断、ask 无能力拒绝、elicitation 接受后写入、事件长轮询和审计正文不落盘；Everything E2E 已覆盖真实 IPC 命中与进程离线后的本地索引降级。设置页截图：`docs-assets/m5-mcp-write-policy.png`。
 
 ## 构建环境（Windows，已固化在本仓库）
 
@@ -180,4 +181,4 @@ wb plugin create hello-world --kind hybrid
 ## 已知事项
 
 - AI provider 测试端点（api.json）：`/v1/models` 可列、`gpt-5.6-luna` 在列，但推理端点（responses 与 chat/completions）目前返回 `Service temporarily unavailable`。M3 才用到，不阻塞。代理规则：网络异常走 `http://127.0.0.1:7890`。
-- Everything 真 IPC 尚未实现；当前文件检索是用户常用目录的有界后台索引，不等同于全盘实时索引。
+- Everything 全盘搜索依赖用户已运行 Everything 且数据库加载完成；其余场景会自动回落到用户常用目录的有界后台索引。
