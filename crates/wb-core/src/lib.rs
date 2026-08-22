@@ -1,6 +1,8 @@
 //! wb-core: business logic pure library. No process/IO bindings —
 //! daemon, cli, mcp, panel are all thin adapters over this.
 
+#![recursion_limit = "256"]
+
 pub mod ai;
 pub mod commands;
 pub mod error;

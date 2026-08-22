@@ -640,6 +640,36 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   color: var(--fg-2); font: inherit; font-size: 11.5px; outline: none; }
 #cfgView .language-row select:focus { border-color: rgba(76,194,255,.5); }
 
+/* 首次启动引导：保持轻量，完成后不再打扰已配置用户。 */
+#onboardingView { position: absolute; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(8,9,14,.58); }
+#onboardingView.on { display: flex; }
+#onboardingView .sheet { width: min(500px, 100%); max-height: min(680px, 90%); overflow-y: auto; padding: 26px;
+  border-radius: 16px; background: rgba(20,22,36,.97); border: 1px solid rgba(120,205,255,.3);
+  box-shadow: 0 28px 100px rgba(0,0,0,.56), 0 0 0 1px rgba(255,255,255,.04) inset; }
+#onboardingView .eyebrow { color: var(--accent); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+#onboardingView h2 { margin: 8px 0 8px; color: var(--fg); font-size: 25px; font-weight: 650; }
+#onboardingView .lead { margin: 0 0 18px; color: var(--fg-2); font-size: 13px; line-height: 1.55; }
+#onboardingView .onboarding-locale { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px;
+  padding: 10px 12px; border: 1px solid var(--stroke-soft); border-radius: 8px; color: var(--fg-2); font-size: 12.5px; }
+#onboardingView select { min-width: 132px; height: 30px; padding: 0 8px; border: 1px solid var(--stroke-soft); border-radius: 6px;
+  background: rgba(255,255,255,.07); color: var(--fg-2); font: inherit; outline: none; }
+#onboardingView select:focus { border-color: rgba(76,194,255,.55); }
+#onboardingView .onboarding-feature { display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 10px; align-items: start;
+  padding: 11px 0; border-top: 1px solid var(--stroke-soft); }
+#onboardingView .onboarding-feature .icon { color: var(--accent); font-size: 18px; line-height: 1.2; text-align: center; }
+#onboardingView .onboarding-feature strong { display: block; color: var(--fg); font-size: 13px; font-weight: 600; }
+#onboardingView .onboarding-feature span { display: block; margin-top: 3px; color: var(--fg-3); font-size: 11.5px; line-height: 1.45; }
+#onboardingView .onboarding-win { display: flex; align-items: center; gap: 9px; margin: 14px 0 18px; color: var(--fg-2); font-size: 12.5px; }
+#onboardingView .onboarding-win input { width: 16px; height: 16px; accent-color: var(--accent); }
+#onboardingView .onboarding-actions { display: flex; justify-content: flex-end; gap: 8px; }
+#onboardingView .onboarding-actions button { min-height: 34px; padding: 0 14px; border-radius: 7px; border: 1px solid var(--stroke-soft);
+  background: rgba(255,255,255,.07); color: var(--fg-2); font: inherit; font-size: 12px; cursor: pointer; }
+#onboardingView .onboarding-actions button:hover { background: var(--hover); color: var(--fg); }
+#onboardingView .onboarding-actions button.primary { border-color: rgba(76,194,255,.52); background: rgba(76,194,255,.18); color: #eaf7ff; }
+#onboardingView .onboarding-actions button.primary:hover { background: rgba(76,194,255,.28); }
+#onboardingView .onboarding-actions button:disabled { opacity: .55; cursor: wait; }
+
 /* Spotlight 里的定制入口 */
 .spot-box .gear { flex: none; font-size: 15px; color: var(--fg-3); cursor: pointer; padding: 2px 4px;
   border-radius: 6px; }
@@ -655,6 +685,7 @@ body.desktop-mode .dots,
 body.desktop-mode #folderView,
 body.desktop-mode #cfgView,
 body.desktop-mode #marketSourceView,
+body.desktop-mode #onboardingView,
 body.desktop-mode #toast { display: none !important; }
 body.desktop-mode .pages { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
   transform: none !important; transition: none; }
@@ -903,6 +934,23 @@ body.desktop-mode .resize-handle { opacity: .65; }
     <div id="cfgDesktopList"></div>
   </div></div>
 
+  <div id="onboardingView" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+    <div class="sheet">
+      <div class="eyebrow">RuDock</div>
+      <h2 id="onboarding-title">欢迎使用 RuDock</h2>
+      <p class="lead" id="onboarding-lead">把 Win 键变成你的工作台。常用入口、组件和 Agent 能力都集中在这里。</p>
+      <label class="onboarding-locale"><span id="onboarding-language-label">界面语言</span><select id="onboarding-language">
+        <option value="auto">自动</option><option value="zh-CN">简体中文</option><option value="en">English</option>
+        <option value="ja">日本語</option><option value="ko">한국어</option>
+      </select></label>
+      <div class="onboarding-feature"><span class="icon">⊞</span><div><strong id="onboarding-apps">应用与搜索</strong><span id="onboarding-apps-hint">应用索引由后台服务预先建立，打开面板即可搜索。</span></div></div>
+      <div class="onboarding-feature"><span class="icon">▦</span><div><strong id="onboarding-widgets">组件与插件</strong><span id="onboarding-widgets-hint">组件可以常驻桌面，插件为面板和 Agent 增加能力。</span></div></div>
+      <div class="onboarding-feature"><span class="icon">✦</span><div><strong id="onboarding-agent">AI 与自动化</strong><span id="onboarding-agent-hint">用 ? 随手提问，也可以通过 CLI 或 MCP 连接 Agent。</span></div></div>
+      <label class="onboarding-win"><input type="checkbox" id="onboarding-win"><span id="onboarding-win-label">接管 Windows 键</span></label>
+      <div class="onboarding-actions"><button type="button" id="onboarding-skip">稍后设置</button><button type="button" class="primary" id="onboarding-start">开始使用</button></div>
+    </div>
+  </div>
+
   <div id="marketSourceView"><div class="sheet">
     <h3>市场源<span class="x" id="marketSourceClose">✕</span></h3>
     <div class="source-add">
@@ -935,7 +983,7 @@ function I18N_LANG(value) { return ['auto','zh-CN','en','ja','ko'].includes(valu
 
 const I18N = {
   'zh-CN': {
-    searchPlaceholder:'搜索应用、剪贴板、笔记…  = 计算 · ? AI · > 命令', customize:'定制组件',
+    searchPlaceholder:'搜索应用、剪贴板、笔记…  = 计算 · ? AI · > 命令', customize:'定制组件', onboardingTitle:'欢迎使用 RuDock', onboardingLead:'把 Win 键变成你的工作台。常用入口、组件和 Agent 能力都集中在这里。', onboardingLanguage:'界面语言', onboardingApps:'应用与搜索', onboardingAppsHint:'应用索引由后台服务预先建立，打开面板即可搜索。', onboardingWidgets:'组件与插件', onboardingWidgetsHint:'组件可以常驻桌面，插件为面板和 Agent 增加能力。', onboardingAgent:'AI 与自动化', onboardingAgentHint:'用 ? 随手提问，也可以通过 CLI 或 MCP 连接 Agent。', onboardingWin:'接管 Windows 键', onboardingSkip:'稍后设置', onboardingStart:'开始使用',
     time:'时间', weather:'天气', live:'实时', loading:'获取中…', calendar:'日历', worldClock:'世界时钟',
     beijing:'北京', newYork:'纽约', london:'伦敦', nowPlaying:'正在播放', notPlaying:'未在播放', mediaHint:'打开音乐应用试试',
     systemStatus:'系统状态', memory:'内存', battery:'电池', focusTimer:'专注计时', start:'开始', pause:'暂停', reset:'重置',
@@ -971,7 +1019,7 @@ const I18N = {
     quoteRefresh:'点击换一句', quoteSource:'网络',
   },
   en: {
-    searchPlaceholder:'Search apps, clipboard, notes…  = Calculate · ? AI · > Commands', customize:'Customize widgets',
+    searchPlaceholder:'Search apps, clipboard, notes…  = Calculate · ? AI · > Commands', customize:'Customize widgets', onboardingTitle:'Welcome to RuDock', onboardingLead:'Make the Windows key your workbench for apps, widgets, and Agent tools.', onboardingLanguage:'Interface language', onboardingApps:'Apps and search', onboardingAppsHint:'The background service builds the app index before you search.', onboardingWidgets:'Widgets and plugins', onboardingWidgetsHint:'Pin widgets to the desktop and extend the panel with plugins.', onboardingAgent:'AI and automation', onboardingAgentHint:'Ask with ? or connect an Agent through CLI and MCP.', onboardingWin:'Use the Windows key', onboardingSkip:'Set up later', onboardingStart:'Start using RuDock',
     time:'Time', weather:'Weather', live:'Live', loading:'Loading…', calendar:'Calendar', worldClock:'World clock',
     beijing:'Beijing', newYork:'New York', london:'London', nowPlaying:'Now playing', notPlaying:'Nothing playing', mediaHint:'Open a music app to begin',
     systemStatus:'System status', memory:'Memory', battery:'Battery', focusTimer:'Focus timer', start:'Start', pause:'Pause', reset:'Reset',
@@ -1007,7 +1055,7 @@ const I18N = {
     quoteRefresh:'Show another quote', quoteSource:'Community',
   },
   ja: {
-    searchPlaceholder:'アプリ、クリップボード、メモを検索…  = 計算 · ? AI · > コマンド', customize:'ウィジェットをカスタマイズ',
+    searchPlaceholder:'アプリ、クリップボード、メモを検索…  = 計算 · ? AI · > コマンド', customize:'ウィジェットをカスタマイズ', onboardingTitle:'RuDock へようこそ', onboardingLead:'Windows キーを、アプリ・ウィジェット・Agent のためのワークベンチにします。', onboardingLanguage:'表示言語', onboardingApps:'アプリと検索', onboardingAppsHint:'検索する前にバックグラウンドでアプリ索引を作成します。', onboardingWidgets:'ウィジェットとプラグイン', onboardingWidgetsHint:'ウィジェットをデスクトップに固定し、プラグインで拡張できます。', onboardingAgent:'AI と自動化', onboardingAgentHint:'? で質問するか、CLI と MCP から Agent を接続できます。', onboardingWin:'Windows キーを使用', onboardingSkip:'後で設定', onboardingStart:'RuDock を始める',
     time:'時刻', weather:'天気', live:'リアルタイム', loading:'取得中…', calendar:'カレンダー', worldClock:'世界時計',
     beijing:'北京', newYork:'ニューヨーク', london:'ロンドン', nowPlaying:'再生中', notPlaying:'再生していません', mediaHint:'音楽アプリを開いてください',
     systemStatus:'システム状態', memory:'メモリ', battery:'バッテリー', focusTimer:'集中タイマー', start:'開始', pause:'一時停止', reset:'リセット',
@@ -1043,7 +1091,7 @@ const I18N = {
     quoteRefresh:'別の一言を表示', quoteSource:'コミュニティ',
   },
   ko: {
-    searchPlaceholder:'앱, 클립보드, 메모 검색…  = 계산 · ? AI · > 명령', customize:'위젯 사용자 지정',
+    searchPlaceholder:'앱, 클립보드, 메모 검색…  = 계산 · ? AI · > 명령', customize:'위젯 사용자 지정', onboardingTitle:'RuDock 시작하기', onboardingLead:'Windows 키를 앱, 위젯, Agent를 위한 작업 공간으로 바꿉니다.', onboardingLanguage:'화면 언어', onboardingApps:'앱과 검색', onboardingAppsHint:'검색하기 전에 백그라운드 서비스가 앱 색인을 준비합니다.', onboardingWidgets:'위젯과 플러그인', onboardingWidgetsHint:'위젯을 데스크톱에 고정하고 플러그인으로 확장하세요.', onboardingAgent:'AI와 자동화', onboardingAgentHint:'?로 질문하거나 CLI와 MCP에서 Agent를 연결할 수 있습니다.', onboardingWin:'Windows 키 사용', onboardingSkip:'나중에 설정', onboardingStart:'RuDock 시작',
     time:'시간', weather:'날씨', live:'실시간', loading:'불러오는 중…', calendar:'달력', worldClock:'세계 시계',
     beijing:'베이징', newYork:'뉴욕', london:'런던', nowPlaying:'재생 중', notPlaying:'재생 중인 항목 없음', mediaHint:'음악 앱을 열어 보세요',
     systemStatus:'시스템 상태', memory:'메모리', battery:'배터리', focusTimer:'집중 타이머', start:'시작', pause:'일시정지', reset:'초기화',
@@ -1135,6 +1183,13 @@ function applyLanguage(value) {
   const sourceTitle = $('#marketSourceView h3').firstChild; if (sourceTitle) sourceTitle.nodeValue = t('marketSources');
   $('#marketSourceAdd').title = t('addSource'); $('#marketSourceAdd').setAttribute('aria-label', t('addSource'));
   $('#marketSourceInput').setAttribute('aria-label', t('marketSources'));
+  $('#onboarding-title').textContent = t('onboardingTitle'); $('#onboarding-lead').textContent = t('onboardingLead');
+  $('#onboarding-language-label').textContent = t('onboardingLanguage'); $('#onboarding-language option[value="auto"]').textContent = t('languageAuto');
+  $('#onboarding-apps').textContent = t('onboardingApps'); $('#onboarding-apps-hint').textContent = t('onboardingAppsHint');
+  $('#onboarding-widgets').textContent = t('onboardingWidgets'); $('#onboarding-widgets-hint').textContent = t('onboardingWidgetsHint');
+  $('#onboarding-agent').textContent = t('onboardingAgent'); $('#onboarding-agent-hint').textContent = t('onboardingAgentHint');
+  $('#onboarding-win-label').textContent = t('onboardingWin'); $('#onboarding-skip').textContent = t('onboardingSkip'); $('#onboarding-start').textContent = t('onboardingStart');
+  if ($('#onboarding-language')) $('#onboarding-language').value = languageSetting;
   $('#htk-bd').title = t('quoteRefresh');
   const quickKeys = ['settingsApp','taskManager','calculator','notepad','terminal','screenshot'];
   $$('#w-quick .qbtn').forEach((el, i) => { const label=t(quickKeys[i]); el.title=label; el.setAttribute('aria-label',label); el.querySelector('.qlabel').textContent=label; });
@@ -1567,7 +1622,7 @@ document.querySelectorAll('#dots i').forEach(d => d.addEventListener('click', ()
 let pd = null;
 pages.addEventListener('pointerdown', ev => {
   if (ev.button !== 0) return;
-  if (ev.target.closest('input, button, .x, .hchip, #folderView, #cfgView, #marketSourceView, .dock-toolbar')) return;
+  if (ev.target.closest('input, button, .x, .hchip, #folderView, #cfgView, #onboardingView, #marketSourceView, .dock-toolbar')) return;
   pd = { x0: ev.clientX, moved: false };
 });
 pages.addEventListener('pointermove', ev => {
@@ -2221,6 +2276,41 @@ function showToast(text) {
   toastTimer = setTimeout(() => el.style.display = 'none', 2000);
 }
 
+let onboardingBusy = false;
+function setOnboardingOpen(open) {
+  $('#onboardingView').classList.toggle('on', open);
+  send({ kind: 'interaction', active: open });
+  if (open) setTimeout(() => $('#onboarding-language').focus(), 40);
+}
+function openOnboarding(settings) {
+  if (DESKTOP_MODE || !hasBridge || !settings || settings.onboarding_complete !== false) return;
+  $('#onboarding-language').value = I18N_LANG(settings.language) || 'auto';
+  $('#onboarding-win').checked = !!settings.takeover_win;
+  setOnboardingOpen(true);
+}
+async function finishOnboarding(enable) {
+  if (onboardingBusy || !$('#onboardingView').classList.contains('on')) return;
+  onboardingBusy = true;
+  $('#onboarding-skip').disabled = true; $('#onboarding-start').disabled = true;
+  const language = I18N_LANG($('#onboarding-language').value) || 'auto';
+  const params = { onboarding_complete:true, language };
+  if (enable) params.takeover_win = $('#onboarding-win').checked;
+  const m = await rpc('settings.set', params);
+  if (!m || m.error || !m.result) {
+    onboardingBusy = false;
+    $('#onboarding-skip').disabled = false; $('#onboarding-start').disabled = false;
+    showToast(t('saveFailed'));
+    return;
+  }
+  onboardingBusy = false;
+  setOnboardingOpen(false);
+  ingestSettings(m.result);
+  showToast(t('saved'));
+}
+$('#onboarding-language').addEventListener('change', ev => applyLanguage(ev.target.value));
+$('#onboarding-skip').addEventListener('click', () => finishOnboarding(false));
+$('#onboarding-start').addEventListener('click', () => finishOnboarding(true));
+
 q.addEventListener('input', () => {
   $('.spot-box').classList.toggle('ai-active', q.value.trim().startsWith('?'));
   clearTimeout(debounceTimer); debounceTimer = setTimeout(doQuery, 90);
@@ -2236,7 +2326,8 @@ window.addEventListener('keydown', ev => {
     return;
   }
   if (ev.key === 'Escape') {
-    if ($('#folderView').classList.contains('on')) $('#folderView').classList.remove('on');
+    if ($('#onboardingView').classList.contains('on')) finishOnboarding(false);
+    else if ($('#folderView').classList.contains('on')) $('#folderView').classList.remove('on');
     else if ($('#cfgView').classList.contains('on')) setConfigOpen(false);
     else if ($('#marketSourceView').classList.contains('on')) $('#marketSourceView').classList.remove('on');
     else if (editMode) $('#apps-edit').click();
@@ -2889,9 +2980,11 @@ async function boot() {
   if (DESKTOP_MODE) await syncDesktopWidgets(true);
   else {
     const response = hasBridge ? await rpc('settings.get', {}, 1800) : null;
-    ingestSettings(response && response.result ? response.result : { language:'auto' });
+    const settings = response && response.result ? response.result : { language:'auto' };
+    ingestSettings(settings);
     applyWidgetVisibility();
     send({ kind: 'ready' });
+    if (settings.onboarding_complete === false) setTimeout(() => openOnboarding(settings), 90);
   }
   loadTodos(); loadNotes(); loadClips(); loadRecent();
   if (!hasBridge && location.hash === '#test-search') setTimeout(showSearchFixture, 50);

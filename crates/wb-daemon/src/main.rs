@@ -1056,6 +1056,7 @@ fn default_settings() -> serde_json::Value {
         "autostart": false,
         "mcp_write_policy": "client",
         "language": "auto",
+        "onboarding_complete": false,
         "desktop_widgets": [],
         "widget_layouts": {"panel": {}, "desktop": {}},
         "plugin_grants": {},
@@ -1074,12 +1075,17 @@ fn read_settings() -> serde_json::Value {
     let Some(obj) = value.as_object_mut() else {
         return default_settings();
     };
+    // Settings files created before onboarding are treated as already configured.
+    let had_onboarding_flag = obj.contains_key("onboarding_complete");
     let defaults = default_settings();
     for (k, v) in defaults.as_object().unwrap() {
         obj.entry(k.clone()).or_insert_with(|| v.clone());
     }
     if !matches!(obj.get("language").and_then(|v| v.as_str()), Some("auto" | "zh-CN" | "en" | "ja" | "ko")) {
         obj.insert("language".into(), serde_json::json!("auto"));
+    }
+    if !had_onboarding_flag {
+        obj.insert("onboarding_complete".into(), serde_json::json!(true));
     }
     if !obj.get("widget_layouts").is_some_and(|v| v.is_object()) {
         obj.insert("widget_layouts".into(), serde_json::json!({"panel": {}, "desktop": {}}));
@@ -1717,6 +1723,12 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                     ));
                 }
                 obj.insert("mcp_write_policy".into(), serde_json::json!(value));
+            }
+            if let Some(value) = params.get("onboarding_complete") {
+                let value = value.as_bool().ok_or_else(|| {
+                    CoreError::new(ErrorCode::InvalidParams, "onboarding_complete must be boolean")
+                })?;
+                obj.insert("onboarding_complete".into(), serde_json::json!(value));
             }
             if let Some(value) = params.get("language") {
                 let value = value.as_str().filter(|v| matches!(*v, "auto" | "zh-CN" | "en" | "ja" | "ko")).ok_or_else(|| {
@@ -2765,6 +2777,13 @@ mod tests {
             .unwrap()
             .push(serde_json::json!({"unexpected": true}));
         assert_eq!(market_sources_from_settings(&settings).len(), 2);
+    }
+
+    #[test]
+    fn new_settings_require_one_time_onboarding() {
+        let settings = default_settings();
+        assert_eq!(settings["onboarding_complete"], false);
+        assert_eq!(settings["language"], "auto");
     }
 
     #[test]
