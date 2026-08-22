@@ -1,104 +1,125 @@
-# RuDock (WB)
+# RuDock
 
 <p align="center">
   <strong>按一次 Win 键，打开属于你的 Windows 工作台。</strong><br>
-  <sub>Spotlight 搜索 · AI 随手问 · 小组件看板 · CLI / MCP · 可扩展插件生态</sub>
+  <sub>统一搜索 · AI 随手问 · 桌面小组件 · 插件生态 · CLI / MCP</sub>
 </p>
 
 <p align="center">
-  <a href="https://github.com/CSYYYYXX/RuDock"><img src="https://img.shields.io/badge/platform-Windows%2011-4CC2FF?style=flat-square" alt="Windows 11"></a>
-  <a href="https://github.com/CSYYYYXX/RuDock/actions"><img src="https://img.shields.io/badge/tests-58%20passing-6CCB5F?style=flat-square" alt="58 tests passing"></a>
-  <a href="https://github.com/CSYYYYXX/RuDock/blob/main/plugins/README.md"><img src="https://img.shields.io/badge/plugins-v1-F9C74F?style=flat-square" alt="Plugin format v1"></a>
+  <a href="https://github.com/CSYYYYXX/RuDock"><img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4CC2FF?style=flat-square" alt="Windows 10 / 11"></a>
+  <a href="https://github.com/CSYYYYXX/RuDock"><img src="https://img.shields.io/badge/status-preview-F9C74F?style=flat-square" alt="Preview"></a>
+  <a href="https://github.com/CSYYYYXX/RuDock/blob/main/plugins/README.md"><img src="https://img.shields.io/badge/plugins-v1-6CCB5F?style=flat-square" alt="Plugin format v1"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-ready-BD93F9?style=flat-square" alt="MCP ready"></a>
 </p>
 
 ![RuDock 主看板](docs-assets/v8-final.png)
 
-## 它是什么
+## 把 Win 键变成个人工作台
 
-RuDock（内部代号 WB，Windows Bar / WorkBench）是一个面向 **人和 Agent** 的 Windows 桌面入口：
+RuDock 是一个可定制的 Windows 桌面入口。它把应用、文件、剪贴板、笔记、待办、AI 和插件工具放进同一个面板：需要时按一下 **Win**，用完按 **Esc**，不必离开正在进行的工作。
 
-- 人按 **Win** 键呼出全屏玻璃面板，搜索应用、文件、剪贴板、笔记和待办。
-- 输入 `?` 随手问 AI，回答可以流式显示，也可以通过 function calling 操作待办、笔记和已批准的插件命令。
-- 输入 `=` 做本地计算，输入 `>` 执行命令；按 `Esc` 关闭，工作流不被打断。
-- 小组件、命令和 Agent Skill 共享同一套插件格式，社区可以把能力装进看板，也可以装进 CLI / MCP。
+RuDock 同时面向普通用户、自动化脚本和 AI Agent：人在面板里操作，脚本通过 CLI 调用，Agent 通过 MCP 使用相同的能力。
 
-RuDock 的目标不是再做一个启动器，而是把 Windows 键变成一个可编排的个人入口：**人用面板，脚本用 CLI，Agent 用 MCP，插件一次开发三处可用。**
+## 你可以用它做什么
 
-## 现在能做什么
-
-| 区域 | 能力 |
+| 功能 | 体验 |
 | --- | --- |
-| Spotlight | 应用、Everything 文件搜索、剪贴板、最近文件、笔记、待办、插件命令统一检索 |
-| AI | `?` 前缀进入流式问答；支持内建工具、Skill 读取和已批准插件 function calling |
-| 看板 | 时钟、天气、日历、世界时钟、媒体、系统状态、专注计时、计算器、剪贴板、待办、随手记、快捷启动、最近文件、一言 |
-| 程序坞 | 应用索引在 daemon 启动阶段预热，Win 键呼出后直接展示，不在交互热路径启动 PowerShell |
-| 插件 | command / widget / hybrid；权限批准、内容指纹、沙箱 iframe、市场和离线校验 |
-| Agent | `wb.exe --json`、`wb-mcp.exe`、Skill resources、MCP 动态目录通知、写操作策略和审计事件 |
+| 统一搜索 | 搜索并打开应用、文件、剪贴板、最近文件、笔记、待办和插件命令 |
+| AI 随手问 | 输入 `?` 开始流式问答，让 AI 查询信息或操作已授权的工具 |
+| 即时工具 | 输入 `=` 计算表达式，输入 `>` 执行命令 |
+| 个性看板 | 自由组合天气、日历、时钟、媒体、系统状态、待办、随手记等小组件 |
+| 插件扩展 | 安装命令、组件和 Skill，为面板、CLI 与 Agent 添加新能力 |
+| 快速呼出 | 应用索引随后台服务预先建立，打开面板后可以直接搜索 |
 
-### AI 输入框
+## 基本操作
 
-AI 模式会把输入框的边缘光路提升为更快、更亮的青紫呼吸效果；普通搜索保持低亮度慢速流动。边框厚度不变，支持 `prefers-reduced-motion`。
+| 操作 | 结果 |
+| --- | --- |
+| 按 `Win` | 打开或关闭 RuDock |
+| 直接输入 | 搜索应用、文件和个人内容 |
+| 输入 `? 问题` | 进入 AI 模式 |
+| 输入 `= 表达式` | 本地计算 |
+| 输入 `> 命令` | 查找并执行命令 |
+| 按 `Esc` | 关闭面板，回到当前工作 |
+
+Win 键接管可以随时在设置中关闭。关闭后仍可从托盘图标或 CLI 打开 RuDock。
+
+## AI Spotlight
+
+AI 模式使用流式回答，并能在获得授权后操作待办、笔记和插件命令。输入框会以轻量动态光路提示当前状态；系统启用“减少动态效果”时，RuDock 也会同步减少动画。
 
 ![AI Spotlight 动态光效](docs-assets/ai-spotlight-glow.png)
 
-### 插件组件
+AI 服务配置只保存在本机。请不要把 API Key 或本地配置文件提交到仓库。
 
-首个官方 dogfood 组件是 [`plugins/stopwatch`](plugins/stopwatch)：它没有权限，批准后直接进入主看板；插件管理页只负责批准、撤销和卸载。widget 运行在 sandboxed iframe 中，通过显式白名单 RPC 与 RuDock 通信。
+## 小组件与插件
+
+小组件可以直接进入主看板，命令可以被搜索、AI、CLI 和 MCP 共同调用。插件在启用前会展示所需权限；撤销批准后，其组件和命令会立即停止加载。
 
 ![插件管理与主看板](docs-assets/m5-plugins-installed-uninstall.png)
 
-插件市场支持本地或远程索引、SHA-256 校验、安装、升级和卸载：
+插件市场支持安装、升级和卸载，并通过 SHA-256 校验下载内容：
 
 ![插件市场](docs-assets/m5-market-page.png)
 
-## 快速开始
+插件开发文档、manifest 示例与 widget RPC 接口见 [`plugins/README.md`](plugins/README.md)。
 
-### 环境
+## 安装与启动
 
-- Windows 10/11，WebView2 Runtime
-- Rust GNU toolchain（仓库提供 `.toolchain` 和 `build.sh`）
+RuDock 目前处于 Preview 阶段，暂时需要从源码构建。正式安装包将在后续版本发布到 [Releases](https://github.com/CSYYYYXX/RuDock/releases)。
+
+### 环境要求
+
+- Windows 10 / 11
+- WebView2 Runtime
+- Rust GNU toolchain
 - PowerShell 5.1 或更高版本
-- Everything 可选；未运行时自动降级到常用目录索引
+- Everything（可选，用于扩大文件搜索范围并提升速度）
 
-### 构建
+### 从源码构建
 
-在 Git Bash 中：
+在 Git Bash 中执行：
 
 ```bash
 git clone https://github.com/CSYYYYXX/RuDock.git
 cd RuDock
 source build.sh
-cargo test --workspace
 cargo build --workspace
 ```
 
-产物位于 `target/debug/`：`wb.exe`、`wb-daemon.exe`、`wb-panel.exe`、`wb-hook-poc.exe`、`wb-mcp.exe`。
+### 启动 RuDock
 
-### 启动
+在 PowerShell 中执行：
 
 ```powershell
-.\target\debug\wb-daemon.exe
-.\target\debug\wb-panel.exe --wv2
-.\target\debug\wb-hook-poc.exe --panel
+.\target\debug\wb.exe daemon start
 ```
 
-生产运行建议让 daemon 管理 panel 和 hook；调试面板可加 `--no-autohide`，避免截图或调试时失焦自动关闭。
-
-## CLI / MCP
-
-CLI 输出 JSON 时保持机器可读，适合 shell、自动化和 Agent：
+首次启动后，在设置中开启 **接管 Win 键**。也可以使用 CLI：
 
 ```powershell
-wb daemon start
+.\target\debug\wb.exe settings win true
+.\target\debug\wb.exe settings autostart true
+```
+
+后台服务会管理面板、托盘图标和 Win 键监听。退出时可使用托盘菜单，或运行：
+
+```powershell
+.\target\debug\wb.exe daemon stop
+```
+
+## CLI 与 Agent
+
+RuDock 的 CLI 支持结构化 JSON 输出，可直接用于 PowerShell、自动化脚本和 Agent：
+
+```powershell
 wb search "发布" --json
 wb cmd list --json
 wb cmd run todo.add --arg title="检查发布" --json
 wb skill list --json
-wb events --after 0 --limit 50 --json
 ```
 
-MCP 配置可直接由 CLI 生成：
+需要接入 Claude、Cursor、Codex 或其他 MCP 客户端时，可以生成对应配置：
 
 ```powershell
 wb mcp config claude
@@ -107,11 +128,11 @@ wb mcp config codex
 wb mcp config generic
 ```
 
-`wb-mcp.exe` 支持 `tools/list`、`tools/call`、`resources/list`、`resources/read` 和 `list_changed` 通知。设置中可选择 MCP 写策略：沿用客户端确认、每次 elicitation 询问、或服务端只读。详细接入示例见 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)。
+完整命令、MCP 能力和接入方式见 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)。
 
-## 插件生态
+## 创建插件
 
-用 CLI 生成 Agent-ready 插件骨架：
+RuDock 插件可以同时提供面板命令、看板组件和 Agent Skill：
 
 ```powershell
 wb plugin create clock-card --name "Clock Card" --kind widget
@@ -121,50 +142,16 @@ wb plugin install .\clock-card.zip
 wb plugin approve clock-card
 ```
 
-一个插件可以同时声明：
+插件能力按需授权，授权与版本及内容指纹绑定。widget 运行在受限 iframe 中，只能调用 manifest 明确声明的接口。
 
-- `commands`：面板 `>`、AI 工具、CLI `cmd.run`
-- `widget`：主看板中的独立组件
-- `skills`：供 Agent 读取的 Markdown 能力说明
-- `permissions`：按能力最小化授权，授权绑定版本和内容 SHA-256
+## 安全说明
 
-完整 manifest、widget RPC 白名单、市场索引 schema 和安全边界见 [`plugins/README.md`](plugins/README.md)。
-
-## 架构速览
-
-```text
-Win 键 / 托盘 / CLI / MCP
-            │
-            ▼
-      wb-daemon（单一事实源）
-       │ JSON-RPC over Named Pipe
-       ├── wb-core：模型、存储、搜索、命令注册表、AI
-       ├── wb-plugin-host：发现、校验、权限、事务安装
-       ├── wb-panel：原生窗口 + WebView2 + DWM 玻璃
-       └── wb-mcp：stdio MCP + Skill resources
-```
-
-面板前端是单文件原生 HTML/CSS/JS，没有前端框架依赖。卡片使用 DWM 磨砂池与实时矩形对位，空隙保留桌面动态；动画遵循“冻结首帧 → 宿主亮窗 → 页面解冻”的握手，避免闪现。
-
-## 安全与边界
-
-- 未批准的带权限插件不会进入搜索、AI、MCP 或看板。
-- widget 默认 CSP 禁止外联，RPC 只允许显式白名单方法。
-- `process` 权限不是操作系统沙箱；获批 handler 以当前 Windows 用户权限运行，只批准你信任的代码。
-- Everything 只负责提升文件覆盖和速度；不可用时会回退到 Desktop、Documents、Downloads、OneDrive 的有界索引。
-- API 配置只应保存在本机，不要把 `api.json` 或任何密钥提交到仓库。
-
-## 文档
-
-- [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)：CLI、MCP、Claude、Cursor、Codex 接入
-- [`plugins/README.md`](plugins/README.md)：插件格式、Skill、widget、权限和市场
-- [`HANDOFF.md`](HANDOFF.md)：开发纪律、验证入口和当前交接状态
-- [`docs-assets/`](docs-assets/)：UI 与链路验证截图
-
-## 当前验证
-
-2026-08-22 基线：workspace **58 项单测通过**，`cargo build --workspace` 通过；应用索引在 daemon 启动阶段同步建立，本机快照 341 项。AI、MCP 动态目录、Everything 在线/离线降级、插件安装升级回滚和 Win 键生命周期均有本机验证记录。
+- 未批准的插件不会进入搜索、AI、MCP 或主看板。
+- widget 默认禁止外部网络访问，只能调用白名单 RPC。
+- 带有 `process` 权限的插件会以当前 Windows 用户权限运行，请只批准可信代码。
+- Everything 不可用时，文件搜索会自动回退到常用目录索引。
+- AI Key 和个人数据保存在本机，不应提交到 Git 仓库。
 
 ## License
 
-项目仍处于快速迭代阶段，许可证和正式发布包将在首个公开发行版前补齐。
+RuDock 仍处于 Preview 阶段，许可证将在首个公开发行版前确定。
