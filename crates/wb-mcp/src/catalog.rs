@@ -1,6 +1,7 @@
 //! Dynamic MCP tool and Skill catalogs backed by daemon plugin state.
 
-use super::DaemonClient;
+use super::{DaemonClient, EVENTS_RESOURCE_URI};
+use std::collections::HashSet;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -65,12 +66,14 @@ impl Snapshot {
 struct Changes {
     tools: bool,
     resources: bool,
+    prompts: bool,
 }
 
 fn changes(previous: &Snapshot, current: &Snapshot) -> Changes {
     Changes {
         tools: previous.tools != current.tools,
         resources: previous.skills != current.skills,
+        prompts: previous.skills != current.skills,
     }
 }
 
@@ -134,20 +137,50 @@ fn send_notifications<W: Write>(output: &JsonWriter<W>, changed: Changes) -> Res
             "method":"notifications/resources/list_changed"
         }))?;
     }
+    if changed.prompts {
+        output.send(&serde_json::json!({
+            "jsonrpc":"2.0",
+            "method":"notifications/prompts/list_changed"
+        }))?;
+    }
+    Ok(())
+}
+
+fn send_resource_updated<W: Write>(
+    output: &JsonWriter<W>,
+    subscriptions: &Arc<Mutex<HashSet<String>>>,
+    has_events: bool,
+) -> Result<(), String> {
+    if !has_events {
+        return Ok(());
+    }
+    let subscribed = subscriptions
+        .lock()
+        .map_err(|_| "resource subscription lock poisoned".to_string())?
+        .contains(EVENTS_RESOURCE_URI);
+    if subscribed {
+        output.send(&serde_json::json!({
+            "jsonrpc":"2.0",
+            "method":"notifications/resources/updated",
+            "params":{"uri":EVENTS_RESOURCE_URI}
+        }))?;
+    }
     Ok(())
 }
 
 pub(super) fn start<W: Write + Send + 'static>(
     output: JsonWriter<W>,
     initialized: Arc<AtomicBool>,
+    subscriptions: Arc<Mutex<HashSet<String>>>,
     seed: Option<MonitorSeed>,
 ) {
-    std::thread::spawn(move || monitor(output, initialized, seed));
+    std::thread::spawn(move || monitor(output, initialized, subscriptions, seed));
 }
 
 fn monitor<W: Write>(
     output: JsonWriter<W>,
     initialized: Arc<AtomicBool>,
+    subscriptions: Arc<Mutex<HashSet<String>>>,
     seed: Option<MonitorSeed>,
 ) {
     while !initialized.load(Ordering::Acquire) {
@@ -197,6 +230,13 @@ fn monitor<W: Write>(
                 .and_then(|value| value.as_u64())
                 .unwrap_or(after);
             cursor = Some(after);
+            let has_events = events
+                .get("events")
+                .and_then(|value| value.as_array())
+                .is_some_and(|items| !items.is_empty());
+            if send_resource_updated(&output, &subscriptions, has_events).is_err() {
+                return;
+            }
             let relevant = events
                 .get("events")
                 .and_then(|value| value.as_array())
@@ -239,7 +279,8 @@ mod tests {
             changes(&baseline, &tools),
             Changes {
                 tools: true,
-                resources: false
+                resources: false,
+                prompts: false,
             }
         );
         let skills = Snapshot {
@@ -250,7 +291,8 @@ mod tests {
             changes(&tools, &skills),
             Changes {
                 tools: false,
-                resources: true
+                resources: true,
+                prompts: true,
             }
         );
     }
@@ -276,6 +318,7 @@ mod tests {
             Changes {
                 tools: true,
                 resources: true,
+                prompts: true,
             },
         )
         .unwrap();
@@ -290,6 +333,26 @@ mod tests {
             messages[1]["method"],
             "notifications/resources/list_changed"
         );
+        assert_eq!(messages[2]["method"], "notifications/prompts/list_changed");
         assert!(messages.iter().all(|message| message.get("id").is_none()));
+    }
+
+    #[test]
+    fn emits_event_updates_only_for_subscribed_sessions() {
+        let subscriptions = Arc::new(Mutex::new(HashSet::new()));
+        let unsubscribed = JsonWriter::new(Vec::<u8>::new());
+        send_resource_updated(&unsubscribed, &subscriptions, true).unwrap();
+        assert!(unsubscribed.bytes().is_empty());
+
+        subscriptions.lock().unwrap().insert(EVENTS_RESOURCE_URI.into());
+        let subscribed = JsonWriter::new(Vec::<u8>::new());
+        send_resource_updated(&subscribed, &subscriptions, false).unwrap();
+        assert!(subscribed.bytes().is_empty());
+        send_resource_updated(&subscribed, &subscriptions, true).unwrap();
+        let message: serde_json::Value = serde_json::from_slice(
+            subscribed.bytes().strip_suffix(b"\n").unwrap()
+        ).unwrap();
+        assert_eq!(message["method"], "notifications/resources/updated");
+        assert_eq!(message["params"]["uri"], EVENTS_RESOURCE_URI);
     }
 }

@@ -70,7 +70,7 @@ E:\cctest\wb\
 - M1 内核 / M2 面板 / v11 磨砂 / M3 随手问流式 / M3.5 命令注册表+function calling / M4 插件系统。
 - M4 实测：`wb cmd run util.hello --arg name=WB` 中文无乱码；`?跟 Luna 打个招呼` → 模型自动调插件 `util_hello` → 确认；sandboxed widget + wbRpc 权限桥正常。
 - M5 第一阶段：插件 manifest 支持 `skills` 文档；daemon 暴露 `skill.list` / `skill.get`、`plugin.install` / `plugin.remove`，CLI 提供 `wb skill ...`、`wb plugin pack/install/remove`；ZIP/目录安装会校验、复制到用户目录并立即刷新 daemon 插件池；面板 AI 增加 `skill_list` / `skill_get` 工具。插件页每 3 秒检查清单 revision，新增/删除/替换挂件会自动重建 iframe，另有手动刷新按钮。已批准 widget 进入主看板，插件页只保留管理卡片；仓库内 `plugins/stopwatch` 是首个无权限官方 dogfood 组件。`hello-assistant` 已带 `SKILL.md` 示例。真实 CLI 安装/执行/卸载冒烟、主看板 widget 和插件管理页截图验证通过，workspace 测试全绿。
-- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。工具现携带标准 MCP annotations（只读/破坏性/幂等/开放世界），旧插件缺省按最保守风险，供客户端执行前展示和确认；面板 AI 的 OpenAI schema 不混入扩展字段。初始化声明 tool/resource `listChanged`，插件生命周期或开发态刷新真正改变目录后主动通知客户端重新枚举。真实 stdio 冒烟已验证 `search`、`todo_add`、`skill_get`、临时批准插件 `util_hello` 的标注，以及同一会话安装/批准/卸载时的双目录通知；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
+- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 tools、resources、prompts 和 resource subscriptions；内建/插件命令从 daemon `cmd.tools` 映射，Skill 保留 `wb://skill/<plugin>/<id>` resource，并同时映射为 `<plugin>__<skill>` MCP prompt。`wb://events/recent` 返回最近 50 条脱敏审计事件，订阅会话在新事件到达时收到 `notifications/resources/updated`。工具携带标准 MCP annotations（只读/破坏性/幂等/开放世界），旧插件缺省按最保守风险；初始化声明 tool/resource/prompt `listChanged`，插件目录变化主动通知客户端重新枚举。真实 stdio 冒烟已验证 `search`、`todo_add`、`skill_get`、临时批准插件 `util_hello` 的标注，以及同一会话安装/批准/卸载时的动态目录通知；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
@@ -82,25 +82,26 @@ E:\cctest\wb\
 - 开放插件市场：`plugins/market-index.schema.json` 固化 v1 静态索引契约，官方与社区使用同一格式；设置可持久化最多 8 个市场源，CLI/RPC 不传 `index` 时聚合来源并自动解析插件，重复 id 会要求显式选源。面板插件页是“已安装 / 市场”双视图，支持搜索、来源管理、安装、更新与用户插件卸载。市场版本强制 SemVer，远程索引下载限 2MB，远程条目只接受绝对 HTTP(S) 包地址；安装提交前同时核对 SHA-256、插件 id 和版本。真实 HTTP E2E 已验证持久化源、多源聚合和无 `--index` 安装；截图为 `m5-market-page.png`、`m5-market-sources.png`、`m5-plugins-installed-uninstall.png`。
 - MCP 服务端策略：设置页和 `wb settings mcp client|ask|read-only` 提供客户端确认、逐次 elicitation、强制只读三档。ask 仅接受 MCP 2025-06-18 且声明 elicitation 的客户端，并要求 `accept + confirm=true`；拒绝、无能力和业务错误统一为 `isError:true`，成功结果带 `structuredContent`。
 - 审计与事件：RPC 审计只保留 actor、方法、状态、错误码、耗时和参数形状，旧明文记录启动时一次性脱敏，最多保留 5000 条。`events.tail`、CLI `wb events`、MCP `events_tail` 支持 id 游标和最长 30 秒长轮询。真实 E2E 已验证游标跨连接唤醒，测试 secret 不进入 `wb audit`。
-- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 15 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 7 + wb-mcp 8，共 60 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。桌面组件另经 headless Chromium 在 1920×1080 与 1366×768 完成无隐私视觉回归，正式截图为 `docs-assets/desktop-widgets.png`。
+- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 15 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 7 + wb-mcp 14，共 66 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。桌面组件另经 headless Chromium 在 1920×1080 与 1366×768 完成无隐私视觉回归，正式截图为 `docs-assets/desktop-widgets.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
 
 - Start-Process 不带重定向会出控制台黑窗——生产路径（daemon panelctl 拉起）已用 CREATE_NO_WINDOW，无此问题。
 - 插件 widget 支持主看板自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
 - `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
-- `events.tail` 当前是基于审计 id 的长轮询，不是 daemon 主动推送；每个 MCP stdio 会话使用独立请求连接和目录监听连接，监听线程每 3 秒兜底复核开发态插件变化。
+- daemon 的 `events.tail` 仍是基于审计 id 的长轮询；MCP 已在其上提供标准 resource subscription，对已订阅会话推送资源失效通知，客户端收到后重新读取。每个 MCP stdio 会话使用独立请求连接和目录监听连接，监听线程每 3 秒兜底复核开发态插件变化。
+- 本轮按用户要求未启动 daemon；新增的 event resource subscription 与 prompts 已由 `wb-mcp` 单测覆盖，真实 stdio 订阅/目录通知联调待允许后台实例时补做。
 - MCP elicitation 已落地，但只覆盖经 `wb-mcp.exe` 进入的工具调用；CLI、面板 AI 和 widget 仍遵循各自既有权限边界。
 - Everything IPC 已接入，但全盘覆盖取决于用户的 Everything 索引配置和数据库状态；未运行/未就绪时只覆盖 WB 的用户常用目录降级索引。
 - 市场底层、持久化多源和可视化页面均已接通；正式官方索引地址尚未配置，必须等真实托管地址，不写占位 URL。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **Agent 生态深化**：MCP 动态工具/Skill 目录、写策略、elicitation 和脱敏事件长轮询已接通；下一步做安装级接入体验和更通用的事件订阅。
+1. **Agent 生态深化**：MCP 动态 tools/resources/prompts、写策略、elicitation 和脱敏事件订阅已接通；下一步做一键安装级接入、Agent profile 与更细粒度的事件过滤。
 2. **插件生态深化**：继续把天气、倒数日等内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
 3. **搜索体验深化**：来源、详情、文件动作与本地选择行为排序已完成；下一步可做图片/文本文件内容预览、结果分组折叠与钉到看板。
 4. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。
 
 ## 8. 上次会话最后在做的事
 
-完成独立桌面组件宿主：设置中选择常驻组件，Win 面板默认进入应用页，左侧保留全部组件，AI 问答可作为桌面组件使用。修复桌面页每 2 秒 `settings.get` 导致 `tasklist` 控制台闪现的问题：删除轮询、改为 daemon 主动事件刷新，并直接用 hook mutex 判断运行状态，不再创建查询进程。视觉上参考 `E:\cctest\deskbox-ref` 的稳定标题层级、薄描边和克制阴影，桌面模式使用 8px 圆角；新增 `#test-desktop` 脱敏 fixture 和 `docs-assets/desktop-widgets.png`。当前 `%APPDATA%\WB\settings.json` 的 `desktop_widgets` 已临时设为 `[]`，所有 RuDock 进程保持关闭；未经用户明确同意不要做实机启动测试。提交 `13c793f` 与本次桌面组件提交仍需推送 GitHub。
+继续深化 Agent / MCP 框架：增加 `wb://events/recent` 脱敏事件资源和标准 `resources/subscribe` / `unsubscribe`，仅对订阅会话发送 `notifications/resources/updated`；插件 Skills 同时暴露为 MCP prompts，并随 Skill 目录变化发送 `notifications/prompts/list_changed`。保留原 Skill resources 与只读工具兼容。当前所有 RuDock 进程保持关闭；未经用户明确同意不要做实机启动测试。

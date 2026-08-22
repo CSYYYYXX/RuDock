@@ -144,7 +144,7 @@ wb mcp config codex
 wb mcp config generic
 ```
 
-完整命令、MCP 能力和接入方式见 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)。
+插件 Skill 会自动成为 MCP prompt；Agent 还可以订阅不含正文内容的活动事件。完整命令、MCP 能力和接入方式见 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)。
 
 ## 创建插件
 

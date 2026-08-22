@@ -3,17 +3,21 @@
 //! The daemon remains the single source of truth. MCP only translates:
 //! - tools/list  <- daemon cmd.tools
 //! - tools/call  -> daemon cmd.run / skill.list / skill.get
-//! - resources   <- plugin Skills exposed by daemon
+//! - resources   <- plugin Skills and redacted daemon events
+//! - prompts     <- plugin Skills exposed as reusable Agent instructions
 
 mod catalog;
 
 use catalog::JsonWriter;
 use interprocess::local_socket::{prelude::*, GenericNamespaced};
 use interprocess::TryClone;
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use wb_core::protocol::{Request, Response};
+
+const EVENTS_RESOURCE_URI: &str = "wb://events/recent";
 
 struct DaemonClient {
     reader: BufReader<interprocess::local_socket::Stream>,
@@ -180,6 +184,7 @@ struct SessionState {
     initialize_seen: bool,
     catalog_started: bool,
     initialized: Arc<AtomicBool>,
+    subscriptions: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Default for SessionState {
@@ -191,6 +196,7 @@ impl Default for SessionState {
             initialize_seen: false,
             catalog_started: false,
             initialized: Arc::new(AtomicBool::new(false)),
+            subscriptions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
@@ -201,7 +207,7 @@ fn initialize_result(state: &mut SessionState, request: &serde_json::Value) -> s
     state.protocol_version = if modern { "2025-06-18" } else { "2024-11-05" }.into();
     state.elicitation = modern && request.pointer("/params/capabilities/elicitation").is_some();
     state.initialize_seen = true;
-    serde_json::json!({"protocolVersion":state.protocol_version,"capabilities":{"tools":{"listChanged":true},"resources":{"subscribe":false,"listChanged":true}},"serverInfo":{"name":"wb-mcp","version":env!("CARGO_PKG_VERSION")}})
+    serde_json::json!({"protocolVersion":state.protocol_version,"capabilities":{"tools":{"listChanged":true},"resources":{"subscribe":true,"listChanged":true},"prompts":{"listChanged":true}},"serverInfo":{"name":"wb-mcp","version":env!("CARGO_PKG_VERSION")}})
 }
 
 fn confirm_tool<R: BufRead, W: Write>(state: &mut SessionState, name: &str, title: &str, args: &serde_json::Value, reader: &mut R, output: &JsonWriter<W>) -> Result<bool, String> {
@@ -257,23 +263,106 @@ fn call_tool_with_policy<R: BufRead, W: Write>(client: &mut DaemonClient, state:
     Ok(call_tool(client, name, args).unwrap_or_else(tool_error))
 }
 
-fn resources_list(client: &mut DaemonClient) -> Result<serde_json::Value, String> {
-    let skills = client.call_read("skill.list", serde_json::json!({}))?;
+fn resources_from_skills(skills: &serde_json::Value) -> serde_json::Value {
     let empty = Vec::new();
-    let resources: Vec<serde_json::Value> = skills.as_array().unwrap_or(&empty).iter().filter_map(|s| {
+    let mut resources = vec![serde_json::json!({
+        "uri": EVENTS_RESOURCE_URI,
+        "name": "WB 最近活动",
+        "description": "最近 50 条脱敏审计事件，不包含笔记、剪贴板或 AI 对话正文。",
+        "mimeType": "application/json"
+    })];
+    resources.extend(skills.as_array().unwrap_or(&empty).iter().filter_map(|s| {
         let plugin = s.get("plugin")?.as_str()?;
         let id = s.get("id")?.as_str()?;
         Some(serde_json::json!({"uri":format!("wb://skill/{plugin}/{id}"),"name":s.get("name").cloned().unwrap_or(serde_json::json!(id)),"description":s.get("description").cloned().unwrap_or(serde_json::json!("")),"mimeType":"text/markdown"}))
-    }).collect();
-    Ok(serde_json::json!({"resources":resources}))
+    }));
+    serde_json::json!({"resources":resources})
+}
+
+fn resources_list(client: &mut DaemonClient) -> Result<serde_json::Value, String> {
+    let skills = client.call_read("skill.list", serde_json::json!({}))?;
+    Ok(resources_from_skills(&skills))
+}
+
+fn recent_events_contents(events: &serde_json::Value) -> serde_json::Value {
+    let text = serde_json::to_string_pretty(events).unwrap_or_else(|_| "[]".into());
+    serde_json::json!({"contents":[{"uri":EVENTS_RESOURCE_URI,"mimeType":"application/json","text":text}]})
 }
 
 fn resource_read(client: &mut DaemonClient, uri: &str) -> Result<serde_json::Value, String> {
+    if uri == EVENTS_RESOURCE_URI {
+        let events = client.call_read("audit.tail", serde_json::json!({"limit":50}))?;
+        return Ok(recent_events_contents(&events));
+    }
     let rest = uri.strip_prefix("wb://skill/").ok_or("unsupported resource URI")?;
     let (plugin, id) = rest.split_once('/').ok_or("invalid Skill resource URI")?;
     let value = client.call_read("skill.get", serde_json::json!({"plugin":plugin,"id":id}))?;
     let text = value.get("content").and_then(|v| v.as_str()).unwrap_or("");
     Ok(serde_json::json!({"contents":[{"uri":uri,"mimeType":"text/markdown","text":text}]}))
+}
+
+fn set_resource_subscription(state: &SessionState, uri: &str, subscribe: bool) -> Result<(), String> {
+    if uri != EVENTS_RESOURCE_URI {
+        return Err(format!("resource does not support subscriptions: {uri}"));
+    }
+    let mut subscriptions = state
+        .subscriptions
+        .lock()
+        .map_err(|_| "resource subscription lock poisoned".to_string())?;
+    if subscribe {
+        subscriptions.insert(uri.to_string());
+    } else {
+        subscriptions.remove(uri);
+    }
+    Ok(())
+}
+
+fn prompt_name(plugin: &str, skill: &str) -> String {
+    format!("{plugin}__{skill}")
+}
+
+fn prompts_from_skills(skills: &serde_json::Value) -> serde_json::Value {
+    let empty = Vec::new();
+    let prompts: Vec<serde_json::Value> = skills.as_array().unwrap_or(&empty).iter().filter_map(|skill| {
+        let plugin = skill.get("plugin")?.as_str()?;
+        let id = skill.get("id")?.as_str()?;
+        Some(serde_json::json!({
+            "name": prompt_name(plugin, id),
+            "description": skill.get("description").cloned().unwrap_or(serde_json::json!(""))
+        }))
+    }).collect();
+    serde_json::json!({"prompts":prompts})
+}
+
+fn prompts_list(client: &mut DaemonClient) -> Result<serde_json::Value, String> {
+    let skills = client.call_read("skill.list", serde_json::json!({}))?;
+    Ok(prompts_from_skills(&skills))
+}
+
+fn resolve_prompt(skills: &serde_json::Value, name: &str) -> Result<(String, String), String> {
+    skills.as_array()
+        .and_then(|items| items.iter().find_map(|skill| {
+            let plugin = skill.get("plugin")?.as_str()?;
+            let id = skill.get("id")?.as_str()?;
+            (prompt_name(plugin, id) == name).then(|| (plugin.to_string(), id.to_string()))
+        }))
+        .ok_or_else(|| format!("unknown prompt: {name}"))
+}
+
+fn prompt_contents(skill: &serde_json::Value) -> serde_json::Value {
+    let description = skill.get("description").cloned().unwrap_or(serde_json::json!(""));
+    let text = skill.get("content").and_then(|value| value.as_str()).unwrap_or("");
+    serde_json::json!({
+        "description": description,
+        "messages": [{"role":"user","content":{"type":"text","text":text}}]
+    })
+}
+
+fn prompt_get(client: &mut DaemonClient, name: &str) -> Result<serde_json::Value, String> {
+    let skills = client.call_read("skill.list", serde_json::json!({}))?;
+    let (plugin, id) = resolve_prompt(&skills, name)?;
+    let skill = client.call_read("skill.get", serde_json::json!({"plugin":plugin,"id":id}))?;
+    Ok(prompt_contents(&skill))
 }
 
 fn handle<R: BufRead, W: Write + Send + 'static>(client: &mut DaemonClient, state: &mut SessionState, request: serde_json::Value, reader: &mut R, output: &JsonWriter<W>) -> Option<serde_json::Value> {
@@ -290,7 +379,12 @@ fn handle<R: BufRead, W: Write + Send + 'static>(client: &mut DaemonClient, stat
             let value = initialize_result(state, &request);
             if !state.catalog_started {
                 let seed = catalog::MonitorSeed::load(client).ok();
-                catalog::start(output.clone(), Arc::clone(&state.initialized), seed);
+                catalog::start(
+                    output.clone(),
+                    Arc::clone(&state.initialized),
+                    Arc::clone(&state.subscriptions),
+                    seed,
+                );
                 state.catalog_started = true;
             }
             Ok(value)
@@ -306,6 +400,19 @@ fn handle<R: BufRead, W: Write + Send + 'static>(client: &mut DaemonClient, stat
         "resources/read" => {
             let uri = request.pointer("/params/uri").and_then(|v| v.as_str()).ok_or_else(|| "missing resource uri".to_string());
             uri.and_then(|u| resource_read(client, u))
+        }
+        "resources/subscribe" => {
+            let uri = request.pointer("/params/uri").and_then(|v| v.as_str()).ok_or_else(|| "missing resource uri".to_string());
+            uri.and_then(|uri| set_resource_subscription(state, uri, true)).map(|_| serde_json::json!({}))
+        }
+        "resources/unsubscribe" => {
+            let uri = request.pointer("/params/uri").and_then(|v| v.as_str()).ok_or_else(|| "missing resource uri".to_string());
+            uri.and_then(|uri| set_resource_subscription(state, uri, false)).map(|_| serde_json::json!({}))
+        }
+        "prompts/list" => prompts_list(client),
+        "prompts/get" => {
+            let name = request.pointer("/params/name").and_then(|v| v.as_str()).ok_or_else(|| "missing prompt name".to_string());
+            name.and_then(|name| prompt_get(client, name))
         }
         _ => Err(format!("method not found: {method}")),
     };
@@ -457,7 +564,66 @@ mod tests {
         );
         assert_eq!(result["capabilities"]["tools"]["listChanged"], true);
         assert_eq!(result["capabilities"]["resources"]["listChanged"], true);
+        assert_eq!(result["capabilities"]["resources"]["subscribe"], true);
+        assert_eq!(result["capabilities"]["prompts"]["listChanged"], true);
         assert!(state.initialize_seen);
         assert!(state.elicitation);
+    }
+
+    #[test]
+    fn lists_event_resource_alongside_skill_resources() {
+        let result = resources_from_skills(&serde_json::json!([{
+            "plugin":"hello-assistant", "id":"greeting", "name":"Greeting",
+            "description":"How to greet"
+        }]));
+        assert_eq!(result["resources"][0]["uri"], EVENTS_RESOURCE_URI);
+        assert_eq!(result["resources"][0]["mimeType"], "application/json");
+        assert_eq!(result["resources"][1]["uri"], "wb://skill/hello-assistant/greeting");
+    }
+
+    #[test]
+    fn renders_recent_events_as_json_resource() {
+        let result = recent_events_contents(&serde_json::json!([{
+            "id":9, "action":"todo.add", "detail":{"params":{"title":{"type":"string","length":6}}}
+        }]));
+        assert_eq!(result["contents"][0]["uri"], EVENTS_RESOURCE_URI);
+        assert_eq!(result["contents"][0]["mimeType"], "application/json");
+        let parsed: serde_json::Value = serde_json::from_str(result["contents"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed[0]["id"], 9);
+    }
+
+    #[test]
+    fn subscribes_only_to_the_event_resource() {
+        let state = SessionState::default();
+        set_resource_subscription(&state, EVENTS_RESOURCE_URI, true).unwrap();
+        assert!(state.subscriptions.lock().unwrap().contains(EVENTS_RESOURCE_URI));
+        set_resource_subscription(&state, EVENTS_RESOURCE_URI, false).unwrap();
+        assert!(state.subscriptions.lock().unwrap().is_empty());
+        assert!(set_resource_subscription(&state, "wb://skill/demo/usage", true).is_err());
+    }
+
+    #[test]
+    fn maps_skills_to_stable_prompts_without_reverse_parsing() {
+        let skills = serde_json::json!([{
+            "plugin":"hello-assistant", "id":"greeting_v2", "description":"Greeting workflow"
+        }]);
+        let result = prompts_from_skills(&skills);
+        assert_eq!(result["prompts"][0]["name"], "hello-assistant__greeting_v2");
+        assert_eq!(
+            resolve_prompt(&skills, "hello-assistant__greeting_v2").unwrap(),
+            ("hello-assistant".to_string(), "greeting_v2".to_string())
+        );
+        assert!(resolve_prompt(&skills, "hello-assistant__missing").is_err());
+    }
+
+    #[test]
+    fn renders_skill_content_as_prompt_message() {
+        let result = prompt_contents(&serde_json::json!({
+            "description":"Greeting workflow", "content":"# Greeting\n\nUse `util.hello`."
+        }));
+        assert_eq!(result["description"], "Greeting workflow");
+        assert_eq!(result["messages"][0]["role"], "user");
+        assert_eq!(result["messages"][0]["content"]["type"], "text");
+        assert!(result["messages"][0]["content"]["text"].as_str().unwrap().contains("util.hello"));
     }
 }
