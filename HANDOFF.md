@@ -113,4 +113,4 @@ E:\cctest\wb\
 
 ## 8. 上次会话最后在做的事
 
-完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证、GitHub Release workflow、`wb backup create/restore` 数据备份恢复和 `wb diagnostics create` 脱敏诊断导出。面向用户的 README 已改为下载、启动、校验、升级、备份、恢复、诊断和卸载说明。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`7f100fc`、`92cf822`、`0efa9d9`、`0efa9d9`。下一步补安装器、升级检查和首次启动引导，再把便携目录启动、多语言、组件响应式和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。
+完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证、GitHub Release workflow、`wb backup create/restore` 数据备份恢复和 `wb diagnostics create` 脱敏诊断导出。面向用户的 README 已改为下载、启动、校验、升级、备份、恢复、诊断和卸载说明。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`7f100fc`、`92cf822`、`0efa9d9`、`320beaf`、`b72773b`。下一步补安装器、升级检查和首次启动引导，再把便携目录启动、多语言、组件响应式和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。
