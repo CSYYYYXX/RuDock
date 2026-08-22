@@ -1,0 +1,62 @@
+<div class="stopwatch">
+  <div class="time" id="time">00:00.0</div>
+  <div class="controls">
+    <button id="toggle" title="开始" aria-label="开始">▶</button>
+    <button id="reset" title="重置" aria-label="重置">↺</button>
+  </div>
+</div>
+<style>
+  .stopwatch { height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; padding: 4px 16px 13px; }
+  .time { color: #f4f7ff; font-size: 29px; font-weight: 300; line-height: 1;
+    font-variant-numeric: tabular-nums; }
+  .controls { display: flex; gap: 8px; }
+  button { width: 36px; height: 29px; border: 1px solid rgba(255,255,255,.12);
+    border-radius: 7px; background: rgba(255,255,255,.08); color: #eaf0ff;
+    font-size: 12px; line-height: 1; cursor: pointer; }
+  button:hover { background: rgba(76,194,255,.18); border-color: rgba(76,194,255,.28); }
+  button:focus-visible { outline: 2px solid rgba(76,194,255,.65); outline-offset: 1px; }
+</style>
+<script>
+  (function () {
+    var startedAt = 0, elapsed = 0, frame = 0;
+    var time = document.getElementById('time');
+    var toggle = document.getElementById('toggle');
+    var reset = document.getElementById('reset');
+    function format(ms) {
+      var minutes = Math.floor(ms / 60000);
+      var seconds = Math.floor(ms / 1000) % 60;
+      var tenths = Math.floor(ms / 100) % 10;
+      return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0') + '.' + tenths;
+    }
+    function draw() {
+      time.textContent = format(elapsed + (startedAt ? performance.now() - startedAt : 0));
+      if (startedAt) frame = requestAnimationFrame(draw);
+    }
+    toggle.addEventListener('click', function () {
+      if (startedAt) {
+        elapsed += performance.now() - startedAt;
+        startedAt = 0;
+        cancelAnimationFrame(frame);
+        toggle.textContent = '▶';
+        toggle.title = '继续';
+        toggle.setAttribute('aria-label', '继续');
+      } else {
+        startedAt = performance.now();
+        frame = requestAnimationFrame(draw);
+        toggle.textContent = 'Ⅱ';
+        toggle.title = '暂停';
+        toggle.setAttribute('aria-label', '暂停');
+      }
+    });
+    reset.addEventListener('click', function () {
+      startedAt = 0;
+      elapsed = 0;
+      cancelAnimationFrame(frame);
+      toggle.textContent = '▶';
+      toggle.title = '开始';
+      toggle.setAttribute('aria-label', '开始');
+      time.textContent = '00:00.0';
+    });
+  })();
+</script>

@@ -92,7 +92,7 @@ manifest 只接受以下权限；未知项和重复项都会使插件加载失�
 | `process` | 启动插件 handler；所有命令插件必须声明 |
 | `system` | 预留给高风险系统操作；当前 widget RPC 不开放 |
 
-带权限的插件安装后默认处于待批准状态，不会进入普通搜索、命令列表、AI/MCP 工具、Skill 或插件页挂件，也不能执行命令。可在面板插件页批准，或使用 CLI：
+带权限的插件安装后默认处于待批准状态，不会进入普通搜索、命令列表、AI/MCP 工具、Skill 或主看板 widget，也不能执行命令。可在面板插件页批准，或使用 CLI：
 
 ```text
 wb plugin approve hello-assistant
@@ -123,10 +123,12 @@ PowerShell 最小示例见 `hello-assistant/main.ps1`。
 
 ## widget 契约（面板挂件）
 
-- 单文件 HTML（内联 `<style>`/`<script>`），以 sandboxed iframe 装进面板第三页「插件」页
+- 单文件 HTML（内联 `<style>`/`<script>`），以 sandboxed iframe 装进主看板；插件页只展示安装、批准、撤销和卸载状态
 - 内置桥：页面里可调用 `await wbRpc('clip.get', { last: 5 })`；父页会把真实插件身份交给 daemon 权限网关
 - 背景必须透明（卡片玻璃底由面板提供）；字体/颜色参考 `clip-insight/widget.html`
 - 大小上限 256KB；默认 CSP 禁止外联，只有声明并获批 `network` 后才开放 HTTP(S) connect/image
+
+`widget.span` 使用主看板的 6 列网格（1-4 列）。widget 获批后会和内置组件一起参与显隐定制；撤销批准或插件内容指纹变化后，组件立即从主看板移除，重新批准当前版本才会恢复。
 
 widget RPC 是显式白名单，不是 daemon 任意方法透传：
 
@@ -147,7 +149,7 @@ widget RPC 是显式白名单，不是 daemon 任意方法透传：
 
 AI 侧只能调用 manifest 里显式带 `ai` 的命令；高风险命令不要写 `ai` 段。命令/工具 id 还必须在全局注册表中唯一，插件不能覆盖内建命令、内建 AI 工具、`skill_list` / `skill_get` 或其他插件。
 
-改动插件后：`wb plugin reload`。命令池会立即刷新，面板每 3 秒检查 revision，也可在插件页手动刷新；内容指纹变化后需重新批准。
+改动插件后：`wb plugin reload`。命令池会立即刷新，面板每 3 秒检查 revision，也可在插件页手动刷新；内容指纹变化后需重新批准。仓库内 [`stopwatch`](stopwatch/) 是首个无权限官方 widget，用于验证“插件组件进入主看板”的完整链路。
 
 ## 打包与安装
 

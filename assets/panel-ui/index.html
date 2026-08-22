@@ -38,18 +38,46 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .spot-wrap { position: absolute; left: 0; right: 0; top: 0; height: 26%;
   display: flex; justify-content: center; align-items: center; pointer-events: none; z-index: 5; }
 .spot { pointer-events: auto; width: min(640px, 44vw); }
-.spot-box { display: flex; align-items: center; gap: 14px;
+.spot-box { position: relative; isolation: isolate; display: flex; align-items: center; gap: 14px;
   background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke); border-radius: 18px; padding: 15px 20px;
   box-shadow: 0 20px 70px rgba(0,0,0,.55); }
+.spot-box::before { content: ""; position: absolute; z-index: 2; pointer-events: none; inset: -1px;
+  padding: 1px; border-radius: inherit; opacity: .48;
+  background: conic-gradient(from var(--spot-angle),
+    transparent 0deg 34deg, rgba(126,226,255,.92) 52deg, rgba(255,255,255,.72) 61deg,
+    transparent 82deg 188deg, rgba(81,177,255,.36) 210deg, transparent 238deg 312deg,
+    rgba(115,222,255,.44) 332deg, transparent 350deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: spotCircuit 8s linear infinite; transition: opacity .28s ease; }
+.spot-box::after { content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -5px;
+  border-radius: 22px; opacity: 0; filter: blur(10px);
+  background: conic-gradient(from var(--spot-angle), transparent 8%, rgba(76,194,255,.28) 18%,
+    transparent 31% 65%, rgba(139,124,255,.2) 76%, transparent 88%);
+  animation: spotCircuit 8s linear infinite; transition: opacity .3s ease; }
 .spot-box .ic { color: var(--fg-3); font-size: 20px; flex: none; }
 #q { flex: 1; min-width: 0; background: transparent; border: none; outline: none;
   color: var(--fg); font-size: 20px; font-weight: 300; caret-color: var(--accent); }
 #q::placeholder { color: var(--fg-4); }
 .spot-box .key { flex: none; font-size: 11px; color: var(--fg-3); border: 1px solid var(--stroke);
   border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; }
-.spot-box:focus-within { border-color: rgba(76,194,255,.55);
-  box-shadow: 0 20px 70px rgba(0,0,0,.55), 0 0 0 3px rgba(76,194,255,.16); }
+.spot-box:focus-within { border-color: rgba(76,194,255,.32);
+  box-shadow: 0 20px 70px rgba(0,0,0,.55), 0 0 0 3px rgba(76,194,255,.08); }
+.spot-box:focus-within::before { opacity: .96; animation-duration: 4.8s; }
+.spot-box:focus-within::after { opacity: .72; animation-duration: 4.8s; }
+.spot-box.ai-active::before { opacity: 1; animation-duration: 3.2s;
+  background: conic-gradient(from var(--spot-angle),
+    transparent 0deg 24deg, rgba(94,226,255,.98) 44deg, #fff 54deg,
+    rgba(136,121,255,.9) 64deg, transparent 88deg 170deg,
+    rgba(96,177,255,.46) 194deg, transparent 222deg 292deg,
+    rgba(173,121,255,.7) 314deg, rgba(103,225,255,.88) 332deg, transparent 354deg); }
+.spot-box.ai-active::after { opacity: .9; animation-name: spotCircuit, spotBreathe;
+  animation-timing-function: linear, ease-in-out; animation-iteration-count: infinite;
+  animation-duration: 3.2s, 2.4s; }
+@property --spot-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+@keyframes spotCircuit { to { --spot-angle: 360deg; } }
+@keyframes spotBreathe { 0%, 100% { filter: blur(10px); } 50% { filter: blur(13px); } }
 #results { display: none; margin-top: 10px; padding: 6px;
   background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke); border-radius: 16px; box-shadow: 0 20px 70px rgba(0,0,0,.55);
@@ -80,7 +108,7 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 /* ---------- 组件马赛克：铺满剩余区域，无滚动 ---------- */
 .grid { height: 100%; display: grid; gap: 12px;
   grid-template-columns: repeat(6, 1fr);
-  grid-template-rows: 1.05fr 0.95fr 1.35fr 1fr; }
+  grid-template-rows: 1.25fr .9fr 1.25fr 1fr; }
 .w.w-hidden { display: none; }
 .w { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke-soft); border-radius: var(--r-card);
@@ -94,7 +122,7 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .w > .hd .right { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--fg-3); }
 .w > .hd .right.link { cursor: pointer; }
 .w > .hd .right.link:hover { color: var(--fg); }
-.w > .bd { flex: 1; min-height: 0; padding: 4px 18px 16px; overflow: hidden; }
+.w > .bd { flex: 1; min-height: 0; padding: 8px 18px 18px; overflow: hidden; }
 .hairline { flex: none; height: 1px; background: var(--stroke-soft); margin: 0 18px; }
 
 /* clock */
@@ -104,12 +132,15 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #w-clock .date { font-size: 12.5px; color: var(--fg-3); margin-top: 4px; }
 
 /* calendar */
-.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; font-size: 11px; text-align: center; }
-.cal .hd2 { color: var(--fg-4); font-size: 10px; padding: 2px 0; }
-.cal .d { padding: 2.5px 0; border-radius: 6px; color: var(--fg-2); }
+.cal { display: grid; flex: 1 1 auto; min-height: 0; width: 100%;
+  grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr);
+  align-content: center; column-gap: 1px; row-gap: 0; font-size: 11px; line-height: 1; text-align: center; }
+.cal .hd2 { color: var(--fg-4); font-size: 10px; padding: 2px 0; min-height: 0; }
+.cal .d { min-height: 0; padding: 2px 0; border-radius: 6px; color: var(--fg-2); }
 .cal .d.cur { background: var(--accent); color: #00345c; font-weight: 700; }
 .cal .d.blank { visibility: hidden; }
 .cal-title { font-size: 12px; color: var(--fg-2); margin-bottom: 5px; font-weight: 600; }
+#w-cal .bd { display: flex; flex-direction: column; justify-content: center; }
 
 /* world clock */
 .wcrow { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 2px; }
@@ -118,17 +149,43 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .wcrow b { font-size: 15px; font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
 
 /* weather */
-#w-weather .bd { display: flex; flex-direction: column; justify-content: center; }
-#w-weather .top { display: flex; align-items: center; gap: 10px; }
-#w-weather .big { font-size: 32px; font-weight: 300; }
-#w-weather .wicon { font-size: 28px; line-height: 1; }
-#w-weather .cond { font-size: 12px; color: var(--fg-3); line-height: 1.4; }
-#w-weather .meta { font-size: 11px; color: var(--fg-3); margin-top: 5px; }
-#w-weather .hourly { display: flex; justify-content: space-between; margin-top: 8px;
-  border-top: 1px solid var(--stroke-soft); padding-top: 7px; }
-#w-weather .h { text-align: center; font-size: 10px; color: var(--fg-4); min-width: 0; }
+#w-weather .bd { display: grid; grid-template-rows: auto auto minmax(0, 1fr); align-content: center;
+  gap: 5px; }
+#w-weather .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#w-weather .big { flex: none; font-size: 32px; font-weight: 300; }
+#w-weather .wicon { width: 30px; height: 36px; flex: none; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; font-size: 28px; line-height: 1; }
+#w-weather .cond { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; color: var(--fg-3); line-height: 1.4; }
+#w-weather .meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: var(--fg-3); }
+#w-weather .hourly { display: flex; align-items: center; justify-content: space-between; min-height: 0;
+  overflow: hidden; margin-top: 1px; border-top: 1px solid var(--stroke-soft); padding-top: 7px; }
+#w-weather .h { flex: 1 1 0; min-width: 0; overflow: hidden; text-align: center; font-size: 10px; color: var(--fg-4); }
+#w-weather .h > div:first-child, #w-weather .h .t2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #w-weather .h .i { font-size: 13px; }
 #w-weather .h .t2 { margin-top: 2px; color: var(--fg-3); }
+
+/* 矮窗口也要保持信息完整：压缩装饰间距，不把正文裁到卡片外。 */
+@media (max-height: 900px) {
+  .w > .hd { padding: 11px 16px 6px; }
+  .w > .bd { padding: 6px 16px 12px; }
+  .hairline { margin: 0 16px; }
+  #w-clock .time { font-size: 40px; }
+  #w-weather .big { font-size: 28px; }
+  #w-weather .hourly { padding-top: 5px; }
+  .cal .d { padding-top: 0; padding-bottom: 0; }
+}
+@media (max-height: 760px) {
+  .grid { gap: 9px; grid-template-rows: 1.35fr .88fr 1.18fr .92fr; }
+  .w > .bd { padding-top: 4px; padding-bottom: 6px; }
+  #w-weather .hourly { display: none; }
+  #w-weather .bd { grid-template-rows: auto auto; align-content: center; }
+  #w-cal .cal-title { margin-bottom: 2px; font-size: 11px; }
+  .cal { flex: none; height: 84px; grid-template-rows: repeat(7, 12px); grid-auto-rows: unset;
+    align-self: center; font-size: 10px; line-height: 1; }
+  .cal .hd2 { font-size: 9px; padding: 0; }
+}
 
 /* music */
 #w-media .bd { display: flex; align-items: center; }
@@ -172,11 +229,6 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .chip { font-size: 12px; padding: 5px 14px; border-radius: var(--r-ctl); background: rgba(255,255,255,.08);
   border: 1px solid var(--stroke-soft); color: var(--fg); cursor: pointer; white-space: nowrap; }
 .chip:hover { background: var(--active); }
-
-/* stopwatch */
-#w-stop .bd { display: flex; flex-direction: column; justify-content: center; }
-#w-stop .t { font-size: 28px; font-weight: 300; text-align: center; font-variant-numeric: tabular-nums; }
-#w-stop .btns { display: flex; gap: 8px; margin-top: 9px; justify-content: center; }
 
 /* countdown */
 #w-cdown .bd { display: flex; flex-direction: column; justify-content: center; text-align: center; }
@@ -275,7 +327,6 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #page-plugins .approval button:hover, #page-plugins .grant-btn:hover { background: rgba(76,194,255,.25); }
 #page-plugins .grant-btn { margin: -2px 0 0 0; padding: 3px 8px; background: rgba(255,255,255,.06);
   color: var(--fg-3); }
-#page-plugins .plugin-card-actions { margin-left: auto; display: flex; gap: 5px; }
 #page-plugins .ph-empty { position: absolute; inset: 0; display: none; flex-direction: column; gap: 10px;
   align-items: center; justify-content: center; color: var(--fg-3); font-size: 14px; }
 #page-plugins .ph-empty .sub { font-size: 12px; opacity: .8; }
@@ -475,7 +526,8 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 @media (prefers-reduced-motion: reduce) {
   .stage.enter .board .w, .stage.enter #page-plugins .w, .stage.enter .spot,
   .stage.exit .board .w, .stage.exit #page-plugins .w, .stage.exit .spot,
-  #results.fresh > *, #page-apps.fresh .dockgrid > * { animation: none !important; }
+  #results.fresh > *, #page-apps.fresh .dockgrid > *,
+  .spot-box::before, .spot-box::after { animation: none !important; }
 }
 
 #toast { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%);
@@ -502,26 +554,26 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   <div class="page" id="page-widgets">
   <div class="board" id="board"><div class="grid">
 
-    <div class="w span2" id="w-clock"><div class="bd"><div class="time">--:--</div><div class="date"></div></div></div>
+    <div class="w span2" id="w-clock"><div class="hd">◷ 时间</div><div class="hairline"></div><div class="bd"><div class="time">--:--</div><div class="date"></div></div></div>
 
-    <div class="w span2" id="w-weather"><div class="bd">
+    <div class="w span2" id="w-weather"><div class="hd">☀ 天气<span class="right">实时</span></div><div class="hairline"></div><div class="bd">
       <div class="top"><span class="wicon">·</span><div class="big">--°</div><div class="cond">获取中…</div></div>
       <div class="meta"></div>
       <div class="hourly"></div>
     </div></div>
 
-    <div class="w" id="w-cal"><div class="bd">
+    <div class="w" id="w-cal"><div class="hd">▦ 日历</div><div class="hairline"></div><div class="bd">
       <div class="cal-title"></div>
       <div class="cal"></div>
     </div></div>
 
-    <div class="w" id="w-world"><div class="bd">
+    <div class="w" id="w-world"><div class="hd">◎ 世界时钟</div><div class="hairline"></div><div class="bd">
       <div class="wcrow"><span>北京</span><b class="t"></b></div>
       <div class="wcrow"><span>纽约</span><b class="t"></b></div>
       <div class="wcrow"><span>伦敦</span><b class="t"></b></div>
     </div></div>
 
-    <div class="w span2" id="w-media"><div class="bd">
+    <div class="w span2" id="w-media"><div class="hd">♫ 正在播放</div><div class="hairline"></div><div class="bd">
       <div class="row">
         <div class="art">♪</div>
         <div class="info"><div class="tt">未在播放</div><div class="ar">打开网易云 / QQ 音乐试试</div></div>
@@ -533,13 +585,13 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
       </div>
     </div></div>
 
-    <div class="w" id="w-sys"><div class="bd">
+    <div class="w" id="w-sys"><div class="hd">◫ 系统状态</div><div class="hairline"></div><div class="bd">
       <div class="meter" id="m-cpu"><div class="lab"><span>CPU</span><span class="v">--%</span></div><div class="bar"><div class="fill" style="width:0%"></div></div></div>
       <div class="meter" id="m-mem"><div class="lab"><span>内存</span><span class="v">--%</span></div><div class="bar"><div class="fill" style="width:0%"></div></div></div>
       <div class="meter" id="m-bat" style="display:none"><div class="lab"><span>电池</span><span class="v">--</span></div><div class="bar"><div class="fill" style="width:0%"></div></div></div>
     </div></div>
 
-    <div class="w" id="w-pomo"><div class="bd">
+    <div class="w" id="w-pomo"><div class="hd">◉ 专注计时</div><div class="hairline"></div><div class="bd">
       <div class="t">25:00</div>
       <div class="btns">
         <button class="chip primary" data-p="start">开始</button>
@@ -547,7 +599,7 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
       </div>
     </div></div>
 
-    <div class="w" id="w-calc"><div class="bd">
+    <div class="w" id="w-calc"><div class="hd">= 计算器</div><div class="hairline"></div><div class="bd">
       <input placeholder="= (1+2)*3" spellcheck="false">
       <div class="ans"></div>
     </div></div>
@@ -594,14 +646,6 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
       <div class="hairline"></div>
       <div class="bd"><div class="list"></div></div>
     </div>
-
-    <div class="w span2" id="w-stop"><div class="hd">⏱ 秒表</div><div class="hairline"></div><div class="bd">
-      <div class="t">00:00.0</div>
-      <div class="btns">
-        <button class="chip primary" data-s="start">开始</button>
-        <button class="chip" data-s="reset">重置</button>
-      </div>
-    </div></div>
 
     <div class="w" id="w-cdown"><div class="hd">📅 倒数日</div><div class="hairline"></div><div class="bd">
       <div class="days">--<small>天</small></div>
@@ -694,11 +738,15 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 (function () {
 'use strict';
 const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
 const q = $('#q');
 const stage = $('#stage');
+let initialQuery = '';
 
 const hasBridge = !!(window.chrome && window.chrome.webview);
 function send(msg) { if (hasBridge) window.chrome.webview.postMessage(msg); }
+window.addEventListener('error', ev => send({ kind: 'selftest', detail: 'js error ' + ev.message + ' @' + ev.lineno + ':' + ev.colno, ok: false }));
+window.addEventListener('unhandledrejection', ev => send({ kind: 'selftest', detail: 'promise error ' + ev.reason, ok: false }));
 
 let rpcSeq = 0; const rpcPending = new Map();
 function rpc(method, params, timeoutMs) {
@@ -1251,6 +1299,7 @@ function tryPrefix(text) {
 
 function doQuery() {
   const text = q.value.trim();
+  $('.spot-box').classList.toggle('ai-active', text.startsWith('?'));
   const id = ++querySeq;
   aiMode = false;
   if (!text) { listEl.classList.remove('on'); results = []; aiStreaming = false; return; }
@@ -1310,6 +1359,7 @@ function showPanel() {
   hiding = false;
   stage.classList.remove('exit');
   q.value = ''; listEl.classList.remove('on');
+  $('.spot-box').classList.remove('ai-active');
   aiMode = false; aiStreaming = false;
   $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on'); $('#marketSourceView').classList.remove('on');
   if (editMode) $('#apps-edit').click();
@@ -1434,6 +1484,14 @@ if (hasBridge) {
       if (location.hash === '#view=market') setTimeout(() => { setPage(2); setPluginView('market'); }, 350);
       // 测试钩子：#view=market-sources 打开市场源管理层
       if (location.hash === '#view=market-sources') setTimeout(() => { setPage(2); setPluginView('market'); openMarketSources(); }, 350);
+      // 自测钩子：正式 widget 必须进入主看板，插件页只保留管理卡片。
+      if (location.href.includes('test-plugin-widget')) setTimeout(() => {
+        const boardWidget = $('#board #plugin-stopwatch iframe.pluginw');
+        const managementWidget = $('#pgrid #plugin-stopwatch');
+        document.querySelectorAll('#board .w:not(#plugin-stopwatch)').forEach(el => el.classList.add('w-hidden'));
+        reportRects();
+        send({ kind: 'selftest', detail: 'plugin widget on dashboard', ok: !!boardWidget && !managementWidget });
+      }, 4000);
       // 测试钩子：#test-ai 自动发一次 AI 提问验证链路
       if (location.hash === '#test-ai') setTimeout(() => {
         q.value = '?用一句话证明你在线，并说出你的模型名';
@@ -1489,7 +1547,10 @@ function showToast(text) {
   toastTimer = setTimeout(() => el.style.display = 'none', 2000);
 }
 
-q.addEventListener('input', () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(doQuery, 90); });
+q.addEventListener('input', () => {
+  $('.spot-box').classList.toggle('ai-active', q.value.trim().startsWith('?'));
+  clearTimeout(debounceTimer); debounceTimer = setTimeout(doQuery, 90);
+});
 window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') {
     if ($('#folderView').classList.contains('on')) $('#folderView').classList.remove('on');
@@ -1529,11 +1590,15 @@ const WIDGETS = [
   ['w-clock', '时钟'], ['w-weather', '天气'], ['w-cal', '日历'], ['w-world', '世界时钟'],
   ['w-media', '音乐'], ['w-sys', '系统状态'], ['w-pomo', '番茄钟'], ['w-calc', '计算器'],
   ['w-clip', '剪贴板'], ['w-todo', '待办'], ['w-note', '随手记'], ['w-quick', '快捷启动'],
-  ['w-recent', '最近文件'], ['w-stop', '秒表'], ['w-cdown', '倒数日'], ['w-htk', '一言'],
+  ['w-recent', '最近文件'], ['w-cdown', '倒数日'], ['w-htk', '一言'],
 ];
 const WCFG_KEY = 'wb.hiddenWidgets.v1';
 let hiddenWidgets = [];
 try { hiddenWidgets = JSON.parse(localStorage.getItem(WCFG_KEY) || '[]'); } catch {}
+if (hiddenWidgets.includes('w-stop')) {
+  hiddenWidgets = [...new Set(hiddenWidgets.map(id => id === 'w-stop' ? 'plugin-stopwatch' : id))];
+  localStorage.setItem(WCFG_KEY, JSON.stringify(hiddenWidgets));
+}
 function applyWidgetVisibility() {
   WIDGETS.forEach(([id]) => {
     const el = document.getElementById(id);
@@ -1586,7 +1651,7 @@ $$('#cfg-mcp-policy button').forEach(button => button.addEventListener('click', 
 $('#cfgClose').addEventListener('click', () => $('#cfgView').classList.remove('on'));
 $('#cfgView').addEventListener('click', ev => { if (ev.target.id === 'cfgView') ev.currentTarget.classList.remove('on'); });
 
-/* ---------- 插件组件（M4）：第三页加载社区插件的 widget ----------
+/* ---------- 插件组件：主看板渲染 widget，第三页只负责插件管理 ----------
    隔离模型：sandboxed iframe（allow-scripts，无同源）+ srcdoc 注入 wbRpc 桥。
    插件页面内 wbRpc(method, params) → postMessage 给父页 → 父页走 chrome.webview rpc → 回传。 */
 const PLUGIN_SHIM = '<' + 'script>(function(){var seq=0;var pend=new Map();'
@@ -1697,14 +1762,14 @@ function loadPluginWidgets(force) {
       if (remove) remove.addEventListener('click', () => uninstallPlugin(p, remove));
       $('#pgrid').appendChild(card);
     });
-    const managedOnly = list.filter(p => p.approved && !p.widget);
-    managedOnly.forEach(p => {
+    const approvedPlugins = list.filter(p => p.approved);
+    approvedPlugins.forEach(p => {
       const card = document.createElement('div');
       card.className = 'approval';
       const permissions = p.permissions || [];
       card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
         + `<div class="desc">${esc(p.description || '插件能力已加载')}</div>`
-        + `<div class="perms">${permissions.length ? permissions.map(x => `<span class="perm">${esc(x)}</span>`).join('') : '<span class="perm">无需权限</span>'}</div>`
+        + `<div class="perms">${p.widget ? '<span class="perm">主看板组件</span>' : ''}${permissions.length ? permissions.map(x => `<span class="perm">${esc(x)}</span>`).join('') : '<span class="perm">无需权限</span>'}</div>`
         + `<div class="plugin-actions">${permissions.length ? '<button class="revoke-btn">撤销权限</button>' : ''}${p.user_installed ? '<button class="remove-btn">卸载</button>' : ''}</div>`;
       const revoke = card.querySelector('.revoke-btn');
       if (revoke) revoke.addEventListener('click', ev => {
@@ -1725,17 +1790,19 @@ function loadPluginWidgets(force) {
       pluginRefreshing = false;
       return;
     }
-    let idx = 16; // 入场动画序号接在内置组件后面
+    let idx = 15; // 入场动画序号接在内置组件后面
     let pending = approvedWidgets.length;
     approvedWidgets.forEach(p => {
       rpc('plugin.widget', { id: p.id }).then(wm => {
-        if (seq !== pluginLoadSeq || !wm || !wm.result || wm.error) return;
+        if (seq !== pluginLoadSeq || !wm || !wm.result || wm.error) {
+          return;
+        }
         const w = wm.result;
         const card = document.createElement('div');
         card.className = 'w span' + (w.span || 2);
         card.id = 'plugin-' + p.id;
         card.style.setProperty('--i', Math.min(idx++, 20));
-        card.innerHTML = `<div class="hd"><span>🧩 ${esc(w.title || p.name)}</span><span class="right">${esc(p.id)}</span><span class="plugin-card-actions"></span></div>`
+        card.innerHTML = `<div class="hd"><span>🧩 ${esc(w.title || p.name)}</span><span class="right">插件</span></div>`
           + `<div class="hairline"></div><div class="bd pluginbd"></div>`;
         const f = document.createElement('iframe');
         f.className = 'pluginw';
@@ -1746,27 +1813,8 @@ function loadPluginWidgets(force) {
           : '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data:; object-src \'none\'; base-uri \'none\'; form-action \'none\'; navigate-to \'none\';">';
         f.srcdoc = csp + PLUGIN_SHIM + w.html;
         card.querySelector('.pluginbd').appendChild(f);
-        const actions = card.querySelector('.plugin-card-actions');
-        if ((p.permissions || []).length) {
-          const revoke = document.createElement('button');
-          revoke.className = 'grant-btn'; revoke.textContent = '撤销权限'; revoke.title = '撤销此版本的插件授权';
-          revoke.addEventListener('click', () => {
-            revoke.disabled = true;
-            rpc('plugin.revoke', { id: p.id }).then(m => {
-              const error = rpcError(m, '撤销插件权限失败');
-              if (error) { showToast(error); revoke.disabled = false; return; }
-              showToast('已撤销 ' + p.name + ' 权限'); loadPluginWidgets(true);
-            });
-          });
-          actions.appendChild(revoke);
-        }
-        if (p.user_installed) {
-          const remove = document.createElement('button');
-          remove.className = 'grant-btn'; remove.textContent = '卸载'; remove.title = '卸载此插件';
-          remove.addEventListener('click', () => uninstallPlugin(p, remove));
-          actions.appendChild(remove);
-        }
-        $('#pgrid').appendChild(card);
+        const anchor = $('#w-cdown');
+        anchor.parentElement.insertBefore(card, anchor);
         pluginWidgetIds.add(card.id);
         WIDGETS.push([card.id, (w.title || p.name) + '（插件）']);
         applyWidgetVisibility();
@@ -1923,24 +1971,6 @@ $('#plugin-refresh').addEventListener('click', () => {
 loadPluginWidgets(false);
 setInterval(() => loadPluginWidgets(false), 3000);
 
-/* ---------- 秒表 ---------- */
-(function () {
-  let t0 = 0, acc = 0, raf = 0;
-  const t = $('#w-stop .t'), btn = $('#w-stop [data-s=start]');
-  const fmt = ms => {
-    const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, d = Math.floor(ms / 100) % 10;
-    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + d;
-  };
-  const tick = () => { t.textContent = fmt(acc + (t0 ? performance.now() - t0 : 0)); if (t0) raf = requestAnimationFrame(tick); };
-  $('#w-stop').addEventListener('click', ev => {
-    const a = ev.target.dataset.s;
-    if (a === 'start') {
-      if (t0) { acc += performance.now() - t0; t0 = 0; cancelAnimationFrame(raf); btn.textContent = '继续'; }
-      else { t0 = performance.now(); raf = requestAnimationFrame(tick); btn.textContent = '暂停'; }
-    } else if (a === 'reset') { t0 = 0; acc = 0; cancelAnimationFrame(raf); btn.textContent = '开始'; t.textContent = '00:00.0'; }
-  });
-})();
-
 /* ---------- 倒数日 ---------- */
 (function () {
   const KEY = 'wb.countdown.v1';
@@ -1997,7 +2027,7 @@ setInterval(() => loadPluginWidgets(false), 3000);
 /* boot */
 document.querySelectorAll('.board .w').forEach((el, i) => el.style.setProperty('--i', i));
 const m0 = location.hash.match(/^#q=(.*)$/);
-let initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
+initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
 applyWidgetVisibility();
 loadTodos(); loadNotes(); loadClips(); loadRecent();
 send({ kind: 'ready' });

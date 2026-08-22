@@ -1,0 +1,9 @@
+{
+  "id": "stopwatch",
+  "name": "秒表",
+  "version": "1.0.0",
+  "description": "WB 官方秒表组件，作为主看板插件化的首个 dogfood 组件。",
+  "author": "WB Official",
+  "widget": { "file": "widget.html", "title": "秒表", "span": 2 },
+  "permissions": []
+}
