@@ -155,6 +155,7 @@ fn read_manifest(dir: &Path) -> Result<wb_plugin_sdk::Manifest, String> {
 }
 
 const REMOTE_ARCHIVE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+const MARKET_INDEX_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const INSTALL_TREE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const INSTALL_FILE_MAX_BYTES: u64 = 16 * 1024 * 1024;
 const INSTALL_TREE_MAX_FILES: usize = 512;
@@ -213,16 +214,7 @@ fn verify_archive(path: &Path, expected: &str) -> Result<String, String> {
     Ok(actual)
 }
 
-fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, String), String> {
-    let expected = expected.ok_or_else(|| "远程插件安装必须提供 --sha256".to_string())?;
-    let expected = normalize_sha256(expected)?;
-    let root = plugin_install_work_dir();
-    std::fs::create_dir_all(&root).map_err(|e| format!("创建插件目录失败: {e}"))?;
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let archive = root.join(format!(".download-{stamp}-{}.zip", std::process::id()));
+fn download_http(source: &str, output_path: &Path, max_bytes: u64, label: &str) -> Result<(), String> {
     let mut cmd = std::process::Command::new("curl.exe");
     cmd.args([
         "--fail",
@@ -238,9 +230,9 @@ fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, Str
         "--max-time",
         "60",
         "--max-filesize",
-        &REMOTE_ARCHIVE_MAX_BYTES.to_string(),
+        &max_bytes.to_string(),
         "--output",
-        &archive.to_string_lossy(),
+        &output_path.to_string_lossy(),
         source,
     ])
     .stdin(std::process::Stdio::null())
@@ -248,14 +240,39 @@ fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, Str
     .stderr(std::process::Stdio::piped());
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let output = cmd.output().map_err(|e| format!("下载插件失败: {e}"))?;
-    if !output.status.success() {
-        let _ = std::fs::remove_file(&archive);
+    let result = cmd.output().map_err(|e| format!("下载{label}失败: {e}"))?;
+    if !result.status.success() {
+        let _ = std::fs::remove_file(output_path);
         return Err(format!(
-            "下载插件失败: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "下载{label}失败: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
         ));
     }
+    let size = match std::fs::metadata(output_path) {
+        Ok(metadata) => metadata.len(),
+        Err(e) => {
+            let _ = std::fs::remove_file(output_path);
+            return Err(format!("读取{label}元数据失败: {e}"));
+        }
+    };
+    if size > max_bytes {
+        let _ = std::fs::remove_file(output_path);
+        return Err(format!("{label}超过 {}MB", max_bytes / 1024 / 1024));
+    }
+    Ok(())
+}
+
+fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, String), String> {
+    let expected = expected.ok_or_else(|| "远程插件安装必须提供 --sha256".to_string())?;
+    let expected = normalize_sha256(expected)?;
+    let root = plugin_install_work_dir();
+    std::fs::create_dir_all(&root).map_err(|e| format!("创建插件目录失败: {e}"))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let archive = root.join(format!(".download-{stamp}-{}.zip", std::process::id()));
+    download_http(source, &archive, REMOTE_ARCHIVE_MAX_BYTES, "插件")?;
     match verify_archive(&archive, &expected) {
         Ok(actual) => Ok((archive, actual)),
         Err(e) => {
@@ -440,7 +457,10 @@ fn extract_plugin_archive(archive_path: &Path, output_root: &Path) -> Result<(),
     Ok(())
 }
 
-fn install_plugin_path(input: &Path) -> Result<wb_plugin_sdk::Manifest, String> {
+fn install_plugin_path(
+    input: &Path,
+    expected_identity: Option<(&str, &str)>,
+) -> Result<wb_plugin_sdk::Manifest, String> {
     let input = input
         .canonicalize()
         .map_err(|e| format!("插件源不存在: {} ({e})", input.display()))?;
@@ -492,6 +512,14 @@ fn install_plugin_path(input: &Path) -> Result<wb_plugin_sdk::Manifest, String> 
     let result = (|| {
         validate_install_tree(&root)?;
         let manifest = read_manifest(&root)?;
+        if let Some((expected_id, expected_version)) = expected_identity {
+            if manifest.id != expected_id || manifest.version != expected_version {
+                return Err(format!(
+                    "插件包身份与市场索引不匹配: expected {expected_id}@{expected_version}, actual {}@{}",
+                    manifest.id, manifest.version
+                ));
+            }
+        }
         let candidate = LoadedPlugin {
             dir: root.clone(),
             manifest: manifest.clone(),
@@ -562,9 +590,18 @@ fn install_plugin(
     source: &str,
     expected_sha256: Option<&str>,
 ) -> Result<(wb_plugin_sdk::Manifest, Option<String>), String> {
+    install_plugin_checked(source, expected_sha256, None)
+}
+
+fn install_plugin_checked(
+    source: &str,
+    expected_sha256: Option<&str>,
+    expected_identity: Option<(&str, &str)>,
+) -> Result<(wb_plugin_sdk::Manifest, Option<String>), String> {
     if is_remote_source(source) {
         let (archive, actual) = download_plugin(source, expected_sha256)?;
-        let result = install_plugin_path(&archive).map(|manifest| (manifest, Some(actual)));
+        let result = install_plugin_path(&archive, expected_identity)
+            .map(|manifest| (manifest, Some(actual)));
         let _ = std::fs::remove_file(archive);
         return result;
     }
@@ -578,7 +615,196 @@ fn install_plugin(
     } else {
         None
     };
-    install_plugin_path(&input).map(|manifest| (manifest, actual))
+    install_plugin_path(&input, expected_identity).map(|manifest| (manifest, actual))
+}
+
+struct LoadedMarket {
+    source: String,
+    local_base: Option<PathBuf>,
+    index: wb_plugin_sdk::MarketIndex,
+}
+
+fn read_bounded(path: &Path, max_bytes: u64, label: &str) -> Result<Vec<u8>, String> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("读取{label}失败 {}: {e}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("读取{label}失败 {}: {e}", path.display()))?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!("{label}超过 {}MB", max_bytes / 1024 / 1024));
+    }
+    Ok(bytes)
+}
+
+fn parse_market_index(bytes: &[u8]) -> Result<wb_plugin_sdk::MarketIndex, String> {
+    let index: wb_plugin_sdk::MarketIndex = serde_json::from_slice(bytes)
+        .map_err(|e| format!("插件市场索引格式错误: {e}"))?;
+    index
+        .validate()
+        .map_err(|e| format!("插件市场索引校验失败: {e}"))?;
+    Ok(index)
+}
+
+fn load_market(source: &str) -> Result<LoadedMarket, String> {
+    if is_remote_source(source) {
+        let root = plugin_install_work_dir();
+        std::fs::create_dir_all(&root).map_err(|e| format!("创建插件目录失败: {e}"))?;
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = root.join(format!(
+            ".market-{}-{stamp}.json",
+            std::process::id()
+        ));
+        download_http(source, &path, MARKET_INDEX_MAX_BYTES, "插件市场索引")?;
+        let result = read_bounded(&path, MARKET_INDEX_MAX_BYTES, "插件市场索引")
+            .and_then(|bytes| parse_market_index(&bytes));
+        let _ = std::fs::remove_file(path);
+        return result.map(|index| LoadedMarket {
+            source: source.into(),
+            local_base: None,
+            index,
+        });
+    }
+
+    let path = PathBuf::from(source)
+        .canonicalize()
+        .map_err(|e| format!("插件市场索引不存在: {source} ({e})"))?;
+    if !path.is_file() {
+        return Err("插件市场索引必须是 JSON 文件".into());
+    }
+    let bytes = read_bounded(&path, MARKET_INDEX_MAX_BYTES, "插件市场索引")?;
+    let index = parse_market_index(&bytes)?;
+    let base = path
+        .parent()
+        .ok_or_else(|| "无法定位插件市场索引目录".to_string())?
+        .to_path_buf();
+    Ok(LoadedMarket {
+        source: path.to_string_lossy().into_owned(),
+        local_base: Some(base),
+        index,
+    })
+}
+
+fn resolve_market_download(
+    market: &LoadedMarket,
+    plugin: &wb_plugin_sdk::MarketPlugin,
+) -> Result<String, String> {
+    if is_remote_source(&plugin.download) {
+        return Ok(plugin.download.clone());
+    }
+    let Some(base) = &market.local_base else {
+        return Err(format!(
+            "远程市场插件 {} 的 download 必须是绝对 HTTP(S) URL",
+            plugin.id
+        ));
+    };
+    let relative = Path::new(&plugin.download);
+    if relative.is_absolute() {
+        return Err(format!("本地市场插件 {} 的 download 必须是相对路径", plugin.id));
+    }
+    let archive = base
+        .join(relative)
+        .canonicalize()
+        .map_err(|e| format!("市场插件归档不存在 {}: {e}", relative.display()))?;
+    if !archive.starts_with(base) {
+        return Err(format!("市场插件 {} 的 download 越过索引目录", plugin.id));
+    }
+    Ok(archive.to_string_lossy().into_owned())
+}
+
+fn market_status(
+    plugin: &wb_plugin_sdk::MarketPlugin,
+    installed: Option<&LoadedPlugin>,
+) -> (&'static str, bool) {
+    let Some(installed) = installed else {
+        return ("available", false);
+    };
+    match plugin.compare_installed_version(&installed.manifest.version) {
+        Ok(std::cmp::Ordering::Greater) => ("update_available", true),
+        Ok(std::cmp::Ordering::Equal) => ("installed", false),
+        Ok(std::cmp::Ordering::Less) => ("ahead", false),
+        Err(_) => ("invalid_installed_version", false),
+    }
+}
+
+fn market_json(
+    market: &LoadedMarket,
+    installed: &[LoadedPlugin],
+    updates_only: bool,
+) -> serde_json::Value {
+    let mut plugins = market.index.plugins.clone();
+    plugins.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut rows = Vec::new();
+    let mut update_count = 0usize;
+    for plugin in plugins {
+        let installed_plugin = installed.iter().find(|p| p.manifest.id == plugin.id);
+        let (status, update_available) = market_status(&plugin, installed_plugin);
+        if update_available {
+            update_count += 1;
+        }
+        if updates_only && !update_available {
+            continue;
+        }
+        rows.push(serde_json::json!({
+            "id": plugin.id,
+            "name": plugin.name,
+            "version": plugin.version,
+            "description": plugin.description,
+            "author": plugin.author,
+            "download": plugin.download,
+            "sha256": format!("sha256:{}", plugin.normalized_sha256().unwrap_or_default()),
+            "homepage": plugin.homepage,
+            "tags": plugin.tags,
+            "installed_version": installed_plugin.map(|p| p.manifest.version.clone()),
+            "status": status,
+            "update_available": update_available,
+        }));
+    }
+    serde_json::json!({
+        "market": market.index.name,
+        "schema_version": market.index.schema_version,
+        "index": market.source,
+        "updates": update_count,
+        "plugins": rows,
+    })
+}
+
+fn install_market_plugin(
+    index_source: &str,
+    id: &str,
+    installed: &[LoadedPlugin],
+    update_only: bool,
+) -> Result<(wb_plugin_sdk::Manifest, Option<String>, String), String> {
+    let market = load_market(index_source)?;
+    let plugin = market
+        .index
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == id)
+        .cloned()
+        .ok_or_else(|| format!("插件市场中不存在: {id}"))?;
+    if update_only {
+        let current = installed
+            .iter()
+            .find(|current| current.manifest.id == id)
+            .ok_or_else(|| format!("插件尚未安装: {id}"))?;
+        match plugin.compare_installed_version(&current.manifest.version) {
+            Ok(std::cmp::Ordering::Greater) => {}
+            Ok(_) => return Err(format!("插件 {id} 已是最新版本或高于市场版本")),
+            Err(e) => return Err(format!("无法比较插件 {id} 版本: {e}")),
+        }
+    }
+    let download = resolve_market_download(&market, &plugin)?;
+    let sha256 = plugin.normalized_sha256()?;
+    let (manifest, actual) = install_plugin_checked(
+        &download,
+        Some(&sha256),
+        Some((&plugin.id, &plugin.version)),
+    )?;
+    Ok((manifest, actual, market.index.name))
 }
 
 fn remove_plugin(id: &str) -> Result<(), String> {
@@ -1420,6 +1646,48 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             }))
         }
 
+        "plugin.market.list" | "plugin.market.check" => {
+            let source = str_param(params, "index")?;
+            let market = load_market(source)
+                .map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
+            let installed = ctx.plugins.read().unwrap().clone();
+            Ok(market_json(
+                &market,
+                &installed,
+                method == "plugin.market.check",
+            ))
+        }
+
+        "plugin.market.install" | "plugin.market.update" => {
+            let _tx = ctx.plugin_tx.lock().unwrap();
+            let source = str_param(params, "index")?;
+            let id = str_param(params, "id")?;
+            let installed = ctx.plugins.read().unwrap().clone();
+            let previous_version = installed
+                .iter()
+                .find(|plugin| plugin.manifest.id == id)
+                .map(|plugin| plugin.manifest.version.clone());
+            let update_only = method == "plugin.market.update";
+            let (manifest, archive_sha256, market) =
+                install_market_plugin(source, id, &installed, update_only)
+                    .map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
+            let found = discover_plugins();
+            let n = found.len();
+            *ctx.plugins.write().unwrap() = found;
+            Ok(serde_json::json!({
+                "action": if update_only { "updated" } else { "installed" },
+                "market": market,
+                "id": manifest.id,
+                "name": manifest.name,
+                "version": manifest.version,
+                "previous_version": previous_version,
+                "permissions": manifest.permissions,
+                "approval_required": !manifest.permissions.is_empty(),
+                "archive_sha256": archive_sha256,
+                "reloaded": n,
+            }))
+        }
+
         "plugin.approve" => {
             let pid = str_param(params, "id")?;
             let found = discover_plugins();
@@ -1793,6 +2061,95 @@ mod tests {
             .collect::<Vec<_>>()
             .join("/");
         assert!(safe_zip_path(Path::new(&deep)).is_err());
+    }
+
+    #[test]
+    fn local_market_resolves_only_archives_below_its_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "wb-daemon-market-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("hello.zip"), b"zip").unwrap();
+        let index_path = root.join("index.json");
+        std::fs::write(
+            &index_path,
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "name": "Local Test",
+                "plugins": [{
+                    "id": "hello",
+                    "name": "Hello",
+                    "version": "1.1.0",
+                    "download": "hello.zip",
+                    "sha256": "a".repeat(64)
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let market = load_market(&index_path.to_string_lossy()).unwrap();
+        let resolved = resolve_market_download(&market, &market.index.plugins[0]).unwrap();
+        assert!(Path::new(&resolved).ends_with("hello.zip"));
+
+        let remote_market = LoadedMarket {
+            source: "https://plugins.example/index.json".into(),
+            local_base: None,
+            index: market.index.clone(),
+        };
+        assert!(resolve_market_download(&remote_market, &remote_market.index.plugins[0])
+            .unwrap_err()
+            .contains("绝对 HTTP(S) URL"));
+
+        let outside = root.parent().unwrap().join(format!(
+            "outside-{}-{}.zip",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&outside, b"zip").unwrap();
+        let mut escaped = market.index.plugins[0].clone();
+        escaped.download = format!("../{}", outside.file_name().unwrap().to_string_lossy());
+        assert!(resolve_market_download(&market, &escaped)
+            .unwrap_err()
+            .contains("越过索引目录"));
+        std::fs::remove_file(outside).ok();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn market_identity_is_checked_before_install_commit() {
+        let root = std::env::temp_dir().join(format!(
+            "wb-daemon-market-identity-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("widget.html"), "<p>Hello</p>").unwrap();
+        std::fs::write(
+            root.join("plugin.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "id": "actual-plugin",
+                "name": "Actual",
+                "version": "1.0.0",
+                "widget": {"file": "widget.html", "title": "Actual"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let error = install_plugin_path(&root, Some(("expected-plugin", "1.0.0")))
+            .unwrap_err();
+        assert!(error.contains("身份与市场索引不匹配"));
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

@@ -134,11 +134,42 @@ enum PluginOp {
         #[arg(long, value_name = "HEX")]
         sha256: Option<String>,
     },
+    /// Discover, install, and update plugins from a versioned market index
+    Market {
+        #[command(subcommand)]
+        op: MarketOp,
+    },
     Remove { id: String },
     Approve { id: String },
     Revoke { id: String },
     Pack { dir: String, #[arg(short, long)] output: Option<String> },
     Run { name: String, #[arg(long)] command: Option<String>, #[arg(long = "arg", value_parser = parse_kv)] args: Vec<(String, String)> },
+}
+
+#[derive(Subcommand)]
+enum MarketOp {
+    /// List catalog entries and their installed/update status
+    List {
+        #[arg(long)]
+        index: String,
+    },
+    /// List only plugins with a newer SemVer release
+    Check {
+        #[arg(long)]
+        index: String,
+    },
+    /// Install the catalog release and verify id, version, and SHA-256
+    Install {
+        id: String,
+        #[arg(long)]
+        index: String,
+    },
+    /// Upgrade an installed plugin when the catalog has a newer release
+    Update {
+        id: String,
+        #[arg(long)]
+        index: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -715,6 +746,24 @@ fn main() {
                 "plugin.install",
                 serde_json::json!({"source": source, "sha256": sha256}),
             ),
+            PluginOp::Market { op } => match op {
+                MarketOp::List { index } => (
+                    "plugin.market.list",
+                    serde_json::json!({"index": index}),
+                ),
+                MarketOp::Check { index } => (
+                    "plugin.market.check",
+                    serde_json::json!({"index": index}),
+                ),
+                MarketOp::Install { id, index } => (
+                    "plugin.market.install",
+                    serde_json::json!({"id": id, "index": index}),
+                ),
+                MarketOp::Update { id, index } => (
+                    "plugin.market.update",
+                    serde_json::json!({"id": id, "index": index}),
+                ),
+            },
             PluginOp::Remove { id } => ("plugin.remove", serde_json::json!({"id": id})),
             PluginOp::Approve { id } => ("plugin.approve", serde_json::json!({"id": id})),
             PluginOp::Revoke { id } => ("plugin.revoke", serde_json::json!({"id": id})),
@@ -823,6 +872,32 @@ mod tests {
             } => {
                 assert_eq!(source, "https://plugins.example/test.zip");
                 assert_eq!(sha256.as_deref(), Some(hash.as_str()));
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parses_market_update() {
+        let cli = Cli::try_parse_from([
+            "wb",
+            "plugin",
+            "market",
+            "update",
+            "hello",
+            "--index",
+            "https://plugins.example/index.json",
+        ])
+        .unwrap();
+        match cli.cmd {
+            Cmd::Plugin {
+                op:
+                    PluginOp::Market {
+                        op: MarketOp::Update { id, index },
+                    },
+            } => {
+                assert_eq!(id, "hello");
+                assert_eq!(index, "https://plugins.example/index.json");
             }
             _ => panic!("unexpected command"),
         }

@@ -66,6 +66,10 @@ pub fn schema() -> Value {
             {"name": "plugin.list", "params": {}, "returns": {"type": "array"}, "status": "M4"},
             {"name": "plugin.reload", "params": {}, "returns": {"type": "object"}, "status": "M4"},
             {"name": "plugin.install", "params": {"source": "path|http(s) URL", "sha256": "string (required for URL)"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "plugin.market.list", "params": {"index": "path|http(s) URL"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "plugin.market.check", "params": {"index": "path|http(s) URL"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "plugin.market.install", "params": {"index": "path|http(s) URL", "id": "string"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "plugin.market.update", "params": {"index": "path|http(s) URL", "id": "string"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "plugin.remove", "params": {"id": "string"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "plugin.approve", "params": {"id": "string"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "plugin.revoke", "params": {"id": "string"}, "returns": {"type": "object"}, "status": "M5"},
@@ -89,5 +93,8 @@ mod tests {
         let schema = schema();
         let methods = schema["methods"].as_array().unwrap();
         assert!(methods.iter().any(|method| method["name"] == "daemon.stop"));
+        assert!(methods
+            .iter()
+            .any(|method| method["name"] == "plugin.market.update"));
     }
 }

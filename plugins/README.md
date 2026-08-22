@@ -162,6 +162,39 @@ wb plugin install https://plugins.example/my-plugin.zip `
 
 远程归档上限 32MB，解压后上限 64MB / 512 个文件 / 16 层目录。安装器逐项解析 ZIP，在写盘前/写盘中拒绝越界路径、符号链接、NTFS ADS、Windows 设备名、大小写冲突和超限内容。下载、校验和解压都在正式插件目录之外完成；升级提交失败会回滚旧版本，极端回滚失败时旧版本会保留在 `%LOCALAPPDATA%\WB\plugin-backups\` 并返回具体路径。公开分发应使用 HTTPS，HTTP 仅用于本地开发服务器。
 
+## 市场索引 v1
+
+官方或社区可以托管同一种静态 `index.json`，格式由 [`market-index.schema.json`](market-index.schema.json) 定义。每个 id 在单个索引中只能出现一次，`version` 必须是 SemVer，`sha256` 来自 `wb plugin pack`：
+
+```json
+{
+  "schema_version": 1,
+  "name": "WB Community",
+  "plugins": [{
+    "id": "my-plugin",
+    "name": "My Plugin",
+    "version": "1.2.0",
+    "description": "示例插件",
+    "author": "community",
+    "download": "https://plugins.example/my-plugin-1.2.0.zip",
+    "sha256": "sha256:<64 位十六进制>",
+    "homepage": "https://plugins.example/my-plugin",
+    "tags": ["productivity"]
+  }]
+}
+```
+
+远程索引中的 `download` 必须是绝对 HTTP(S) URL；本地索引可以引用索引目录内的相对 ZIP，也可以引用 HTTP(S)。市场列表、更新检查和一键安装/升级均有 CLI 与 JSON-RPC 契约：
+
+```powershell
+wb plugin market list --index https://plugins.example/index.json
+wb plugin market check --index https://plugins.example/index.json
+wb plugin market install my-plugin --index https://plugins.example/index.json
+wb plugin market update my-plugin --index https://plugins.example/index.json
+```
+
+市场元数据不替代包内 manifest。安装提交前会同时核对归档 SHA-256、插件 id 和版本；任一不一致都不会覆盖现有版本。升级后原有授权按版本和内容指纹自动失效，需要重新批准。
+
 安装会校验 manifest 和所有声明文件、复制到 `%LOCALAPPDATA%\WB\plugins\` 并立即刷新 daemon 插件池；同 id 的用户插件会覆盖仓库开发态插件。卸载只删除用户插件，不会修改仓库里的开发插件。
 
 AI 面板会把 `skill_list` / `skill_get` 作为工具提供给模型。模型可以先读取插件 Skill，再调用同一插件声明的命令；Skill 本身只提供上下文，不直接执行代码。

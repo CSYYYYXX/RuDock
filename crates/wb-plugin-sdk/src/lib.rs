@@ -101,6 +101,104 @@ pub struct SkillSpec {
     pub tags: Vec<String>,
 }
 
+pub const MARKET_SCHEMA_VERSION: u32 = 1;
+
+/// A portable marketplace index. The index is discovery metadata; the
+/// downloaded archive's manifest remains authoritative and must match id/version.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarketIndex {
+    pub schema_version: u32,
+    pub name: String,
+    #[serde(default)]
+    pub plugins: Vec<MarketPlugin>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarketPlugin {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub author: String,
+    /// Absolute HTTP(S) URL for remote indexes, or a path relative to a local index.
+    pub download: String,
+    /// SHA-256 of the ZIP archive, with an optional `sha256:` prefix.
+    pub sha256: String,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+impl MarketIndex {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema_version != MARKET_SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported market schema_version: {} (expected {MARKET_SCHEMA_VERSION})",
+                self.schema_version
+            ));
+        }
+        if self.name.trim().is_empty() {
+            return Err("market name is empty".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for plugin in &self.plugins {
+            plugin.validate()?;
+            if !ids.insert(&plugin.id) {
+                return Err(format!("duplicate market plugin id: {}", plugin.id));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl MarketPlugin {
+    pub fn validate(&self) -> Result<(), String> {
+        let id_ok = !self.id.is_empty()
+            && self
+                .id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !id_ok {
+            return Err(format!("bad market plugin id: {:?}", self.id));
+        }
+        if self.name.trim().is_empty() {
+            return Err(format!("market plugin {} has no name", self.id));
+        }
+        semver::Version::parse(&self.version)
+            .map_err(|e| format!("market plugin {} has invalid SemVer: {e}", self.id))?;
+        if self.download.trim().is_empty() {
+            return Err(format!("market plugin {} has no download", self.id));
+        }
+        self.normalized_sha256()?;
+        Ok(())
+    }
+
+    pub fn normalized_sha256(&self) -> Result<String, String> {
+        let value = self.sha256.trim();
+        let value = value.strip_prefix("sha256:").unwrap_or(value);
+        if value.len() != 64 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("market plugin {} has invalid SHA-256", self.id));
+        }
+        Ok(value.to_ascii_lowercase())
+    }
+
+    pub fn compare_installed_version(
+        &self,
+        installed: &str,
+    ) -> Result<std::cmp::Ordering, String> {
+        let available = semver::Version::parse(&self.version)
+            .map_err(|e| format!("invalid available version {}: {e}", self.version))?;
+        let installed = semver::Version::parse(installed)
+            .map_err(|e| format!("invalid installed version {installed}: {e}"))?;
+        Ok(available.cmp(&installed))
+    }
+}
+
 impl Manifest {
     pub const PERMISSIONS: &'static [&'static str] = &[
         "clipboard.read",
@@ -321,5 +419,60 @@ mod tests {
         other.id = "util_hello".into();
         m.commands.push(other);
         assert!(m.validate().unwrap_err().contains("AI 工具名冲突"));
+    }
+
+    #[test]
+    fn validates_market_index_and_semver_updates() {
+        let index: MarketIndex = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "name": "WB Community",
+            "plugins": [{
+                "id": "hello",
+                "name": "Hello",
+                "version": "1.2.0",
+                "download": "hello-1.2.0.zip",
+                "sha256": format!("sha256:{}", "a".repeat(64))
+            }]
+        }))
+        .unwrap();
+        index.validate().unwrap();
+        assert_eq!(
+            index.plugins[0]
+                .compare_installed_version("1.1.9")
+                .unwrap(),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(index.plugins[0].normalized_sha256().unwrap(), "a".repeat(64));
+    }
+
+    #[test]
+    fn rejects_invalid_market_contracts() {
+        let mut index = MarketIndex {
+            schema_version: 2,
+            name: "test".into(),
+            plugins: Vec::new(),
+        };
+        assert!(index.validate().unwrap_err().contains("schema_version"));
+        index.schema_version = MARKET_SCHEMA_VERSION;
+        index.plugins.push(MarketPlugin {
+            id: "Bad ID".into(),
+            name: "Bad".into(),
+            version: "latest".into(),
+            description: String::new(),
+            author: String::new(),
+            download: "bad.zip".into(),
+            sha256: "nope".into(),
+            homepage: None,
+            tags: Vec::new(),
+        });
+        assert!(index.validate().is_err());
+
+        let unknown = serde_json::from_value::<MarketIndex>(serde_json::json!({
+            "schema_version": 1,
+            "name": "test",
+            "plugins": [],
+            "unexpected": true
+        }));
+        assert!(unknown.is_err());
     }
 }
