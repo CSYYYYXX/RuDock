@@ -165,6 +165,15 @@ $actual -eq $expected
 
 备份包含 SQLite 数据库、设置和 `%LOCALAPPDATA%\WB\plugins` 下的用户插件，并返回归档 SHA-256。备份文件包含个人数据，应存放在私密位置；恢复前先退出 RuDock，并保留原目录作为回滚副本。
 
+遇到问题时可以生成不含数据库、剪贴板、AI 配置和用户文件索引的脱敏诊断包：
+
+```powershell
+.\wb.exe diagnostics create
+.\wb.exe diagnostics create --output D:\Support\rudock-diagnostics.zip
+```
+
+诊断包只包含版本/系统信息、daemon 状态、插件摘要、脱敏设置、审计摘要和命令 schema，可直接附在 issue 或反馈中。
+
 ## CLI 与 Agent
 
 RuDock 的 CLI 支持结构化 JSON 输出，可直接用于 PowerShell、自动化脚本和 Agent：

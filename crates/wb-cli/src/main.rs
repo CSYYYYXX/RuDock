@@ -104,6 +104,11 @@ enum Cmd {
         #[command(subcommand)]
         op: BackupOp,
     },
+    /// Export a redacted support bundle without personal content
+    Diagnostics {
+        #[command(subcommand)]
+        op: DiagnosticsOp,
+    },
 }
 
 #[derive(Subcommand)]
@@ -340,6 +345,16 @@ enum McpOp {
 #[derive(Subcommand)]
 enum BackupOp {
     /// Back up the SQLite database, settings, and user-installed plugins
+    Create {
+        /// Destination ZIP path; defaults to the Downloads folder
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DiagnosticsOp {
+    /// Create a redacted support ZIP
     Create {
         /// Destination ZIP path; defaults to the Downloads folder
         #[arg(short, long)]
@@ -962,6 +977,22 @@ fn backup_zip_error(error: zip::result::ZipError, action: &str) -> CoreError {
     CoreError::new(ErrorCode::Internal, format!("{action}: {error}"))
 }
 
+fn add_archive_bytes<W: Write + std::io::Seek>(
+    writer: &mut zip::ZipWriter<W>,
+    archive_name: &str,
+    bytes: &[u8],
+    stats: &mut BackupStats,
+) -> Result<(), CoreError> {
+    stats.add(bytes.len() as u64, archive_name)?;
+    writer
+        .start_file(archive_name.replace('\\', "/"), backup_options())
+        .map_err(|e| backup_zip_error(e, "创建归档条目失败"))?;
+    writer
+        .write_all(bytes)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写入归档条目失败: {e}")))?;
+    Ok(())
+}
+
 fn add_backup_file<W: Write + std::io::Seek>(
     writer: &mut zip::ZipWriter<W>,
     archive_name: &str,
@@ -980,20 +1011,13 @@ fn add_backup_file<W: Write + std::io::Seek>(
             format!("备份不支持符号链接或特殊文件: {}", source.display()),
         ));
     }
-    stats.add(metadata.len(), archive_name)?;
     let bytes = std::fs::read(source).map_err(|e| {
         CoreError::new(
             ErrorCode::Internal,
             format!("读取备份文件失败 {}: {e}", source.display()),
         )
     })?;
-    writer
-        .start_file(archive_name.replace('\\', "/"), backup_options())
-        .map_err(|e| backup_zip_error(e, "创建备份条目失败"))?;
-    writer
-        .write_all(&bytes)
-        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写入备份条目失败: {e}")))?;
-    Ok(())
+    add_archive_bytes(writer, archive_name, &bytes, stats)
 }
 
 fn add_backup_tree<W: Write + std::io::Seek>(
@@ -1061,7 +1085,7 @@ fn backup_database(source: &Path, destination: &Path) -> Result<(), CoreError> {
         .map_err(|e| CoreError::new(ErrorCode::Internal, format!("在线备份数据库失败: {e}")))
 }
 
-fn backup_output_path(output: Option<&Path>) -> Result<PathBuf, CoreError> {
+fn archive_output_path(output: Option<&Path>, prefix: &str) -> Result<PathBuf, CoreError> {
     let path = if let Some(output) = output {
         if output.as_os_str().is_empty() {
             return Err(CoreError::new(ErrorCode::InvalidParams, "备份输出路径不能为空"));
@@ -1084,7 +1108,7 @@ fn backup_output_path(output: Option<&Path>) -> Result<PathBuf, CoreError> {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取系统时间失败: {e}")))?
             .as_secs();
-        base.join(format!("RuDock-backup-{stamp}.zip"))
+        base.join(format!("{prefix}-{stamp}.zip"))
     };
     let path = if path.extension().is_none() {
         path.with_extension("zip")
@@ -1102,6 +1126,14 @@ fn backup_output_path(output: Option<&Path>) -> Result<PathBuf, CoreError> {
             .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建备份目录失败: {e}")))?;
     }
     Ok(path)
+}
+
+fn backup_output_path(output: Option<&Path>) -> Result<PathBuf, CoreError> {
+    archive_output_path(output, "RuDock-backup")
+}
+
+fn diagnostics_output_path(output: Option<&Path>) -> Result<PathBuf, CoreError> {
+    archive_output_path(output, "RuDock-diagnostics")
 }
 
 fn create_backup(output: Option<&Path>) -> Result<serde_json::Value, CoreError> {
@@ -1179,6 +1211,109 @@ fn create_backup(output: Option<&Path>) -> Result<serde_json::Value, CoreError> 
         }))
     })();
     let _ = std::fs::remove_file(&temp_db);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&output);
+    }
+    result
+}
+
+fn sensitive_json_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    ["key", "token", "secret", "password", "authorization"]
+        .iter()
+        .any(|needle| key == *needle || key.ends_with(&format!("_{needle}")))
+}
+
+fn private_json_key(key: &str) -> bool {
+    matches!(key.to_ascii_lowercase().as_str(), "path" | "dir" | "directory" | "cwd" | "home")
+}
+
+fn redact_json(value: &serde_json::Value, key: Option<&str>) -> serde_json::Value {
+    if let Some(key) = key {
+        if sensitive_json_key(key) {
+            return serde_json::Value::String("<redacted>".into());
+        }
+        if private_json_key(key) {
+            return serde_json::Value::String("<redacted>".into());
+        }
+    }
+    match value {
+        serde_json::Value::Object(object) => serde_json::Value::Object(
+            object
+                .iter()
+                .map(|(name, value)| (name.clone(), redact_json(value, Some(name))))
+                .collect(),
+        ),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(|item| redact_json(item, None)).collect())
+        }
+        _ => value.clone(),
+    }
+}
+
+fn diagnostic_call(client: &mut Option<Client>, method: &str) -> serde_json::Value {
+    client
+        .as_mut()
+        .and_then(|client| client.call(method, serde_json::json!({})).ok())
+        .unwrap_or_else(|| serde_json::json!({"status": "unavailable"}))
+}
+
+fn create_diagnostics(output: Option<&Path>) -> Result<serde_json::Value, CoreError> {
+    let output = diagnostics_output_path(output)?;
+    let mut client = Client::connect_existing().ok();
+    let settings = redact_json(&diagnostic_call(&mut client, "settings.get"), None);
+    let plugins = redact_json(&diagnostic_call(&mut client, "plugin.list"), None);
+    let audit = redact_json(&diagnostic_call(&mut client, "audit.tail"), None);
+    let daemon = diagnostic_call(&mut client, "daemon.ping");
+    let plugin_count = plugins.as_array().map_or(0, Vec::len);
+    let audit_count = audit.as_array().map_or(0, Vec::len);
+    let summary = serde_json::json!({
+        "schema_version": 1,
+        "kind": "rudock-diagnostics",
+        "app_version": env!("CARGO_PKG_VERSION"),
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "daemon_connected": client.is_some(),
+        "plugin_count": plugin_count,
+        "audit_count": audit_count,
+        "contains_personal_content": false,
+        "omitted": ["database", "clipboard contents", "AI configuration", "user file index"],
+    });
+    let schema = wb_core::protocol::schema();
+    let files = [
+        ("diagnostic.json", serde_json::to_vec_pretty(&summary)?),
+        ("daemon.json", serde_json::to_vec_pretty(&redact_json(&daemon, None))?),
+        ("settings.redacted.json", serde_json::to_vec_pretty(&settings)?),
+        ("plugins.redacted.json", serde_json::to_vec_pretty(&plugins)?),
+        ("audit.redacted.json", serde_json::to_vec_pretty(&audit)?),
+        ("schema.json", serde_json::to_vec_pretty(&schema)?),
+    ];
+    let file = std::fs::File::create(&output)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建诊断归档失败: {e}")))?;
+    let mut writer = zip::ZipWriter::new(file);
+    let mut stats = BackupStats { files: 0, bytes: 0 };
+    let result = (|| {
+        for (name, bytes) in &files {
+            add_archive_bytes(&mut writer, name, bytes, &mut stats)?;
+        }
+        add_archive_bytes(
+            &mut writer,
+            "README.txt",
+            b"RuDock redacted diagnostics. No database, clipboard content, AI configuration, or user file index is included.\r\n",
+            &mut stats,
+        )?;
+        writer
+            .finish()
+            .map_err(|e| backup_zip_error(e, "完成诊断归档失败"))?;
+        let sha256 = archive_sha256(&output)?;
+        Ok(serde_json::json!({
+            "created": true,
+            "output": output,
+            "sha256": format!("sha256:{sha256}"),
+            "file_count": stats.files,
+            "payload_bytes": stats.bytes,
+        }))
+    })();
     if result.is_err() {
         let _ = std::fs::remove_file(&output);
     }
@@ -1378,6 +1513,20 @@ fn main() {
         }
         return;
     }
+
+    let local_diagnostics_result = match &cli.cmd {
+        Cmd::Diagnostics { op: DiagnosticsOp::Create { output } } => {
+            Some(create_diagnostics(output.as_deref()))
+        }
+        _ => None,
+    };
+    if let Some(result) = local_diagnostics_result {
+        match result {
+            Ok(v) => emit(&v, json, false),
+            Err(e) => fail(&e, json),
+        }
+        return;
+    }
     if let Cmd::Daemon { op: DaemonOp::Start } = cli.cmd {
         match Client::connect().and_then(|mut c| c.call("daemon.ping", serde_json::json!({}))) {
             Ok(v) => {
@@ -1538,6 +1687,7 @@ fn main() {
         Cmd::Schema => unreachable!(),
         Cmd::Mcp { .. } => unreachable!(),
         Cmd::Backup { .. } => unreachable!(),
+        Cmd::Diagnostics { .. } => unreachable!(),
     };
 
     match client.call(method, params) {
@@ -1604,6 +1754,31 @@ mod tests {
             .unwrap();
         assert_eq!(value, "kept");
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn diagnostics_redaction_removes_secrets_and_paths() {
+        let input = serde_json::json!({
+            "api_key": "secret",
+            "nested": {"access_token": "token", "path": "C:\\Users\\private"},
+            "safe": "kept"
+        });
+        let redacted = redact_json(&input, None);
+        assert_eq!(redacted["api_key"], "<redacted>");
+        assert_eq!(redacted["nested"]["access_token"], "<redacted>");
+        assert_eq!(redacted["nested"]["path"], "<redacted>");
+        assert_eq!(redacted["safe"], "kept");
+    }
+
+    #[test]
+    fn parses_diagnostics_create_command() {
+        let cli = Cli::try_parse_from(["wb", "diagnostics", "create"]).unwrap();
+        assert!(matches!(
+            cli.cmd,
+            Cmd::Diagnostics {
+                op: DiagnosticsOp::Create { output: None }
+            }
+        ));
     }
 
     #[test]
