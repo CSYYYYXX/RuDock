@@ -639,6 +639,12 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   border: 1px solid var(--stroke-soft); border-radius: 6px; background: rgba(255,255,255,.07);
   color: var(--fg-2); font: inherit; font-size: 11.5px; outline: none; }
 #cfgView .language-row select:focus { border-color: rgba(76,194,255,.5); }
+#cfgView .update-row .cfg-update-state { min-width: 0; margin-left: auto; color: var(--fg-4); font-size: 11px; text-align: right; }
+#cfgView .cfg-icon { width: 28px; height: 28px; flex: none; margin-left: 8px; padding: 0; border: 1px solid var(--stroke-soft);
+  border-radius: 6px; background: rgba(255,255,255,.07); color: var(--fg-2); font: inherit; cursor: pointer; }
+#cfgView .cfg-icon:hover { background: var(--hover); color: var(--fg); }
+#cfgView .cfg-icon:disabled { opacity: .5; cursor: wait; }
+#cfgView .cfg-icon[hidden] { display: none; }
 
 /* 首次启动引导：保持轻量，完成后不再打扰已配置用户。 */
 #onboardingView { position: absolute; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center;
@@ -920,6 +926,7 @@ body.desktop-mode .resize-handle { opacity: .65; }
       <option value="auto">自动</option><option value="zh-CN">简体中文</option><option value="en">English</option>
       <option value="ja">日本語</option><option value="ko">한국어</option>
     </select></label>
+    <div class="sysrow update-row"><span id="cfg-update-label">检查更新</span><span class="cfg-update-state" id="cfg-update-state"></span><button class="cfg-icon" id="cfg-update-open" hidden title="打开发布页" aria-label="打开发布页">↗</button><button class="cfg-icon" id="cfg-update" title="检查更新" aria-label="检查更新">↻</button></div>
     <label class="sysrow"><span id="cfg-win-label">接管 Windows 键</span><span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
     <label class="sysrow"><span id="cfg-autostart-label">开机自启</span><input type="checkbox" id="cfg-autostart"></label>
     <div class="sysrow"><span id="cfg-mcp-label">MCP 写操作</span><div class="policyseg" id="cfg-mcp-policy" role="group" aria-label="MCP 写操作策略">
@@ -983,7 +990,7 @@ function I18N_LANG(value) { return ['auto','zh-CN','en','ja','ko'].includes(valu
 
 const I18N = {
   'zh-CN': {
-    searchPlaceholder:'搜索应用、剪贴板、笔记…  = 计算 · ? AI · > 命令', customize:'定制组件', onboardingTitle:'欢迎使用 RuDock', onboardingLead:'把 Win 键变成你的工作台。常用入口、组件和 Agent 能力都集中在这里。', onboardingLanguage:'界面语言', onboardingApps:'应用与搜索', onboardingAppsHint:'应用索引由后台服务预先建立，打开面板即可搜索。', onboardingWidgets:'组件与插件', onboardingWidgetsHint:'组件可以常驻桌面，插件为面板和 Agent 增加能力。', onboardingAgent:'AI 与自动化', onboardingAgentHint:'用 ? 随手提问，也可以通过 CLI 或 MCP 连接 Agent。', onboardingWin:'接管 Windows 键', onboardingSkip:'稍后设置', onboardingStart:'开始使用',
+    searchPlaceholder:'搜索应用、剪贴板、笔记…  = 计算 · ? AI · > 命令', customize:'定制组件', onboardingTitle:'欢迎使用 RuDock', onboardingLead:'把 Win 键变成你的工作台。常用入口、组件和 Agent 能力都集中在这里。', onboardingLanguage:'界面语言', onboardingApps:'应用与搜索', onboardingAppsHint:'应用索引由后台服务预先建立，打开面板即可搜索。', onboardingWidgets:'组件与插件', onboardingWidgetsHint:'组件可以常驻桌面，插件为面板和 Agent 增加能力。', onboardingAgent:'AI 与自动化', onboardingAgentHint:'用 ? 随手提问，也可以通过 CLI 或 MCP 连接 Agent。', onboardingWin:'接管 Windows 键', onboardingSkip:'稍后设置', onboardingStart:'开始使用', updateCheck:'检查更新', checking:'检查中…', updateAvailable:'有新版本 {version}', upToDate:'已是最新', noRelease:'暂无正式发布版本', updateCheckFailed:'检查更新失败', openRelease:'打开发布页',
     time:'时间', weather:'天气', live:'实时', loading:'获取中…', calendar:'日历', worldClock:'世界时钟',
     beijing:'北京', newYork:'纽约', london:'伦敦', nowPlaying:'正在播放', notPlaying:'未在播放', mediaHint:'打开音乐应用试试',
     systemStatus:'系统状态', memory:'内存', battery:'电池', focusTimer:'专注计时', start:'开始', pause:'暂停', reset:'重置',
@@ -1019,7 +1026,7 @@ const I18N = {
     quoteRefresh:'点击换一句', quoteSource:'网络',
   },
   en: {
-    searchPlaceholder:'Search apps, clipboard, notes…  = Calculate · ? AI · > Commands', customize:'Customize widgets', onboardingTitle:'Welcome to RuDock', onboardingLead:'Make the Windows key your workbench for apps, widgets, and Agent tools.', onboardingLanguage:'Interface language', onboardingApps:'Apps and search', onboardingAppsHint:'The background service builds the app index before you search.', onboardingWidgets:'Widgets and plugins', onboardingWidgetsHint:'Pin widgets to the desktop and extend the panel with plugins.', onboardingAgent:'AI and automation', onboardingAgentHint:'Ask with ? or connect an Agent through CLI and MCP.', onboardingWin:'Use the Windows key', onboardingSkip:'Set up later', onboardingStart:'Start using RuDock',
+    searchPlaceholder:'Search apps, clipboard, notes…  = Calculate · ? AI · > Commands', customize:'Customize widgets', onboardingTitle:'Welcome to RuDock', onboardingLead:'Make the Windows key your workbench for apps, widgets, and Agent tools.', onboardingLanguage:'Interface language', onboardingApps:'Apps and search', onboardingAppsHint:'The background service builds the app index before you search.', onboardingWidgets:'Widgets and plugins', onboardingWidgetsHint:'Pin widgets to the desktop and extend the panel with plugins.', onboardingAgent:'AI and automation', onboardingAgentHint:'Ask with ? or connect an Agent through CLI and MCP.', onboardingWin:'Use the Windows key', onboardingSkip:'Set up later', onboardingStart:'Start using RuDock', updateCheck:'Check for updates', checking:'Checking…', updateAvailable:'New version {version}', upToDate:'Up to date', noRelease:'No stable release published yet', updateCheckFailed:'Update check failed', openRelease:'Open release page',
     time:'Time', weather:'Weather', live:'Live', loading:'Loading…', calendar:'Calendar', worldClock:'World clock',
     beijing:'Beijing', newYork:'New York', london:'London', nowPlaying:'Now playing', notPlaying:'Nothing playing', mediaHint:'Open a music app to begin',
     systemStatus:'System status', memory:'Memory', battery:'Battery', focusTimer:'Focus timer', start:'Start', pause:'Pause', reset:'Reset',
@@ -1055,7 +1062,7 @@ const I18N = {
     quoteRefresh:'Show another quote', quoteSource:'Community',
   },
   ja: {
-    searchPlaceholder:'アプリ、クリップボード、メモを検索…  = 計算 · ? AI · > コマンド', customize:'ウィジェットをカスタマイズ', onboardingTitle:'RuDock へようこそ', onboardingLead:'Windows キーを、アプリ・ウィジェット・Agent のためのワークベンチにします。', onboardingLanguage:'表示言語', onboardingApps:'アプリと検索', onboardingAppsHint:'検索する前にバックグラウンドでアプリ索引を作成します。', onboardingWidgets:'ウィジェットとプラグイン', onboardingWidgetsHint:'ウィジェットをデスクトップに固定し、プラグインで拡張できます。', onboardingAgent:'AI と自動化', onboardingAgentHint:'? で質問するか、CLI と MCP から Agent を接続できます。', onboardingWin:'Windows キーを使用', onboardingSkip:'後で設定', onboardingStart:'RuDock を始める',
+    searchPlaceholder:'アプリ、クリップボード、メモを検索…  = 計算 · ? AI · > コマンド', customize:'ウィジェットをカスタマイズ', onboardingTitle:'RuDock へようこそ', onboardingLead:'Windows キーを、アプリ・ウィジェット・Agent のためのワークベンチにします。', onboardingLanguage:'表示言語', onboardingApps:'アプリと検索', onboardingAppsHint:'検索する前にバックグラウンドでアプリ索引を作成します。', onboardingWidgets:'ウィジェットとプラグイン', onboardingWidgetsHint:'ウィジェットをデスクトップに固定し、プラグインで拡張できます。', onboardingAgent:'AI と自動化', onboardingAgentHint:'? で質問するか、CLI と MCP から Agent を接続できます。', onboardingWin:'Windows キーを使用', onboardingSkip:'後で設定', onboardingStart:'RuDock を始める', updateCheck:'更新を確認', checking:'確認中…', updateAvailable:'新しいバージョン {version}', upToDate:'最新です', noRelease:'正式リリースはまだありません', updateCheckFailed:'更新を確認できません', openRelease:'リリースページを開く',
     time:'時刻', weather:'天気', live:'リアルタイム', loading:'取得中…', calendar:'カレンダー', worldClock:'世界時計',
     beijing:'北京', newYork:'ニューヨーク', london:'ロンドン', nowPlaying:'再生中', notPlaying:'再生していません', mediaHint:'音楽アプリを開いてください',
     systemStatus:'システム状態', memory:'メモリ', battery:'バッテリー', focusTimer:'集中タイマー', start:'開始', pause:'一時停止', reset:'リセット',
@@ -1091,7 +1098,7 @@ const I18N = {
     quoteRefresh:'別の一言を表示', quoteSource:'コミュニティ',
   },
   ko: {
-    searchPlaceholder:'앱, 클립보드, 메모 검색…  = 계산 · ? AI · > 명령', customize:'위젯 사용자 지정', onboardingTitle:'RuDock 시작하기', onboardingLead:'Windows 키를 앱, 위젯, Agent를 위한 작업 공간으로 바꿉니다.', onboardingLanguage:'화면 언어', onboardingApps:'앱과 검색', onboardingAppsHint:'검색하기 전에 백그라운드 서비스가 앱 색인을 준비합니다.', onboardingWidgets:'위젯과 플러그인', onboardingWidgetsHint:'위젯을 데스크톱에 고정하고 플러그인으로 확장하세요.', onboardingAgent:'AI와 자동화', onboardingAgentHint:'?로 질문하거나 CLI와 MCP에서 Agent를 연결할 수 있습니다.', onboardingWin:'Windows 키 사용', onboardingSkip:'나중에 설정', onboardingStart:'RuDock 시작',
+    searchPlaceholder:'앱, 클립보드, 메모 검색…  = 계산 · ? AI · > 명령', customize:'위젯 사용자 지정', onboardingTitle:'RuDock 시작하기', onboardingLead:'Windows 키를 앱, 위젯, Agent를 위한 작업 공간으로 바꿉니다.', onboardingLanguage:'화면 언어', onboardingApps:'앱과 검색', onboardingAppsHint:'검색하기 전에 백그라운드 서비스가 앱 색인을 준비합니다.', onboardingWidgets:'위젯과 플러그인', onboardingWidgetsHint:'위젯을 데스크톱에 고정하고 플러그인으로 확장하세요.', onboardingAgent:'AI와 자동화', onboardingAgentHint:'?로 질문하거나 CLI와 MCP에서 Agent를 연결할 수 있습니다.', onboardingWin:'Windows 키 사용', onboardingSkip:'나중에 설정', onboardingStart:'RuDock 시작', updateCheck:'업데이트 확인', checking:'확인 중…', updateAvailable:'새 버전 {version}', upToDate:'최신 버전입니다', noRelease:'정식 릴리스가 아직 없습니다', updateCheckFailed:'업데이트를 확인하지 못했습니다', openRelease:'릴리스 페이지 열기',
     time:'시간', weather:'날씨', live:'실시간', loading:'불러오는 중…', calendar:'달력', worldClock:'세계 시계',
     beijing:'베이징', newYork:'뉴욕', london:'런던', nowPlaying:'재생 중', notPlaying:'재생 중인 항목 없음', mediaHint:'음악 앱을 열어 보세요',
     systemStatus:'시스템 상태', memory:'메모리', battery:'배터리', focusTimer:'집중 타이머', start:'시작', pause:'일시정지', reset:'초기화',
@@ -1128,6 +1135,7 @@ const I18N = {
   },
 };
 let languageSetting = 'auto', locale = 'zh-CN';
+let lastUpdateResult = null, updateCheckBusy = false;
 function resolveLocale(value) {
   if (value !== 'auto' && I18N[value]) return value;
   const system = String(navigator.language || 'zh-CN').toLowerCase();
@@ -1190,6 +1198,9 @@ function applyLanguage(value) {
   $('#onboarding-agent').textContent = t('onboardingAgent'); $('#onboarding-agent-hint').textContent = t('onboardingAgentHint');
   $('#onboarding-win-label').textContent = t('onboardingWin'); $('#onboarding-skip').textContent = t('onboardingSkip'); $('#onboarding-start').textContent = t('onboardingStart');
   if ($('#onboarding-language')) $('#onboarding-language').value = languageSetting;
+  $('#cfg-update-label').textContent = t('updateCheck'); $('#cfg-update').title = t('updateCheck'); $('#cfg-update').setAttribute('aria-label', t('updateCheck'));
+  $('#cfg-update-open').title = t('openRelease'); $('#cfg-update-open').setAttribute('aria-label', t('openRelease'));
+  if (lastUpdateResult) renderUpdateResult(lastUpdateResult);
   $('#htk-bd').title = t('quoteRefresh');
   const quickKeys = ['settingsApp','taskManager','calculator','notepad','terminal','screenshot'];
   $$('#w-quick .qbtn').forEach((el, i) => { const label=t(quickKeys[i]); el.title=label; el.setAttribute('aria-label',label); el.querySelector('.qlabel').textContent=label; });
@@ -2574,9 +2585,48 @@ async function saveSystemSetting(key, value) {
   renderDesktopConfig(m.result);
   showToast(t('saved'));
 }
+function renderUpdateResult(result) {
+  lastUpdateResult = result && typeof result === 'object' ? result : null;
+  const state = $('#cfg-update-state'), open = $('#cfg-update-open');
+  if (!lastUpdateResult) {
+    state.textContent = '';
+    open.hidden = true;
+    return;
+  }
+  const releaseAvailable = lastUpdateResult.release_available !== false;
+  const available = releaseAvailable && !!lastUpdateResult.update_available;
+  state.textContent = !releaseAvailable
+    ? t('noRelease')
+    : available
+      ? t('updateAvailable', { version:lastUpdateResult.latest_version || '?' })
+      : t('upToDate');
+  open.hidden = !available;
+}
+async function checkForUpdates() {
+  if (updateCheckBusy) return;
+  updateCheckBusy = true;
+  const button = $('#cfg-update');
+  button.disabled = true; $('#cfg-update-state').textContent = t('checking'); $('#cfg-update-open').hidden = true;
+  const m = await rpc('app.update.check', {}, 18000);
+  updateCheckBusy = false; button.disabled = false;
+  if (!m || m.error || !m.result) {
+    lastUpdateResult = null; $('#cfg-update-state').textContent = t('updateCheckFailed');
+    showToast(t('updateCheckFailed')); return;
+  }
+  renderUpdateResult(m.result);
+  showToast(m.result.release_available === false
+    ? t('noRelease')
+    : m.result.update_available
+      ? t('updateAvailable', { version:m.result.latest_version || '?' })
+      : t('upToDate'));
+}
 $('#cfg-language').addEventListener('change', ev => saveSystemSetting('language', ev.target.value));
 $('#cfg-win').addEventListener('change', ev => saveSystemSetting('takeover_win', ev.target.checked));
 $('#cfg-autostart').addEventListener('change', ev => saveSystemSetting('autostart', ev.target.checked));
+$('#cfg-update').addEventListener('click', checkForUpdates);
+$('#cfg-update-open').addEventListener('click', () => {
+  if (lastUpdateResult && lastUpdateResult.release_url) send({ kind:'action', action:'open', path:lastUpdateResult.release_url });
+});
 $$('#cfg-mcp-policy button').forEach(button => button.addEventListener('click', () => {
   saveSystemSetting('mcp_write_policy', button.dataset.policy);
 }));

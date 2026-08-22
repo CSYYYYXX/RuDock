@@ -818,6 +818,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "interprocess",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

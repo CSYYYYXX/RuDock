@@ -172,6 +172,8 @@ fn read_manifest(dir: &Path) -> Result<wb_plugin_sdk::Manifest, String> {
 
 const REMOTE_ARCHIVE_MAX_BYTES: u64 = 32 * 1024 * 1024;
 const MARKET_INDEX_MAX_BYTES: u64 = 2 * 1024 * 1024;
+const UPDATE_INDEX_MAX_BYTES: u64 = 1024 * 1024;
+const UPDATE_RELEASE_API: &str = "https://api.github.com/repos/CSYYYYXX/RuDock/releases?per_page=10";
 const INSTALL_TREE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const INSTALL_FILE_MAX_BYTES: u64 = 16 * 1024 * 1024;
 const INSTALL_TREE_MAX_FILES: usize = 512;
@@ -282,6 +284,69 @@ fn download_http(
         return Err(format!("{label}超过 {}MB", max_bytes / 1024 / 1024));
     }
     Ok(())
+}
+
+fn parse_update_release(body: &str) -> Result<serde_json::Value, String> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| format!("解析 GitHub 更新信息失败: {e}"))?;
+    let current = semver::Version::parse(env!("CARGO_PKG_VERSION"))
+        .map_err(|e| format!("当前版本无效: {e}"))?;
+    let release = match &value {
+        serde_json::Value::Array(items) => items.iter().find(|item| {
+            !item.get("draft").and_then(|v| v.as_bool()).unwrap_or(false)
+                && !item.get("prerelease").and_then(|v| v.as_bool()).unwrap_or(false)
+        }),
+        serde_json::Value::Object(_) => Some(&value),
+        _ => None,
+    };
+    let Some(release) = release else {
+        return Ok(serde_json::json!({
+            "current_version": current.to_string(),
+            "latest_version": serde_json::Value::Null,
+            "release_available": false,
+            "update_available": false,
+            "release_url": "https://github.com/CSYYYYXX/RuDock/releases",
+        }));
+    };
+    let tag = release
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "GitHub 更新信息缺少 tag_name".to_string())?;
+    let normalized = tag.trim().trim_start_matches(['v', 'V']);
+    let latest = semver::Version::parse(normalized)
+        .map_err(|e| format!("GitHub 发布版本无效: {e}"))?;
+    let release_url = release
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .filter(|url| url.starts_with("https://github.com/CSYYYYXX/RuDock/releases/"))
+        .unwrap_or("https://github.com/CSYYYYXX/RuDock/releases")
+        .to_string();
+    Ok(serde_json::json!({
+        "current_version": current.to_string(),
+        "latest_version": latest.to_string(),
+        "release_available": true,
+        "update_available": latest > current,
+        "release_url": release_url,
+        "published_at": release.get("published_at").and_then(|v| v.as_str()),
+    }))
+}
+
+fn check_for_update() -> Result<serde_json::Value, String> {
+    let root = wb_core::paths::local_data_dir();
+    std::fs::create_dir_all(&root).map_err(|e| format!("创建更新缓存目录失败: {e}"))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = root.join(format!(".update-check-{stamp}-{}.json", std::process::id()));
+    let result = (|| {
+        download_http(UPDATE_RELEASE_API, &path, UPDATE_INDEX_MAX_BYTES, 15, "更新信息")?;
+        let body = std::fs::read_to_string(&path)
+            .map_err(|e| format!("读取更新信息失败: {e}"))?;
+        parse_update_release(&body)
+    })();
+    let _ = std::fs::remove_file(&path);
+    result
 }
 
 fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, String), String> {
@@ -1597,6 +1662,7 @@ fn should_audit(method: &str) -> bool {
         "daemon.ping"
             | "settings.get"
             | "hook.status"
+            | "app.update.check"
             | "schema"
             | "cmd.list"
             | "cmd.tools"
@@ -1682,6 +1748,9 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         }
 
         "schema" => Ok(wb_core::protocol::schema()),
+
+        "app.update.check" => check_for_update()
+            .map_err(|e| CoreError::new(ErrorCode::Internal, e)),
 
         "settings.get" => {
             let mut settings = read_settings();
@@ -2788,6 +2857,32 @@ mod tests {
         let settings = default_settings();
         assert_eq!(settings["onboarding_complete"], false);
         assert_eq!(settings["language"], "auto");
+    }
+
+    #[test]
+    fn update_release_parser_normalizes_tags_and_rejects_untrusted_urls() {
+        let parsed = parse_update_release(
+            r#"{"tag_name":"v9.9.9","html_url":"https://evil.example/release","published_at":"2026-08-23T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed["latest_version"], "9.9.9");
+        assert_eq!(parsed["release_available"], true);
+        assert_eq!(parsed["update_available"], true);
+        assert_eq!(parsed["release_url"], "https://github.com/CSYYYYXX/RuDock/releases");
+    }
+
+    #[test]
+    fn update_release_parser_rejects_invalid_tags() {
+        let error = parse_update_release(r#"{"tag_name":"preview"}"#).unwrap_err();
+        assert!(error.contains("版本无效"));
+    }
+
+    #[test]
+    fn update_release_parser_handles_no_published_release() {
+        let parsed = parse_update_release(r#"[{"draft":true,"tag_name":"v0.1.0"},{"prerelease":true,"tag_name":"v0.2.0"}]"#).unwrap();
+        assert_eq!(parsed["release_available"], false);
+        assert_eq!(parsed["update_available"], false);
+        assert!(parsed["latest_version"].is_null());
     }
 
     #[test]

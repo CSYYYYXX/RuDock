@@ -79,6 +79,7 @@ E:\cctest\wb\
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp install/status/uninstall` 管理客户端配置，`wb mcp config claude|cursor|codex|generic` 生成只读配置片段，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
+- 发布升级检查：daemon 提供只读 `app.update.check`，CLI 为 `wb update check`，设置页可手动查询 GitHub 最新稳定版并打开发布页；请求不进入启动热路径、不自动下载或替换程序，版本标签和发布链接均经过校验。
 - 桌面常驻组件：设置页可选择内置或插件组件常驻桌面，AI 问答也已成为独立组件；独立 `wb-panel.exe --desktop` 使用窗口类 `WBDesktopWidgets` 和单实例 mutex，窗口区域裁剪为实际卡片并保持普通桌面层级。Win 面板默认打开应用页，左侧仍保留完整组件页。CLI 支持 `wb settings desktop <ids...>`，空列表关闭宿主。设置变更通过 `WM_WB_DESKTOP_REFRESH` 事件推送，不再轮询；hook 状态改读 `Local\WBHookSingleInstance`，完全移除会闪控制台的 `tasklist` 查询。
 - 多语言：设置页支持 `auto / zh-CN / en / ja / ko`，切换后静态标题、动态搜索/命令/AI/插件市场文案、日期、天气和桌面宿主即时刷新并持久化；CLI 支持 `wb settings language auto|zh-CN|en|ja|ko`。四套翻译表均为 192 个键且无缺项，天气按 WMO code 前端翻译。官方插件示例也会根据宿主传入的 locale 更新文案。
 - Spotlight 搜索：应用索引在 daemon 启动阶段同步建立，开始处理命名管道请求前已完成，之后每 5 分钟后台刷新；`apps.list` 和统一搜索只读内存快照，首次打开面板/搜索不会现场扫描或启动 `Get-StartApps`。`wb daemon status` 暴露 `apps_indexed` / `apps_index_ready`。文件类请求优先通过 Everything 1.4/1.5 Unicode v1 IPC 做全盘查询，单次最多 200 条，发送/回包各 1.5 秒超时并严格校验回包；Everything 不可用、数据库未就绪或 IPC 失败时自动降级到 Desktop/Documents/Downloads/OneDrive 的后台有界索引（最多 50,000 项）。结果继续与应用、剪贴板、笔记、待办、插件命令合并排序；状态接口同时暴露 Everything 进程/数据库两个状态。结果 UI 现显示人类可读的来源徽标、选中项详情和真实文件图标；文件支持打开、资源管理器定位、复制路径，笔记/剪贴板支持复制正文，待办可直接完成，`Ctrl+K` / `→` 进入动作区。选择频率与最近使用时间只写本机 `localStorage` 并参与同类结果排序。搜索协议的可选 `preview` 最多 4000 字符，临时隔离配置 E2E 已验证笔记预览和 `wb://todo/<id>` 动作标识。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费。视觉回归可用完全脱敏的 `#test-search` 固定数据入口。
@@ -92,7 +93,7 @@ E:\cctest\wb\
 - 当前用户安装：发布包包含 `install.ps1` / `uninstall.ps1` / `start-hidden.vbs`，安装到 `%LOCALAPPDATA%\Programs\RuDock`（可自定义目标）并注册 HKCU 开始菜单快捷方式和卸载项，不需要管理员权限；快捷方式经 wscript 隐藏启动，避免 console 窗口闪现。升级替换程序目录但不删除 `%APPDATA%\WB`、`%LOCALAPPDATA%\WB`，卸载默认保留数据，`-PurgeData` 才清理个人数据。PowerShell 语法检查和临时目录安装/卸载冒烟已通过。
 - 数据可恢复性：`wb backup create [--output PATH]` 使用 SQLite Online Backup 生成一致数据库副本，再打包设置和 `%LOCALAPPDATA%\WB\plugins` 用户插件；`wb backup restore <ZIP>` 先校验 ZIP 路径、清单、SQLite integrity_check 和插件 manifest，daemon 运行时拒绝恢复，提交前把现有数据库/设置/用户插件移入 `restore-backups` 回滚目录，失败自动回滚。归档限制 1024 文件、单文件 16 MiB、总 payload 256 MiB，拒绝符号链接/特殊文件且不覆盖已有输出。结果返回归档 SHA-256，备份单测覆盖在线数据库行保留和最小恢复归档，真实本机备份归档冒烟已通过；恢复运行中拒绝冒烟已通过。
 - 支持诊断：`wb diagnostics create [--output PATH]` 生成脱敏 ZIP，只收集版本/系统、daemon 状态、插件摘要、设置（密钥与路径脱敏）、审计摘要和 schema；明确排除数据库、剪贴板正文、AI 配置和用户文件索引。单测覆盖密钥/路径递归脱敏，真实本机诊断归档冒烟已通过。
-- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 17 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 12 + wb-mcp 14 + wb-panel 3，共 76 个单测；workspace test 和 release build 通过（wb-panel 仍有原有 11 条 warning）。MCP 配置隔离测试覆盖 JSON/TOML 保留、幂等、冲突、强制替换、原子写入和卸载，真实 CLI `--file` 也完成两种格式的 install→status→uninstall。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。组件调整大小的 pointer→RPC→settings 持久化链路已在真实 WebView2 宿主冒烟，测试布局随后恢复；日语组件页与英文应用页实机检查无 JS 错误。桌面组件既有无隐私视觉回归截图为 `docs-assets/desktop-widgets.png`。
+- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 21 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 20 + wb-mcp 14 + wb-panel 3，共 88 个单测；workspace test、严格 Clippy（非 wb-panel）和 release build 通过（wb-panel 仍有原有 11 条 warning）。MCP 配置隔离测试覆盖 JSON/TOML 保留、幂等、冲突、强制替换、原子写入和卸载，真实 CLI `--file` 也完成两种格式的 install→status→uninstall。升级检查覆盖 SemVer 标签、无正式 Release、发布链接校验；本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。组件调整大小的 pointer→RPC→settings 持久化链路已在真实 WebView2 宿主冒烟，测试布局随后恢复；日语组件页与英文应用页实机检查无 JS 错误。桌面组件既有无隐私视觉回归截图为 `docs-assets/desktop-widgets.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -107,11 +108,11 @@ E:\cctest\wb\
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **发行与引导**：用户级安装器、首次启动引导和四语语言选择已接通；最终集中前台验收后创建首个 `v0.1.0` tag，验证 GitHub Actions 的真实 Release，并补升级检查。
+1. **发行与引导**：用户级安装器、首次启动引导、四语语言选择和手动升级检查已接通；最终集中前台验收后创建首个 `v0.1.0` tag，验证 GitHub Actions 的真实 Release。
 2. **Agent 生态深化**：一键安装和 MCP 动态 tools/resources/prompts、写策略、elicitation、脱敏事件订阅均已接通；下一步做 Agent profile 与更细粒度的事件过滤。
 3. **插件生态深化**：继续把天气、倒数日等内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
 4. **搜索体验深化**：可继续做图片/文本文件内容预览、结果分组折叠与钉到看板。
 
 ## 8. 上次会话最后在做的事
 
-完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证、GitHub Release workflow、用户级安装器、`wb backup create/restore` 数据备份恢复和 `wb diagnostics create` 脱敏诊断导出。面向用户的 README 已改为下载、启动、校验、升级、备份、恢复、诊断和卸载说明；首次启动引导支持中文、英文、日文、韩文，并对旧设置文件默认视为已完成。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`a1a0bcc`、`b72773b`、`320beaf`、`6622c03`、`7cdd39c`。最终便携包已重建，ZIP SHA-256 为 `37393d3b9d2b33156f34b580ccbdf5a1d8857586b6a48ad56bae8c4bf9d90726`。下一步做升级检查，再把便携目录启动、多语言、组件响应式、首次引导和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。
+完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPL-3.0 许可证、GitHub Release workflow、用户级安装器、`wb backup create/restore` 数据备份恢复、`wb diagnostics create` 脱敏诊断导出和手动升级检查。面向用户的 README 已改为下载、启动、校验、升级、备份、恢复、诊断和卸载说明；首次启动引导支持中文、英文、日文、韩文，并对旧设置文件默认视为已完成。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`a1a0bcc`、`b72773b`、`320beaf`、`6622c03`、`7cdd39c`。当前本地便携包 ZIP SHA-256 为 `7fe9d687d81d6817e11b292b5ac2746c68cb8b20963d090f407719005b9a0f42`。下一步把便携目录启动、多语言、组件响应式、首次引导、升级检查和关键交互合并成一次前台验收；验收通过后再创建 `v0.1.0` tag。用户允许必要的前台验收，但明确要求尽量减少频率。

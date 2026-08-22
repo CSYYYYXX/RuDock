@@ -44,6 +44,7 @@ pub fn schema() -> Value {
             {"name": "daemon.stop", "params": {}, "returns": {"type": "object"}},
             {"name": "settings.get", "params": {}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?", "mcp_write_policy": "client|ask|read-only?", "language": "auto|zh-CN|en|ja|ko?", "onboarding_complete": "boolean?", "desktop_widgets": "string[]?", "widget_layout": "{surface,id,cols?,rows?,reset?}?"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "app.update.check", "params": {}, "returns": {"type": "object"}, "status": "M6"},
             {"name": "hook.status", "params": {}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "search", "params": {"query": "string", "limit": "number?", "type": "file|app|clip|note|todo|plugin?"}, "returns": {"type": "array"}},
             {"name": "note.add", "params": {"content": "string", "tags": "string[]?"}, "returns": {"type": "object"}},
@@ -100,6 +101,9 @@ mod tests {
         assert!(methods
             .iter()
             .any(|method| method["name"] == "plugin.market.update"));
+        assert!(methods
+            .iter()
+            .any(|method| method["name"] == "app.update.check"));
         let settings = methods
             .iter()
             .find(|method| method["name"] == "settings.set")

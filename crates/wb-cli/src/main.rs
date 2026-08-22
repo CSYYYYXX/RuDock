@@ -109,6 +109,11 @@ enum Cmd {
         #[command(subcommand)]
         op: DiagnosticsOp,
     },
+    /// Check the latest RuDock release without changing local files
+    Update {
+        #[command(subcommand)]
+        op: UpdateOp,
+    },
 }
 
 #[derive(Subcommand)]
@@ -362,6 +367,12 @@ enum DiagnosticsOp {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+}
+
+#[derive(Subcommand)]
+enum UpdateOp {
+    /// Check GitHub for a newer stable RuDock release
+    Check,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -2000,6 +2011,7 @@ fn main() {
             serde_json::json!({"after":after,"limit":limit,"wait_ms":wait_ms}),
         ),
         Cmd::Apps => ("apps.list", serde_json::json!({})),
+        Cmd::Update { op: UpdateOp::Check } => ("app.update.check", serde_json::json!({})),
         Cmd::Daemon { .. } => unreachable!(),
         Cmd::Schema => unreachable!(),
         Cmd::Mcp { .. } => unreachable!(),
@@ -2422,6 +2434,12 @@ mod tests {
             } => assert_eq!(widgets, ["w-clock", "w-weather", "w-ai"]),
             _ => panic!("unexpected command"),
         }
+    }
+
+    #[test]
+    fn parses_update_check_command() {
+        let cli = Cli::try_parse_from(["wb", "update", "check"]).unwrap();
+        assert!(matches!(cli.cmd, Cmd::Update { op: UpdateOp::Check }));
     }
 
     #[test]
