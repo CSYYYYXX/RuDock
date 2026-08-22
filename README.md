@@ -146,14 +146,16 @@ wb cmd run todo.add --arg title="检查发布" --json
 wb skill list --json
 ```
 
-需要接入 Claude、Cursor、Codex 或其他 MCP 客户端时，可以生成对应配置：
+需要接入 Claude、Cursor 或 Codex 时，可以让 RuDock 安全地合并客户端配置：
 
 ```powershell
-wb mcp config claude
-wb mcp config cursor
-wb mcp config codex
-wb mcp config generic
+wb mcp install codex
+wb mcp install claude
+wb mcp install cursor
+wb mcp status codex
 ```
+
+卸载使用 `wb mcp uninstall <客户端>`。已有同名配置时 RuDock 不会直接覆盖；确认后可在安装命令后添加 `--force`。`wb mcp config <客户端>` 仍可只生成配置片段，不修改文件。
 
 插件 Skill 会自动成为 MCP prompt；Agent 还可以订阅不含正文内容的活动事件。完整命令、MCP 能力和接入方式见 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)。
 

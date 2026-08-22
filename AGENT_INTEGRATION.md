@@ -4,7 +4,39 @@ WB 对外提供两层稳定接口：适合 MCP 客户端的 `wb-mcp.exe`，以�
 
 ## MCP 快速配置
 
-先构建 workspace，确保 `wb.exe`、`wb-mcp.exe` 与 `wb-daemon.exe` 位于同一产物目录。随后让 CLI 按当前可执行文件的绝对路径生成配置：
+确保 `wb.exe`、`wb-mcp.exe` 与 `wb-daemon.exe` 位于同一安装目录。CLI 可以把当前 `wb-mcp.exe` 的绝对路径结构化合并进客户端配置：
+
+```text
+wb mcp install claude
+wb mcp install cursor
+wb mcp install codex
+```
+
+默认配置路径：
+
+| 客户端 | 配置文件 |
+| --- | --- |
+| Codex | `%USERPROFILE%\.codex\config.toml` |
+| Claude Desktop | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Cursor | `%USERPROFILE%\.cursor\mcp.json` |
+
+安装会保留文件中的其他 MCP server 和客户端设置，并通过同目录临时文件原子提交。重复安装是幂等的；如果已有不属于当前 RuDock 的 `wb` 条目，命令会拒绝覆盖。检查并确认后才使用 `--force`：
+
+```text
+wb mcp status codex --json
+wb mcp install codex --force
+wb mcp uninstall codex
+```
+
+卸载默认也只移除命令路径指向当前 `wb-mcp.exe` 的条目；删除冲突条目同样需要 `--force`。客户端配置位于其他位置时使用 `--file`，`generic` 客户端必须提供它：
+
+```text
+wb mcp install generic --file D:\agent\mcp.json
+wb mcp status generic --file D:\agent\mcp.json --json
+wb mcp uninstall generic --file D:\agent\mcp.json
+```
+
+只想预览配置、不修改文件时，使用原有 `config` 命令：
 
 ```text
 wb mcp config claude
@@ -13,8 +45,7 @@ wb mcp config codex
 wb mcp config generic
 ```
 
-- `claude` / `cursor` / `generic` 输出 `mcpServers` JSON，可合并进客户端的 MCP 配置文件。
-- `codex` 输出可合并进 `%USERPROFILE%\.codex\config.toml` 的 TOML：
+`claude` / `cursor` / `generic` 输出 `mcpServers` JSON，`codex` 输出可合并进 `config.toml` 的 TOML：
 
 ```toml
 [mcp_servers.wb]
@@ -22,7 +53,7 @@ command = "E:\\path\\to\\wb-mcp.exe"
 args = []
 ```
 
-使用 `--json` 时，生成结果包装为 `{"client","config"}`，便于安装器或 Agent 自动消费。
+所有管理命令都支持 `--json`。`status` 返回 `installed`、`missing` 或 `conflict`；安装与卸载另返回 `changed`，便于脚本判断是否实际写入。
 
 ## MCP 能力
 

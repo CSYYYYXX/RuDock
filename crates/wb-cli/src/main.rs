@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use interprocess::local_socket::{prelude::*, GenericNamespaced};
 use interprocess::TryClone;
 use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
+use std::path::{Path, PathBuf};
 use wb_core::error::{CoreError, ErrorCode};
 use wb_core::protocol::{Request, Response};
 
@@ -297,6 +298,36 @@ enum DaemonOp {
 enum McpOp {
     /// Print a client configuration snippet using the current wb-mcp.exe
     Config { #[arg(value_enum, default_value_t = McpClient::Generic)] client: McpClient },
+    /// Install RuDock into an MCP client's configuration
+    Install {
+        #[arg(value_enum)]
+        client: McpClient,
+        /// Override the client's default configuration path
+        #[arg(long, value_name = "PATH")]
+        file: Option<PathBuf>,
+        /// Replace an existing mcp server named "wb"
+        #[arg(long)]
+        force: bool,
+    },
+    /// Inspect RuDock's entry in an MCP client configuration
+    Status {
+        #[arg(value_enum)]
+        client: McpClient,
+        /// Override the client's default configuration path
+        #[arg(long, value_name = "PATH")]
+        file: Option<PathBuf>,
+    },
+    /// Remove RuDock from an MCP client's configuration
+    Uninstall {
+        #[arg(value_enum)]
+        client: McpClient,
+        /// Override the client's default configuration path
+        #[arg(long, value_name = "PATH")]
+        file: Option<PathBuf>,
+        /// Remove a conflicting mcp server named "wb"
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -318,25 +349,320 @@ impl std::fmt::Display for McpClient {
     }
 }
 
-fn mcp_config(client: McpClient) -> Result<String, CoreError> {
-    let exe = std::env::current_exe()
-        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("定位 wb.exe 失败: {e}")))?
-        .parent()
-        .map(|p| p.join("wb-mcp.exe"))
-        .ok_or_else(|| CoreError::new(ErrorCode::Internal, "定位 wb-mcp.exe 失败"))?;
-    if !exe.is_file() {
-        return Err(CoreError::new(ErrorCode::NotFound, format!("wb-mcp.exe 不在 {}", exe.display())));
+fn mcp_executable() -> Result<PathBuf, CoreError> {
+    let current = std::env::current_exe()
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("定位 wb.exe 失败: {e}")))?;
+    let parent = current.parent().ok_or_else(|| CoreError::new(ErrorCode::Internal, "定位 wb-mcp.exe 失败"))?;
+    let direct = parent.join("wb-mcp.exe");
+    if direct.is_file() {
+        return Ok(direct);
     }
-    let path = exe.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
-    let json = format!(
-        "{{\n  \"mcpServers\": {{\n    \"wb\": {{\n      \"command\": \"{}\",\n      \"args\": []\n    }}\n  }}\n}}",
-        path
-    );
-    let toml = format!("[mcp_servers.wb]\ncommand = \"{}\"\nargs = []\n", path);
+    let test_build = if parent.file_name().and_then(|name| name.to_str()) == Some("deps") {
+        parent.parent().map(|p| p.join("wb-mcp.exe"))
+    } else {
+        None
+    };
+    if let Some(exe) = test_build.filter(|p| p.is_file()) {
+        return Ok(exe);
+    }
+    Err(CoreError::new(ErrorCode::NotFound, format!("wb-mcp.exe 不在 {}", direct.display())))
+}
+
+fn mcp_config(client: McpClient) -> Result<String, CoreError> {
+    let exe = mcp_executable()?;
+    let json = serde_json::to_string_pretty(&serde_json::json!({
+        "mcpServers": {"wb": {"command": exe, "args": []}}
+    }))
+    .map_err(|e| CoreError::new(ErrorCode::Internal, format!("生成 MCP JSON 失败: {e}")))?
+        + "\n";
+    let mut doc = toml_edit::DocumentMut::new();
+    doc["mcp_servers"]["wb"]["command"] = toml_edit::value(exe.to_string_lossy().as_ref());
+    doc["mcp_servers"]["wb"]["args"] = toml_edit::value(toml_edit::Array::new());
+    let toml = doc.to_string();
     Ok(match client {
         McpClient::Codex => toml,
         McpClient::Claude | McpClient::Cursor | McpClient::Generic => json,
     })
+}
+
+fn mcp_config_path(client: McpClient, file: Option<&Path>) -> Result<PathBuf, CoreError> {
+    if let Some(path) = file {
+        return Ok(path.to_path_buf());
+    }
+    let home = std::env::var_os("USERPROFILE").map(PathBuf::from).ok_or_else(|| {
+        CoreError::new(ErrorCode::NotFound, "未找到 USERPROFILE；请使用 --file 指定配置文件")
+    })?;
+    match client {
+        McpClient::Codex => Ok(home.join(".codex").join("config.toml")),
+        McpClient::Cursor => Ok(home.join(".cursor").join("mcp.json")),
+        McpClient::Claude => std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .map(|path| path.join("Claude").join("claude_desktop_config.json"))
+            .ok_or_else(|| CoreError::new(ErrorCode::NotFound, "未找到 APPDATA；请使用 --file 指定配置文件")),
+        McpClient::Generic => Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            "generic 客户端没有默认配置路径；请使用 --file",
+        )),
+    }
+}
+
+fn read_config(path: &Path) -> Result<Option<String>, CoreError> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(CoreError::new(ErrorCode::Internal, format!("读取 {} 失败: {e}", path.display()))),
+    }
+}
+
+fn same_mcp_command(actual: &str, expected: &Path) -> bool {
+    let actual = Path::new(actual);
+    match (std::fs::canonicalize(actual), std::fs::canonicalize(expected)) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        _ => actual == expected,
+    }
+}
+
+fn json_entry_owned(entry: &serde_json::Value, exe: &Path) -> bool {
+    entry.get("command").and_then(|v| v.as_str()).is_some_and(|command| same_mcp_command(command, exe))
+        && entry.get("args").is_none_or(|args| args.as_array().is_some_and(Vec::is_empty))
+}
+
+fn toml_entry_owned(entry: &toml_edit::Item, exe: &Path) -> bool {
+    entry.get("command").and_then(|v| v.as_str()).is_some_and(|command| same_mcp_command(command, exe))
+        && entry.get("args").is_none_or(|args| args.as_array().is_some_and(toml_edit::Array::is_empty))
+}
+
+fn mcp_status(client: McpClient, file: Option<&Path>) -> Result<serde_json::Value, CoreError> {
+    let exe = mcp_executable()?;
+    mcp_status_with_exe(client, file, &exe)
+}
+
+fn mcp_status_with_exe(client: McpClient, file: Option<&Path>, exe: &Path) -> Result<serde_json::Value, CoreError> {
+    let path = mcp_config_path(client, file)?;
+    let text = read_config(&path)?;
+    let (state, command) = match text {
+        None => ("missing", None),
+        Some(text) if matches!(client, McpClient::Codex) => {
+            let doc = text.parse::<toml_edit::DocumentMut>().map_err(|e| {
+                CoreError::new(ErrorCode::InvalidParams, format!("{} 不是有效 TOML: {e}", path.display()))
+            })?;
+            validate_toml_servers(&doc, &path)?;
+            match doc.get("mcp_servers").and_then(|v| v.get("wb")) {
+                Some(entry) if toml_entry_owned(entry, exe) => ("installed", entry.get("command").and_then(|v| v.as_str()).map(str::to_owned)),
+                Some(entry) => ("conflict", entry.get("command").and_then(|v| v.as_str()).map(str::to_owned)),
+                None => ("missing", None),
+            }
+        }
+        Some(text) => {
+            let root: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+                CoreError::new(ErrorCode::InvalidParams, format!("{} 不是有效 JSON: {e}", path.display()))
+            })?;
+            let object = root.as_object().ok_or_else(|| {
+                CoreError::new(ErrorCode::InvalidParams, format!("{} 的 JSON 根节点必须是对象", path.display()))
+            })?;
+            let servers = match object.get("mcpServers") {
+                Some(value) => Some(value.as_object().ok_or_else(|| {
+                    CoreError::new(ErrorCode::InvalidParams, "mcpServers 必须是对象")
+                })?),
+                None => None,
+            };
+            match servers.and_then(|servers| servers.get("wb")) {
+                Some(entry) if json_entry_owned(entry, exe) => ("installed", entry.get("command").and_then(|v| v.as_str()).map(str::to_owned)),
+                Some(entry) => ("conflict", entry.get("command").and_then(|v| v.as_str()).map(str::to_owned)),
+                None => ("missing", None),
+            }
+        }
+    };
+    Ok(serde_json::json!({
+        "client": client.to_string(), "file": path, "status": state,
+        "command": command, "expected_command": exe,
+    }))
+}
+
+fn mcp_install(client: McpClient, file: Option<&Path>, force: bool) -> Result<serde_json::Value, CoreError> {
+    let exe = mcp_executable()?;
+    mcp_install_with_exe(client, file, force, &exe)
+}
+
+fn mcp_install_with_exe(
+    client: McpClient,
+    file: Option<&Path>,
+    force: bool,
+    exe: &Path,
+) -> Result<serde_json::Value, CoreError> {
+    let path = mcp_config_path(client, file)?;
+    let existing = read_config(&path)?;
+    let changed = if matches!(client, McpClient::Codex) {
+        let mut doc = existing.as_deref().unwrap_or("").parse::<toml_edit::DocumentMut>().map_err(|e| {
+            CoreError::new(ErrorCode::InvalidParams, format!("{} 不是有效 TOML: {e}", path.display()))
+        })?;
+        validate_toml_servers(&doc, &path)?;
+        let changed = if let Some(entry) = doc.get("mcp_servers").and_then(|v| v.get("wb")) {
+            if toml_entry_owned(entry, exe) {
+                false
+            } else if !force {
+                return Err(mcp_name_conflict(&path));
+            } else {
+                doc["mcp_servers"]["wb"] = toml_edit::Item::Table(toml_edit::Table::new());
+                true
+            }
+        } else {
+            true
+        };
+        if changed {
+            if doc.get("mcp_servers").is_none() {
+                doc["mcp_servers"] = toml_edit::Item::Table(toml_edit::Table::new());
+            }
+            doc["mcp_servers"]["wb"]["command"] = toml_edit::value(exe.to_string_lossy().as_ref());
+            doc["mcp_servers"]["wb"]["args"] = toml_edit::value(toml_edit::Array::new());
+            atomic_write(&path, doc.to_string().as_bytes())?;
+        }
+        changed
+    } else {
+        let mut root = match existing {
+            Some(text) => serde_json::from_str::<serde_json::Value>(&text).map_err(|e| {
+                CoreError::new(ErrorCode::InvalidParams, format!("{} 不是有效 JSON: {e}", path.display()))
+            })?,
+            None => serde_json::json!({}),
+        };
+        let object = root.as_object_mut().ok_or_else(|| {
+            CoreError::new(ErrorCode::InvalidParams, format!("{} 的 JSON 根节点必须是对象", path.display()))
+        })?;
+        let servers = object.entry("mcpServers").or_insert_with(|| serde_json::json!({}));
+        let servers = servers.as_object_mut().ok_or_else(|| {
+            CoreError::new(ErrorCode::InvalidParams, "mcpServers 必须是对象")
+        })?;
+        let changed = match servers.get("wb") {
+            Some(entry) if json_entry_owned(entry, exe) => false,
+            Some(_) if !force => return Err(mcp_name_conflict(&path)),
+            _ => true,
+        };
+        if changed {
+            servers.insert("wb".into(), serde_json::json!({"command": exe, "args": []}));
+            let mut bytes = serde_json::to_vec_pretty(&root)
+                .map_err(|e| CoreError::new(ErrorCode::Internal, format!("生成 MCP JSON 失败: {e}")))?;
+            bytes.push(b'\n');
+            atomic_write(&path, &bytes)?;
+        }
+        changed
+    };
+    Ok(serde_json::json!({
+        "client": client.to_string(), "file": path, "status": "installed", "changed": changed,
+        "command": exe,
+    }))
+}
+
+fn mcp_uninstall(client: McpClient, file: Option<&Path>, force: bool) -> Result<serde_json::Value, CoreError> {
+    let exe = mcp_executable()?;
+    mcp_uninstall_with_exe(client, file, force, &exe)
+}
+
+fn mcp_uninstall_with_exe(
+    client: McpClient,
+    file: Option<&Path>,
+    force: bool,
+    exe: &Path,
+) -> Result<serde_json::Value, CoreError> {
+    let path = mcp_config_path(client, file)?;
+    let Some(text) = read_config(&path)? else {
+        return Ok(serde_json::json!({"client":client.to_string(),"file":path,"status":"missing","changed":false}));
+    };
+    let changed = if matches!(client, McpClient::Codex) {
+        let mut doc = text.parse::<toml_edit::DocumentMut>().map_err(|e| {
+            CoreError::new(ErrorCode::InvalidParams, format!("{} 不是有效 TOML: {e}", path.display()))
+        })?;
+        validate_toml_servers(&doc, &path)?;
+        match doc.get("mcp_servers").and_then(|v| v.get("wb")) {
+            None => false,
+            Some(entry) if toml_entry_owned(entry, exe) || force => {
+                doc["mcp_servers"].as_table_like_mut().unwrap().remove("wb");
+                atomic_write(&path, doc.to_string().as_bytes())?;
+                true
+            }
+            Some(_) => return Err(mcp_name_conflict(&path)),
+        }
+    } else {
+        let mut root: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            CoreError::new(ErrorCode::InvalidParams, format!("{} 不是有效 JSON: {e}", path.display()))
+        })?;
+        let object = root.as_object_mut().ok_or_else(|| {
+            CoreError::new(ErrorCode::InvalidParams, format!("{} 的 JSON 根节点必须是对象", path.display()))
+        })?;
+        let Some(servers_value) = object.get_mut("mcpServers") else {
+            return Ok(serde_json::json!({"client":client.to_string(),"file":path,"status":"missing","changed":false}));
+        };
+        let servers = servers_value.as_object_mut().ok_or_else(|| {
+            CoreError::new(ErrorCode::InvalidParams, "mcpServers 必须是对象")
+        })?;
+        match servers.get("wb") {
+            None => false,
+            Some(entry) if json_entry_owned(entry, exe) || force => {
+                servers.remove("wb");
+                let mut bytes = serde_json::to_vec_pretty(&root)
+                    .map_err(|e| CoreError::new(ErrorCode::Internal, format!("生成 MCP JSON 失败: {e}")))?;
+                bytes.push(b'\n');
+                atomic_write(&path, &bytes)?;
+                true
+            }
+            Some(_) => return Err(mcp_name_conflict(&path)),
+        }
+    };
+    Ok(serde_json::json!({
+        "client": client.to_string(), "file": path, "status": "missing", "changed": changed,
+    }))
+}
+
+fn validate_toml_servers(doc: &toml_edit::DocumentMut, path: &Path) -> Result<(), CoreError> {
+    if doc.get("mcp_servers").is_some_and(|item| !item.is_table_like()) {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("{} 中的 mcp_servers 必须是 TOML table", path.display()),
+        ));
+    }
+    Ok(())
+}
+
+fn mcp_name_conflict(path: &Path) -> CoreError {
+    CoreError::new(ErrorCode::PermissionDenied, format!("{} 中已存在其他名为 wb 的 MCP server", path.display()))
+        .with_hint("检查现有条目，确认后使用 --force 替换或删除")
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建 {} 失败: {e}", parent.display())))?;
+    let name = path.file_name().and_then(|v| v.to_str()).unwrap_or("mcp-config");
+    let temp = parent.join(format!(".{name}.wb-{}-{}.tmp", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建临时配置失败: {e}")))?;
+        file.write_all(bytes).and_then(|_| file.sync_all())
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写入临时配置失败: {e}")))?;
+        replace_file(&temp, path)
+    })();
+    if result.is_err() { std::fs::remove_file(&temp).ok(); }
+    result
+}
+
+#[cfg(windows)]
+fn replace_file(temp: &Path, path: &Path) -> Result<(), CoreError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    let from: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let ok = unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
+    if ok == 0 {
+        Err(CoreError::new(ErrorCode::Internal, format!("原子替换 {} 失败: {}", path.display(), std::io::Error::last_os_error())))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(temp: &Path, path: &Path) -> Result<(), CoreError> {
+    std::fs::rename(temp, path)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("原子替换 {} 失败: {e}", path.display())))
 }
 
 fn parse_kv(s: &str) -> Result<(String, String), std::convert::Infallible> {
@@ -739,10 +1065,22 @@ fn main() {
         emit(&wb_core::protocol::schema(), true, false);
         return;
     }
-    if let Cmd::Mcp { op: McpOp::Config { client } } = &cli.cmd {
-        match mcp_config(*client) {
-            Ok(config) if json => emit(&serde_json::json!({"client": client.to_string(), "config": config}), true, false),
-            Ok(config) => print!("{config}"),
+    if let Cmd::Mcp { op } = &cli.cmd {
+        let result = match op {
+            McpOp::Config { client } => match mcp_config(*client) {
+                Ok(config) if json => Ok(serde_json::json!({"client": client.to_string(), "config": config})),
+                Ok(config) => {
+                    print!("{config}");
+                    return;
+                }
+                Err(e) => Err(e),
+            },
+            McpOp::Install { client, file, force } => mcp_install(*client, file.as_deref(), *force),
+            McpOp::Status { client, file } => mcp_status(*client, file.as_deref()),
+            McpOp::Uninstall { client, file, force } => mcp_uninstall(*client, file.as_deref(), *force),
+        };
+        match result {
+            Ok(value) => emit(&value, json, false),
             Err(e) => fail(&e, json),
         }
         return;
@@ -917,6 +1255,138 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "wb-cli-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn fake_mcp(root: &Path) -> PathBuf {
+        let exe = root.join("wb-mcp.exe");
+        std::fs::write(&exe, b"test").unwrap();
+        exe
+    }
+
+    #[test]
+    fn parses_mcp_config_management_commands() {
+        let cli = Cli::try_parse_from(["wb", "mcp", "install", "codex", "--file", "config.toml", "--force"]).unwrap();
+        match cli.cmd {
+            Cmd::Mcp { op: McpOp::Install { client: McpClient::Codex, file, force } } => {
+                assert_eq!(file.as_deref(), Some(Path::new("config.toml")));
+                assert!(force);
+            }
+            _ => panic!("unexpected command"),
+        }
+
+        let cli = Cli::try_parse_from(["wb", "mcp", "status", "cursor", "--file", "mcp.json"]).unwrap();
+        assert!(matches!(cli.cmd, Cmd::Mcp { op: McpOp::Status { client: McpClient::Cursor, .. } }));
+
+        let cli = Cli::try_parse_from(["wb", "mcp", "uninstall", "claude", "--force"]).unwrap();
+        assert!(matches!(cli.cmd, Cmd::Mcp { op: McpOp::Uninstall { client: McpClient::Claude, force: true, .. } }));
+    }
+
+    #[test]
+    fn mcp_json_install_is_structured_idempotent_and_protected() {
+        let root = test_root("mcp-json");
+        let exe = fake_mcp(&root);
+        let config = root.join("mcp.json");
+        let original = r#"{
+  "theme": "dark",
+  "mcpServers": {
+    "other": { "command": "other.exe" },
+    "wb": { "command": "someone-else.exe", "args": [] }
+  }
+}
+"#;
+        std::fs::write(&config, original).unwrap();
+
+        let error = mcp_install_with_exe(McpClient::Cursor, Some(&config), false, &exe).unwrap_err();
+        assert_eq!(error.code, ErrorCode::PermissionDenied);
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
+
+        let installed = mcp_install_with_exe(McpClient::Cursor, Some(&config), true, &exe).unwrap();
+        assert_eq!(installed["changed"], true);
+        let root_value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(root_value["theme"], "dark");
+        assert_eq!(root_value["mcpServers"]["other"]["command"], "other.exe");
+        assert_eq!(root_value["mcpServers"]["wb"]["command"], exe.to_string_lossy().as_ref());
+
+        let before = std::fs::read(&config).unwrap();
+        let repeated = mcp_install_with_exe(McpClient::Cursor, Some(&config), false, &exe).unwrap();
+        assert_eq!(repeated["changed"], false);
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+        assert_eq!(mcp_status_with_exe(McpClient::Cursor, Some(&config), &exe).unwrap()["status"], "installed");
+
+        let removed = mcp_uninstall_with_exe(McpClient::Cursor, Some(&config), false, &exe).unwrap();
+        assert_eq!(removed["changed"], true);
+        let root_value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(root_value["mcpServers"].get("wb").is_none());
+        assert_eq!(root_value["mcpServers"]["other"]["command"], "other.exe");
+        assert_eq!(root_value["theme"], "dark");
+        assert!(!std::fs::read_dir(&root)
+            .unwrap()
+            .any(|entry| entry.unwrap().file_name().to_string_lossy().ends_with(".tmp")));
+
+        let malformed = root.join("malformed.json");
+        std::fs::write(&malformed, "{\"mcpServers\":[]}").unwrap();
+        let error = mcp_install_with_exe(McpClient::Generic, Some(&malformed), true, &exe).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+        assert_eq!(std::fs::read_to_string(malformed).unwrap(), "{\"mcpServers\":[]}");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn mcp_codex_install_preserves_other_toml_tables() {
+        let root = test_root("mcp-toml");
+        let exe = fake_mcp(&root);
+        let config = root.join("config.toml");
+        std::fs::write(
+            &config,
+            "# keep this comment\nmodel = \"gpt-test\"\n\n[mcp_servers.other]\ncommand = \"other.exe\"\n",
+        )
+        .unwrap();
+
+        let installed = mcp_install_with_exe(McpClient::Codex, Some(&config), false, &exe).unwrap();
+        assert_eq!(installed["changed"], true);
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("# keep this comment"));
+        let doc = text.parse::<toml_edit::DocumentMut>().unwrap();
+        assert_eq!(doc["model"].as_str(), Some("gpt-test"));
+        assert_eq!(doc["mcp_servers"]["other"]["command"].as_str(), Some("other.exe"));
+        assert_eq!(doc["mcp_servers"]["wb"]["command"].as_str(), Some(exe.to_string_lossy().as_ref()));
+        assert_eq!(mcp_status_with_exe(McpClient::Codex, Some(&config), &exe).unwrap()["status"], "installed");
+
+        mcp_uninstall_with_exe(McpClient::Codex, Some(&config), false, &exe).unwrap();
+        let text = std::fs::read_to_string(&config).unwrap();
+        let doc = text.parse::<toml_edit::DocumentMut>().unwrap();
+        assert!(doc["mcp_servers"].get("wb").is_none());
+        assert_eq!(doc["mcp_servers"]["other"]["command"].as_str(), Some("other.exe"));
+        assert!(text.contains("# keep this comment"));
+
+        let conflict = text + "\n[mcp_servers.wb]\ncommand = \"someone-else.exe\"\nargs = []\n";
+        std::fs::write(&config, &conflict).unwrap();
+        let error = mcp_install_with_exe(McpClient::Codex, Some(&config), false, &exe).unwrap_err();
+        assert_eq!(error.code, ErrorCode::PermissionDenied);
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), conflict);
+        mcp_install_with_exe(McpClient::Codex, Some(&config), true, &exe).unwrap();
+        let doc = std::fs::read_to_string(&config).unwrap().parse::<toml_edit::DocumentMut>().unwrap();
+        assert_eq!(doc["mcp_servers"]["wb"]["command"].as_str(), Some(exe.to_string_lossy().as_ref()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn mcp_generic_requires_an_explicit_file() {
+        let error = mcp_config_path(McpClient::Generic, None).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+    }
 
     #[test]
     #[cfg(windows)]
