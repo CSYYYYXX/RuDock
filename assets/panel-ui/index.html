@@ -141,7 +141,8 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 /* ---------- 组件马赛克：铺满剩余区域，无滚动 ---------- */
 .grid { height: 100%; display: grid; gap: 12px;
   grid-template-columns: repeat(6, 1fr);
-  grid-template-rows: 1.25fr .9fr 1.25fr 1fr; }
+  grid-template-rows: minmax(150px, 1.25fr) minmax(100px, .9fr) minmax(120px, 1.25fr) minmax(100px, 1fr);
+  grid-auto-rows: minmax(100px, auto); }
 .w.w-hidden { display: none; }
 .w { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke-soft); border-radius: var(--r-card);
@@ -163,6 +164,10 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #w-clock .time { font-size: 46px; font-weight: 200; line-height: 1.05; letter-spacing: .015em;
   font-variant-numeric: tabular-nums; }
 #w-clock .date { font-size: 12.5px; color: var(--fg-3); margin-top: 4px; }
+#w-clock.widget-compact .time { font-size: 34px; }
+#w-clock.widget-compact .date { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#w-clock.widget-narrow .time { font-size: 24px; }
+#w-clock.widget-narrow .date { font-size: 9.5px; }
 
 /* calendar */
 #w-cal .bd { display: flex; min-height: 0; }
@@ -221,16 +226,32 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   .w > .hd { padding: 11px 16px 6px; }
   .w > .bd { padding: 6px 16px 12px; }
   .hairline { margin: 0 16px; }
+  .grid > .w:not(.span2):not(.span3):not(.span4) > .hd { padding: 10px 8px 5px; gap: 3px; font-size: 10.5px; }
+  .grid > .w:not(.span2):not(.span3):not(.span4) > .hairline { margin: 0 8px; }
+  .grid > .w:not(.span2):not(.span3):not(.span4) > .bd { padding-left: 8px; padding-right: 8px; }
   #w-clock .time { font-size: 40px; }
   #w-weather .big { font-size: 28px; }
   #w-weather .hourly { padding-top: 5px; }
+  #w-world > .bd { padding-top: 2px; padding-bottom: 4px; }
+  #w-world .wcrow { padding: 0; }
+  #w-world .wcrow span { font-size: 11px; }
+  #w-world .wcrow b { font-size: 13px; }
   .cal .d { padding-top: 0; padding-bottom: 0; }
 }
 @media (max-height: 760px) {
   .spot-wrap { height: 22%; }
   .pages { top: 22%; }
-  .grid { gap: 9px; grid-template-rows: 1.55fr .9fr 1.1fr .85fr; }
+  .grid { gap: 9px;
+    grid-template-rows: minmax(150px, 1.55fr) minmax(96px, .9fr) minmax(110px, 1.1fr) minmax(92px, .85fr);
+    grid-auto-rows: minmax(96px, auto); }
   .w > .bd { padding-top: 4px; padding-bottom: 6px; }
+  .grid #w-pomo .t { font-size: 22px; }
+  .grid #w-pomo .btns { gap: 3px; margin-top: 4px; }
+  .grid #w-pomo .chip { padding: 2px; font-size: 9.5px; }
+  #w-sys .meter { margin-top: 5px; }
+  .grid #w-cdown .days { font-size: 24px; }
+  .grid #w-cdown .target { margin-top: 2px; font-size: 10px; line-height: 1.2; }
+  .grid #w-cdown > .bd { padding-top: 2px; padding-bottom: 1px; }
 }
 @media (max-height: 640px) {
   .spot-wrap { height: 20%; }
@@ -238,11 +259,16 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   .board { overflow-y: auto; }
   .grid { height: 520px; min-height: 520px; }
 }
+@media (max-width: 420px) {
+  .grid { height: auto; min-height: 100%; grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: none; grid-auto-rows: minmax(120px, auto); grid-auto-flow: dense; }
+}
 
 /* music */
 #w-media .bd { display: flex; align-items: center; }
-#w-media .row { display: flex; align-items: center; gap: 12px; width: 100%; }
-#w-media .art { width: 54px; height: 54px; border-radius: 10px; flex: none; object-fit: cover;
+#w-media .row { display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: auto 22px;
+  align-items: center; column-gap: 6px; row-gap: 2px; width: 100%; }
+#w-media .art { width: 34px; height: 34px; grid-row: 1 / 3; border-radius: 8px; flex: none; object-fit: cover;
   background: rgba(255,255,255,.09); display: flex; align-items: center; justify-content: center;
   font-size: 20px; color: var(--fg-3); overflow: hidden; border: 1px solid var(--stroke-soft); }
 #w-media .art img { width: 100%; height: 100%; object-fit: cover; }
@@ -251,9 +277,9 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #w-media .ar { font-size: 11.5px; color: var(--fg-3); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#w-media .ctl { display: flex; gap: 4px; flex: none; }
-#w-media .cbtn { width: 32px; height: 32px; border-radius: 8px; border: none; cursor: pointer;
-  background: transparent; color: var(--fg-2); font-size: 14px; }
+#w-media .ctl { display: flex; gap: 2px; flex: none; }
+#w-media .cbtn { width: 22px; height: 22px; border-radius: 6px; border: none; cursor: pointer;
+  background: transparent; color: var(--fg-2); font-size: 11px; }
 #w-media .cbtn:hover { background: var(--hover); }
 
 /* sysinfo */
@@ -276,17 +302,18 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 
 /* pomodoro */
 #w-pomo .bd { display: flex; flex-direction: column; justify-content: center; }
-#w-pomo .t { font-size: 30px; font-weight: 300; text-align: center; font-variant-numeric: tabular-nums; }
-#w-pomo .btns { display: flex; gap: 8px; margin-top: 9px; justify-content: center; }
+#w-pomo .t { font-size: 22px; font-weight: 300; text-align: center; font-variant-numeric: tabular-nums; }
+#w-pomo .btns { display: flex; gap: 3px; margin-top: 4px; justify-content: center; }
+#w-pomo .chip { padding: 2px; font-size: 9.5px; }
 .chip { font-size: 12px; padding: 5px 14px; border-radius: var(--r-ctl); background: rgba(255,255,255,.08);
   border: 1px solid var(--stroke-soft); color: var(--fg); cursor: pointer; white-space: nowrap; }
 .chip:hover { background: var(--active); }
 
 /* countdown */
 #w-cdown .bd { display: flex; flex-direction: column; justify-content: center; text-align: center; }
-#w-cdown .days { font-size: 30px; font-weight: 200; font-variant-numeric: tabular-nums; }
+#w-cdown .days { font-size: 22px; font-weight: 200; font-variant-numeric: tabular-nums; }
 #w-cdown .days small { font-size: 12px; color: var(--fg-3); margin-left: 3px; }
-#w-cdown .target { font-size: 11px; color: var(--fg-3); margin-top: 5px; cursor: pointer; }
+#w-cdown .target { font-size: 9.5px; line-height: 1.2; color: var(--fg-3); margin-top: 2px; cursor: pointer; }
 #w-cdown .target:hover { color: var(--fg); }
 #w-cdown input[type=date] { background: rgba(255,255,255,.06); border: 1px solid var(--stroke-soft);
   border-radius: var(--r-ctl); color: var(--fg); font-size: 11px; padding: 3px 6px; margin-top: 6px;
@@ -300,13 +327,24 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .chip.primary { background: var(--accent); color: #00345c; border-color: transparent; font-weight: 600; }
 
 /* quick launch */
-#w-quick .qgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; height: 100%; }
+#w-quick .qgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px; height: 100%; min-height: 0; }
 .qbtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  padding: 8px 4px; border-radius: 12px;
+  min-width: 0; min-height: 0; overflow: hidden; padding: 5px 3px; border-radius: 12px;
   border: 1px solid var(--stroke-soft); background: rgba(255,255,255,.05); cursor: pointer;
   color: var(--fg-2); font-size: 11.5px; transition: border-color .15s, background .15s; }
 .qbtn:hover { background: var(--hover); border-color: rgba(76,194,255,.45); }
-.qbtn .qi { font-size: 19px; }
+.qbtn .qi { flex: none; font-size: 19px; line-height: 1; }
+.qbtn .qlabel { max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+#w-quick.widget-compact .qgrid { gap: 5px 6px; }
+#w-quick.widget-compact .qbtn { padding: 2px; gap: 0; border-radius: 8px; }
+#w-quick.widget-compact .qbtn .qi { font-size: 17px; }
+#w-quick.widget-compact .qbtn .qlabel { position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+#w-quick.widget-narrow .qgrid { grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 4px 5px; }
+#w-quick.widget-narrow .qbtn .qi { font-size: 12px; }
 
 /* list widgets */
 .mini-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin: 0 -8px;
@@ -337,7 +375,9 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   transition: transform .38s cubic-bezier(.22,1,.36,1); will-change: transform; }
 .pages.dragging { transition: none; }
 .page { width: 33.3333%; height: 100%; position: relative; }
-.board { position: absolute; inset: 0; padding: 6px 18px 18px; }
+.board { position: absolute; inset: 0; padding: 6px 18px 18px; overflow-y: auto; }
+.board::-webkit-scrollbar { width: 6px; }
+.board::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
 
 /* 插件页：已安装组件与开放市场 */
 #page-plugins .plugin-head { position: absolute; left: 18px; right: 18px; top: 2px; height: 30px; display: flex;
@@ -614,11 +654,11 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
       <div class="hourly"></div>
     </div></div>
 
-    <div class="w" id="w-cal"><div class="hd">▦ 日历<span class="right cal-title"></span></div><div class="hairline"></div><div class="bd">
+    <div class="w span2" id="w-cal"><div class="hd">▦ 日历<span class="right cal-title"></span></div><div class="hairline"></div><div class="bd">
       <div class="cal"></div>
     </div></div>
 
-    <div class="w" id="w-world"><div class="hd">◎ 世界时钟</div><div class="hairline"></div><div class="bd">
+    <div class="w span2" id="w-world"><div class="hd">◎ 世界时钟</div><div class="hairline"></div><div class="bd">
       <div class="wcrow"><span>北京</span><b class="t"></b></div>
       <div class="wcrow"><span>纽约</span><b class="t"></b></div>
       <div class="wcrow"><span>伦敦</span><b class="t"></b></div>
@@ -683,12 +723,12 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
       <div class="hd">⚡ 快捷启动</div>
       <div class="hairline"></div>
       <div class="bd"><div class="qgrid">
-        <button class="qbtn" data-open="ms-settings:"><span class="qi">⚙️</span>设置</button>
-        <button class="qbtn" data-open="C:\Windows\System32\Taskmgr.exe"><span class="qi">📈</span>任务管理器</button>
-        <button class="qbtn" data-open="C:\Windows\System32\calc.exe"><span class="qi">🧮</span>计算器</button>
-        <button class="qbtn" data-open="C:\Windows\System32\notepad.exe"><span class="qi">📝</span>记事本</button>
-        <button class="qbtn" data-open="C:\Windows\System32\cmd.exe"><span class="qi">⌨️</span>终端</button>
-        <button class="qbtn" data-open="ms-screenclip:"><span class="qi">✂️</span>截图</button>
+        <button class="qbtn" data-open="ms-settings:" title="设置" aria-label="设置"><span class="qi">⚙️</span><span class="qlabel">设置</span></button>
+        <button class="qbtn" data-open="C:\Windows\System32\Taskmgr.exe" title="任务管理器" aria-label="任务管理器"><span class="qi">📈</span><span class="qlabel">任务管理器</span></button>
+        <button class="qbtn" data-open="C:\Windows\System32\calc.exe" title="计算器" aria-label="计算器"><span class="qi">🧮</span><span class="qlabel">计算器</span></button>
+        <button class="qbtn" data-open="C:\Windows\System32\notepad.exe" title="记事本" aria-label="记事本"><span class="qi">📝</span><span class="qlabel">记事本</span></button>
+        <button class="qbtn" data-open="C:\Windows\System32\cmd.exe" title="终端" aria-label="终端"><span class="qi">⌨️</span><span class="qlabel">终端</span></button>
+        <button class="qbtn" data-open="ms-screenclip:" title="截图" aria-label="截图"><span class="qi">✂️</span><span class="qlabel">截图</span></button>
       </div></div>
     </div>
 
@@ -826,9 +866,9 @@ const WC = [['北京', 'Asia/Shanghai'], ['纽约', 'America/New_York'], ['伦�
 function tickClock() {
   const d = new Date();
   const p = n => String(n).padStart(2, '0');
-  $('#w-clock .time').textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  $('#w-clock .time').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
   const week = '日一二三四五六'[d.getDay()];
-  $('#w-clock .date').textContent = `${d.getFullYear()} 年 ${d.getMonth()+1} 月 ${d.getDate()} 日 · 周${week}`;
+  $('#w-clock .date').textContent = `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} · 周${week}`;
   document.querySelectorAll('#w-world .wcrow b').forEach((el, i) => {
     el.textContent = d.toLocaleTimeString('zh-CN', { timeZone: WC[i][1], hour: '2-digit', minute: '2-digit', hour12: false });
   });
@@ -848,17 +888,23 @@ setInterval(tickClock, 1000); tickClock();
 })();
 
 function fitWeatherCalendar() {
-  const weather = $('#w-weather'), calendar = $('#w-cal');
+  const clock = $('#w-clock'), weather = $('#w-weather'), calendar = $('#w-cal'), quick = $('#w-quick');
   const wh = weather.clientHeight, ww = weather.clientWidth, ch = calendar.clientHeight, cw = calendar.clientWidth;
+  clock.classList.toggle('widget-compact', clock.clientWidth > 0 && clock.clientWidth < 180);
+  clock.classList.toggle('widget-narrow', clock.clientWidth > 0 && clock.clientWidth < 125);
   weather.classList.toggle('widget-compact', wh > 0 && (wh < 190 || ww < 400));
-  weather.classList.toggle('widget-tiny', wh > 0 && (wh < 138 || ww < 320));
+  weather.classList.toggle('widget-tiny', wh > 0 && (wh < 112 || ww < 120));
   calendar.classList.toggle('widget-compact', ch > 0 && (ch < 190 || cw < 190));
-  calendar.classList.toggle('widget-tiny', ch > 0 && ch < 125);
+  calendar.classList.toggle('widget-tiny', ch > 0 && (ch < 105 || cw < 120));
+  quick.classList.toggle('widget-compact', quick.clientHeight > 0 && (quick.clientHeight < 145 || quick.clientWidth < 125));
+  quick.classList.toggle('widget-narrow', quick.clientWidth > 0 && quick.clientWidth < 125);
 }
 if ('ResizeObserver' in window) {
   const dateWeatherObserver = new ResizeObserver(fitWeatherCalendar);
+  dateWeatherObserver.observe($('#w-clock'));
   dateWeatherObserver.observe($('#w-weather'));
   dateWeatherObserver.observe($('#w-cal'));
+  dateWeatherObserver.observe($('#w-quick'));
 } else {
   window.addEventListener('resize', fitWeatherCalendar);
 }
@@ -1548,7 +1594,7 @@ function showPanel() {
   q.value = ''; listEl.classList.remove('on');
   $('.spot-box').classList.remove('ai-active');
   aiMode = false; aiStreaming = false;
-  $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on'); $('#marketSourceView').classList.remove('on');
+  $('#folderView').classList.remove('on'); setConfigOpen(false); $('#marketSourceView').classList.remove('on');
   if (editMode) $('#apps-edit').click();
   setPage(0, { instant: true });
   results = [];
@@ -1571,7 +1617,7 @@ function hidePanel() {
   hiding = true;
   send({ kind: 'selftest', detail: 'hide recv @' + Math.round(performance.now()), ok: true });
   send({ kind: 'cardrects', rects: [] }); // 消失动画起步即撤磨砂，两层同步
-  listEl.classList.remove('on'); $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on'); $('#marketSourceView').classList.remove('on');
+  listEl.classList.remove('on'); $('#folderView').classList.remove('on'); setConfigOpen(false); $('#marketSourceView').classList.remove('on');
   if (REDUCE_MOTION) { hiding = false; send({ kind: 'hide.done' }); return; }
   stage.classList.remove('enter', 'hold');
   stage.classList.add('exit');
@@ -1752,7 +1798,7 @@ window.addEventListener('keydown', ev => {
   }
   if (ev.key === 'Escape') {
     if ($('#folderView').classList.contains('on')) $('#folderView').classList.remove('on');
-    else if ($('#cfgView').classList.contains('on')) $('#cfgView').classList.remove('on');
+    else if ($('#cfgView').classList.contains('on')) setConfigOpen(false);
     else if ($('#marketSourceView').classList.contains('on')) $('#marketSourceView').classList.remove('on');
     else if (editMode) $('#apps-edit').click();
     else if (curPage > 0) setPage(0);
@@ -1808,6 +1854,10 @@ function applyWidgetVisibility() {
 function setMcpPolicy(policy) {
   $$('#cfg-mcp-policy button').forEach(button => button.classList.toggle('on', button.dataset.policy === policy));
 }
+function setConfigOpen(open) {
+  $('#cfgView').classList.toggle('on', open);
+  send({ kind: 'interaction', active: open });
+}
 function openConfig() {
   const list = $('#cfgList'); list.innerHTML = '';
   WIDGETS.forEach(([id, name]) => {
@@ -1829,9 +1879,9 @@ function openConfig() {
     setMcpPolicy(s.mcp_write_policy || 'client');
     $('#hook-state').textContent = s.hook_running ? '运行中' : '未运行';
   });
-  $('#cfgView').classList.add('on');
+  setConfigOpen(true);
 }
-$('#cfg-open').addEventListener('click', openConfig);
+$('#cfg-open').addEventListener('click', ev => { ev.stopPropagation(); openConfig(); });
 async function saveSystemSetting(key, value) {
   const params = {}; params[key] = value;
   const m = await rpc('settings.set', params);
@@ -1847,8 +1897,8 @@ $('#cfg-autostart').addEventListener('change', ev => saveSystemSetting('autostar
 $$('#cfg-mcp-policy button').forEach(button => button.addEventListener('click', () => {
   saveSystemSetting('mcp_write_policy', button.dataset.policy);
 }));
-$('#cfgClose').addEventListener('click', () => $('#cfgView').classList.remove('on'));
-$('#cfgView').addEventListener('click', ev => { if (ev.target.id === 'cfgView') ev.currentTarget.classList.remove('on'); });
+$('#cfgClose').addEventListener('click', () => setConfigOpen(false));
+$('#cfgView').addEventListener('click', ev => { if (ev.target.id === 'cfgView') setConfigOpen(false); });
 
 /* ---------- 插件组件：主看板渲染 widget，第三页只负责插件管理 ----------
    隔离模型：sandboxed iframe（allow-scripts，无同源）+ srcdoc 注入 wbRpc 桥。

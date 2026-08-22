@@ -28,6 +28,7 @@ pub const SHOW_TIMER_ID: usize = 8;
 static PENDING_HIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PENDING_SHOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static AUTOHIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static INTERACTION_LOCK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 失焦自动隐藏开关（--no-autohide 测试用）
 pub fn set_autohide(on: bool) {
@@ -35,6 +36,9 @@ pub fn set_autohide(on: bool) {
 }
 pub fn autohide() -> bool {
     AUTOHIDE.load(std::sync::atomic::Ordering::SeqCst)
+}
+pub fn interaction_locked() -> bool {
+    INTERACTION_LOCK.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 static PENDING: Mutex<Vec<serde_json::Value>> = Mutex::new(Vec::new());
@@ -85,6 +89,10 @@ pub fn on_web_message(text: &str) {
         "hide" => request_hide(),
         "hide.done" => hide_now(),
         "show.ready" => reveal_now(),
+        "interaction" => {
+            let active = msg.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+            INTERACTION_LOCK.store(active, std::sync::atomic::Ordering::SeqCst);
+        }
         "action" => handle_action(&msg),
         "sysinfo" => {
             let id = msg.get("id").cloned().unwrap_or(serde_json::json!(0));
@@ -453,6 +461,7 @@ pub fn post_hide_message() {
 /// Idempotent: a stale timer or double hide.done is harmless.
 pub fn hide_now() {
     PENDING_HIDE.store(false, std::sync::atomic::Ordering::SeqCst);
+    INTERACTION_LOCK.store(false, std::sync::atomic::Ordering::SeqCst);
     let hwnd = HWND(HOST_HWND.load(std::sync::atomic::Ordering::SeqCst) as *mut c_void);
     if !hwnd.0.is_null() {
         unsafe {

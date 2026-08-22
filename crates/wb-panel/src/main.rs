@@ -279,7 +279,10 @@ pub(crate) unsafe extern "system" fn wnd_proc(
         }
         WM_ACTIVATE => {
             // Spotlight semantics: losing focus dismisses the panel.
-            if host::autohide() && wparam.0 as u32 & 0xffff == WA_INACTIVE {
+            if host::autohide()
+                && !host::interaction_locked()
+                && wparam.0 as u32 & 0xffff == WA_INACTIVE
+            {
                 host::request_hide();
             }
             LRESULT(0)
