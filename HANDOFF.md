@@ -17,10 +17,13 @@ WB（Windows Bar / WorkBench）：**Agent-Native 的 Windows 桌面入口**，�
 ```
 E:\cctest\wb\
   Cargo.toml            # workspace
-  build.sh              # 工具链环境（Git Bash 下 source）
+  build.sh              # 本地 GNU 工具链环境（Git Bash 下 source）
+  scripts\build-release.ps1  # release 编译、便携包、哈希和解压冒烟
+  .github\workflows\release.yml  # tag / 手动发布流水线
   README.md             # GitHub 项目首页、能力说明与截图
   AGENT_INTEGRATION.md  # CLI / Claude / Cursor / Codex MCP 接入
-  assets\panel-ui\index.html   # 面板全部前端（单文件，~2100 行）
+  LICENSE               # GPL-3.0-only
+  assets\panel-ui\index.html   # 面板全部前端（单文件，~2900 行）
   crates\
     wb-core\            # 模型/存储(sqlite)/搜索/协议/命令注册表commands.rs/ai.rs(ask_sync)
     wb-daemon\          # 常驻 JSON-RPC（命名管道 wb-daemon）；clipboard 监听；panelctl；插件装配
@@ -30,15 +33,16 @@ E:\cctest\wb\
     wb-plugin-sdk\      # 插件 manifest 类型+权限校验
     wb-plugin-host\     # 插件发现/路径约束/有界进程执行/挂件读取
     wb-mcp\             # stdio MCP server（tools + Skill resources）
-  plugins\              # 开发态插件目录（daemon 自动发现）：hello-assistant、clip-insight、stopwatch
+  plugins\              # 开发态/发布包内置插件：hello-assistant、clip-insight、stopwatch
   docs-assets\          # 验证截图
-  target\debug\         # 产物：wb.exe / wb-daemon.exe / wb-panel.exe / wb-hook-poc.exe
+  target\{debug,release}\  # Rust 构建产物
+  dist\                 # 本地发布产物，已 gitignore
 ```
 
 ## 3. 操作纪律（每条都踩过坑）
 
-1. **编译**：Git Bash 里 `cd /e/cctest/wb && source build.sh && cargo build`。rustc 1.98.0 GNU，链接器在仓库 `.toolchain/mingw64`。
-2. **编译前必须 `taskkill //F //IM wb-panel.exe` 和 `wb-daemon.exe`**，否则链接 Permission denied（exe 被占）。
+1. **编译**：Git Bash 里 `cd /e/cctest/wb && source build.sh && cargo build`。本机当前 rustc 1.98.0 GNU，workspace 最低版本和 CI 为 1.85，链接器在仓库 `.toolchain/mingw64`。
+2. 正在运行的同 profile exe 会导致链接 `Permission denied`。优先构建未占用的 profile；只有需要替换运行实例时才集中停进程、构建并恢复，不要为了普通检查反复打断用户。
 3. **启动面板必须带 `--wv2`**，否则建的是无 WebView2 的透明空窗。
 4. **测试启动面板用 PowerShell Start-Process 且必须带 `-RedirectStandardOutput`**：
    - 不带重定向会弹出黑色控制台窗口（console 子系统），它会被 veil 磨砂采样成"大黑块"——已因此误判过一次 bug。
@@ -55,17 +59,17 @@ E:\cctest\wb\
 12. 测试产生的待办/笔记数据测完随手清掉（`wb todo rm`）。
 13. 用户正常使用的实例：wb-daemon.exe（托盘/事实源）+ wb-hook-poc.exe（`--panel`，他靠它按 Win）+ 正式 wb-panel（`--wv2`，无测试旗标），各 1 个。hook 与 panel 都有 named mutex 单实例保护；只有基准或多窗口诊断才给 panel 传 `--allow-multiple`。测试完务必恢复正式状态，taskkill 面板不会动 daemon/hook。
 14. 回复用户用中文、简洁；结尾一条**加粗**的下一步建议。用户审美要求高——UI 改动要截图自审，对标 DeskBox（参考项目在 `E:\cctest\deskbox-ref`）。
-15. 用户正在使用这台机器时，只允许源码修改、编译、单测和 headless Chromium；未经明确同意，不启动 daemon、panel、WebView2 或任何可见窗口。
+15. 默认只做源码修改、编译、单测、脚本和日志检查。允许必要的前台验收，但要减少频率，把多个视觉/交互检查合并到一次，并提前告诉用户。
 
 ## 4. 架构要点（新人 5 分钟版）
 
 - **单一事实源 = wb-daemon**（JSON-RPC over 命名管道）。面板/CLI/MCP 都是平等客户端。方法表见 `wb-core/src/protocol.rs` schema()。
 - **命令注册表**（`wb-core/src/commands.rs`）：10 条内建命令。同一份数据三处用：`list_json()`（页面 `>` 模式 + CLI）、`tools_json()`（AI function calling）、方法名直映射（cmd.run 转发）。破坏性命令（clip.clear/system.lock）不暴露给 AI。
-- **插件**（M4/M5）：daemon 启动时发现 `%LOCALAPPDATA%/WB/plugins` + 仓库 `plugins/`。带权限插件默认不可见、不可执行，`plugin.approve/revoke` 的授权绑定版本、权限集合和 SHA-256 内容指纹。命令 handler 进程从启动起并发排空 stdout/stderr（每路 1MB、10s 超时），所有插件文件 canonical path 必须留在根目录。工具执行统一走 `cmd.tool.run` 的真实注册表。挂件的 `wbRpc` 经 `plugin.rpc` 身份、批准、权限、白名单四层检查，iframe 默认 CSP 禁止外联。
+- **插件**（M4/M5）：daemon 按用户目录 `%LOCALAPPDATA%/WB/plugins`、exe 同目录 `plugins/`、仓库开发态 `plugins/` 的顺序发现并按 id 去重，用户安装版本优先。带权限插件默认不可见、不可执行，`plugin.approve/revoke` 的授权绑定版本、权限集合和 SHA-256 内容指纹。命令 handler 进程从启动起并发排空 stdout/stderr（每路 1MB、10s 超时），所有插件文件 canonical path 必须留在根目录。工具执行统一走 `cmd.tool.run` 的真实注册表。挂件的 `wbRpc` 经 `plugin.rpc` 身份、批准、权限、白名单四层检查，iframe 默认 CSP 禁止外联。
 - **面板视觉**：v11 整屏 veil 磨砂（dwm.rs）：24 张亚克力窗的池，只用第 1 张拉满工作区钉在面板下，显隐各一次定位+淡入淡出，动画期零窗口操作（165Hz 下逐卡跟踪会卡，别回去；WB_CARD_FROST=1 可 A/B）。显隐动画协议：页面先冻结在第 0 帧（hold）→ 宿主亮窗发 "go" → 动画起点即亮窗帧（消灭"先闪一下"）。主看板与桌面常驻组件均可拖动右下角按网格独立调整宽高，panel/desktop 尺寸分别持久化，双击手柄恢复默认；所有内置组件按实际宽高切换 compact/tiny/narrow，插件 iframe 收到 `wbresize {width,height,locale}` 并支持 container query。天气/日历按卡片实际尺寸切换密度，月份位于标题栏、日期严格七行等分，极矮窗口改为看板滚动而不裁内容。AI 输入框有低亮度光路与 `?` 模式增强呼吸光效。
 - **AI 链路**：面板 `?` → ai.rs 起线程 curl SSE 流式（系统 curl.exe 零依赖，body 走 stdin）；function calling 回合制最多 3 轮、末轮不带 tools 强制纯文本收尾；daemon 侧 `agent.ask` 走 `wb-core::ai::ask_sync`（非流式）。
 
-## 5. 当前状态：M5 主链路已接通
+## 5. 当前状态：M6 Preview 发布链路已接通
 
 - M1 内核 / M2 面板 / v11 磨砂 / M3 随手问流式 / M3.5 命令注册表+function calling / M4 插件系统。
 - M4 实测：`wb cmd run util.hello --arg name=WB` 中文无乱码；`?跟 Luna 打个招呼` → 模型自动调插件 `util_hello` → 确认；sandboxed widget + wbRpc 权限桥正常。
@@ -84,7 +88,8 @@ E:\cctest\wb\
 - 开放插件市场：`plugins/market-index.schema.json` 固化 v1 静态索引契约，官方与社区使用同一格式；设置可持久化最多 8 个市场源，CLI/RPC 不传 `index` 时聚合来源并自动解析插件，重复 id 会要求显式选源。面板插件页是“已安装 / 市场”双视图，支持搜索、来源管理、安装、更新与用户插件卸载。市场版本强制 SemVer，远程索引下载限 2MB，远程条目只接受绝对 HTTP(S) 包地址；安装提交前同时核对 SHA-256、插件 id 和版本。真实 HTTP E2E 已验证持久化源、多源聚合和无 `--index` 安装；截图为 `m5-market-page.png`、`m5-market-sources.png`、`m5-plugins-installed-uninstall.png`。
 - MCP 服务端策略：设置页和 `wb settings mcp client|ask|read-only` 提供客户端确认、逐次 elicitation、强制只读三档。ask 仅接受 MCP 2025-06-18 且声明 elicitation 的客户端，并要求 `accept + confirm=true`；拒绝、无能力和业务错误统一为 `isError:true`，成功结果带 `structuredContent`。
 - 审计与事件：RPC 审计只保留 actor、方法、状态、错误码、耗时和参数形状，旧明文记录启动时一次性脱敏，最多保留 5000 条。`events.tail`、CLI `wb events`、MCP `events_tail` 支持 id 游标和最长 30 秒长轮询。真实 E2E 已验证游标跨连接唤醒，测试 secret 不进入 `wb audit`。
-- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 16 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 12 + wb-mcp 14，共 72 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。MCP 配置隔离测试覆盖 JSON/TOML 保留、幂等、冲突、强制替换、原子写入和卸载，真实 CLI `--file` 也完成两种格式的 install→status→uninstall。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。组件调整大小的 pointer→RPC→settings 持久化链路已在真实 WebView2 宿主冒烟，测试布局随后恢复；日语组件页与英文应用页实机检查无 JS 错误。浏览器本地地址权限阻止本轮 headless 页面检查，未绕过该设置。桌面组件既有无隐私视觉回归截图为 `docs-assets/desktop-widgets.png`。
+- M6 便携发布：panel 优先从 exe 同目录加载 `assets/panel-ui/index.html` 和 `WebView2Loader.dll`，路径会正确转义空格、`#` 和 UTF-8；daemon 同时发现 exe 同目录内置插件。`scripts/build-release.ps1` 使用 `--release --locked` 构建 5 个 exe，生成固定目录、包内逐文件 `SHA256SUMS.txt`、ZIP 与包外 `.sha256`，并执行版本、解压和关键文件冒烟。GitHub Actions 在手动触发或 `v*` tag 时跑 workspace tests、构建 artifact，并在 tag 上创建 Release。首个本地产物 `RuDock-0.1.0-windows-x64.zip` 已通过 25 个文件的完整哈希复核；`dist/` 不提交。
+- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 17 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 12 + wb-mcp 14 + wb-panel 3，共 76 个单测；workspace test 和 release build 通过（wb-panel 仍有原有 11 条 warning）。MCP 配置隔离测试覆盖 JSON/TOML 保留、幂等、冲突、强制替换、原子写入和卸载，真实 CLI `--file` 也完成两种格式的 install→status→uninstall。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。组件调整大小的 pointer→RPC→settings 持久化链路已在真实 WebView2 宿主冒烟，测试布局随后恢复；日语组件页与英文应用页实机检查无 JS 错误。桌面组件既有无隐私视觉回归截图为 `docs-assets/desktop-widgets.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -92,18 +97,18 @@ E:\cctest\wb\
 - 插件 widget 支持主看板自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
 - `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
 - daemon 的 `events.tail` 仍是基于审计 id 的长轮询；MCP 已在其上提供标准 resource subscription，对已订阅会话推送资源失效通知，客户端收到后重新读取。每个 MCP stdio 会话使用独立请求连接和目录监听连接，监听线程每 3 秒兜底复核开发态插件变化。
-- 本轮按用户要求未启动 daemon；新增的 event resource subscription 与 prompts 已由 `wb-mcp` 单测覆盖，真实 stdio 订阅/目录通知联调待允许后台实例时补做。
+- 便携包已完成静态、哈希、版本和解压冒烟；从完全脱离仓库的解压目录启动 daemon/panel 的前台检查仍应并入最终集中验收。
 - MCP elicitation 已落地，但只覆盖经 `wb-mcp.exe` 进入的工具调用；CLI、面板 AI 和 widget 仍遵循各自既有权限边界。
 - Everything IPC 已接入，但全盘覆盖取决于用户的 Everything 索引配置和数据库状态；未运行/未就绪时只覆盖 WB 的用户常用目录降级索引。
 - 市场底层、持久化多源和可视化页面均已接通；正式官方索引地址尚未配置，必须等真实托管地址，不写占位 URL。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **Agent 生态深化**：MCP 动态 tools/resources/prompts、写策略、elicitation 和脱敏事件订阅已接通；下一步做一键安装级接入、Agent profile 与更细粒度的事件过滤。
-2. **插件生态深化**：继续把天气、倒数日等内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
-3. **搜索体验深化**：来源、详情、文件动作与本地选择行为排序已完成；下一步可做图片/文本文件内容预览、结果分组折叠与钉到看板。
-4. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。
+1. **发行与引导**：在最终集中前台验收后创建首个 `v0.1.0` tag，验证 GitHub Actions 的真实 Release；下一步补安装器、升级检查、首次启动引导、配置备份与诊断导出。
+2. **Agent 生态深化**：一键安装和 MCP 动态 tools/resources/prompts、写策略、elicitation、脱敏事件订阅均已接通；下一步做 Agent profile 与更细粒度的事件过滤。
+3. **插件生态深化**：继续把天气、倒数日等内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
+4. **搜索体验深化**：可继续做图片/文本文件内容预览、结果分组折叠与钉到看板。
 
 ## 8. 上次会话最后在做的事
 
-完成主看板/桌面组件独立宽高调整、内容自适应和中英日韩四语支持，并完成 Agent/MCP 一键安装层：Codex TOML、Claude/Cursor JSON 结构化合并、原子写入、同名保护、`--force` 和 `--file` 隔离测试均已落地。后续继续深化插件/Skill 生态与发布安装体验。用户允许必要的前台验收，但明确要求尽量减少频率，优先后台测试。
+完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证和 GitHub Release workflow；面向用户的 README 已改为下载、启动、校验、升级和卸载说明。相关提交：`79c13d9`、`d67e15e`。下一步先做最后的后台安全/配置回归，再把便携目录启动、多语言、组件响应式和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。

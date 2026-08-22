@@ -8,8 +8,10 @@
 <p align="center">
   <a href="https://github.com/CSYYYYXX/RuDock"><img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4CC2FF?style=flat-square" alt="Windows 10 / 11"></a>
   <a href="https://github.com/CSYYYYXX/RuDock"><img src="https://img.shields.io/badge/status-preview-F9C74F?style=flat-square" alt="Preview"></a>
+  <a href="https://github.com/CSYYYYXX/RuDock/releases"><img src="https://img.shields.io/github/v/release/CSYYYYXX/RuDock?include_prereleases&style=flat-square&label=release" alt="Latest release"></a>
   <a href="https://github.com/CSYYYYXX/RuDock/blob/main/plugins/README.md"><img src="https://img.shields.io/badge/plugins-v1-6CCB5F?style=flat-square" alt="Plugin format v1"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-ready-BD93F9?style=flat-square" alt="MCP ready"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-FFFFFF?style=flat-square" alt="GPL-3.0-only"></a>
 </p>
 
 ![RuDock 主看板](docs-assets/v8-final.png)
@@ -54,6 +56,8 @@ Win 键接管可以随时在设置中关闭。关闭后仍可从托盘图标或 
 
 在设置的 **桌面常驻** 中勾选需要的组件即可。面板与桌面上的每张组件卡片都可以拖动右下角独立调整宽高，内容会随实际尺寸自动重排；双击调节手柄可恢复默认尺寸。按 Win 键时，RuDock 默认进入应用页；切换到左侧一页可以查看完整组件页。CLI 也可以直接管理常驻组件：
 
+以下示例用 `wb` 代表 `wb.exe`；使用便携版且未将目录加入 `PATH` 时，请改成 `.\wb.exe`。
+
 ```powershell
 wb settings desktop w-clock w-weather w-cal w-ai
 wb settings desktop
@@ -93,47 +97,62 @@ AI 服务配置只保存在本机。请不要把 API Key 或本地配置文件�
 
 ## 安装与启动
 
-RuDock 目前处于 Preview 阶段，暂时需要从源码构建。正式安装包将在后续版本发布到 [Releases](https://github.com/CSYYYYXX/RuDock/releases)。
+RuDock 目前处于 Preview 阶段。便携版不需要安装 Rust；程序、界面资源和内置插件都在同一个目录中。
 
 ### 环境要求
 
 - Windows 10 / 11
-- WebView2 Runtime
-- Rust GNU toolchain
-- PowerShell 5.1 或更高版本
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 11 通常已内置）
 - Everything（可选，用于扩大文件搜索范围并提升速度）
 
-### 从源码构建
+### 使用便携版
 
-在 Git Bash 中执行：
-
-```bash
-git clone https://github.com/CSYYYYXX/RuDock.git
-cd RuDock
-source build.sh
-cargo build --workspace
-```
-
-### 启动 RuDock
-
-在 PowerShell 中执行：
+1. 从 [Releases](https://github.com/CSYYYYXX/RuDock/releases) 下载 `RuDock-<版本>-windows-x64.zip` 和同名 `.sha256` 文件。
+2. 将 ZIP 解压到准备长期保留的目录，例如 `D:\Apps\RuDock`。启用开机启动后不要随意移动该目录。
+3. 在解压目录打开 PowerShell，启动 RuDock：
 
 ```powershell
-.\target\debug\wb.exe daemon start
+.\wb.exe daemon start
 ```
 
-首次启动后，在设置中开启 **接管 Win 键**。也可以使用 CLI：
+后台服务会预先建立应用索引，并管理面板、托盘图标和 Win 键监听。首次启动后，在设置中开启 **接管 Win 键** 和 **开机启动**，也可以使用 CLI：
 
 ```powershell
-.\target\debug\wb.exe settings win true
-.\target\debug\wb.exe settings autostart true
+.\wb.exe settings win true
+.\wb.exe settings autostart true
 ```
 
-后台服务会管理面板、托盘图标和 Win 键监听。退出时可使用托盘菜单，或运行：
+退出时使用托盘菜单，或运行：
 
 ```powershell
-.\target\debug\wb.exe daemon stop
+.\wb.exe daemon stop
 ```
+
+### 校验下载
+
+发布页提供的 `.sha256` 文件用于确认 ZIP 在下载后没有损坏或被替换。在下载目录运行：
+
+```powershell
+$expected = (Get-Content .\RuDock-*-windows-x64.zip.sha256).Split()[0]
+$actual = (Get-FileHash .\RuDock-*-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+$actual -eq $expected
+```
+
+结果应为 `True`。解压后的 `SHA256SUMS.txt` 还包含包内每个文件的校验值。
+
+### 升级与卸载
+
+升级前先运行 `.\wb.exe daemon stop`，再用新版本替换原目录并重新启动。笔记、待办、设置和用户安装的插件保存在 `%LOCALAPPDATA%\WB`，不会因替换程序目录而丢失。
+
+卸载前依次运行：
+
+```powershell
+.\wb.exe settings win false
+.\wb.exe settings autostart false
+.\wb.exe daemon stop
+```
+
+随后删除 RuDock 程序目录即可。若也要永久删除笔记、待办、设置和用户插件，再手动删除 `%LOCALAPPDATA%\WB`。
 
 ## CLI 与 Agent
 
@@ -183,4 +202,4 @@ wb plugin approve clock-card
 
 ## License
 
-RuDock 仍处于 Preview 阶段，许可证将在首个公开发行版前确定。
+RuDock 使用 [GNU General Public License v3.0 only](LICENSE)。

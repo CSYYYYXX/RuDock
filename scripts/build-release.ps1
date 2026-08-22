@@ -107,6 +107,18 @@ try {
     New-Item -ItemType Directory -Path $panelAssetDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $RepoRoot "assets\panel-ui\index.html") -Destination $panelAssetDir
 
+    $docsAssetDir = Join-Path $stageDir "docs-assets"
+    New-Item -ItemType Directory -Path $docsAssetDir -Force | Out-Null
+    foreach ($asset in @(
+        "v8-final.png",
+        "desktop-widgets.png",
+        "ai-spotlight-glow.png",
+        "m5-plugins-installed-uninstall.png",
+        "m5-market-page.png"
+    )) {
+        Copy-Item -LiteralPath (Join-Path $RepoRoot "docs-assets\$asset") -Destination $docsAssetDir
+    }
+
     $pluginDest = Join-Path $stageDir "plugins"
     New-Item -ItemType Directory -Path $pluginDest -Force | Out-Null
     Copy-Item -Path (Join-Path $RepoRoot "plugins\*") -Destination $pluginDest -Recurse
@@ -153,6 +165,7 @@ try {
             "wb-mcp.exe",
             "WebView2Loader.dll",
             "assets\panel-ui\index.html",
+            "docs-assets\v8-final.png",
             "plugins\stopwatch\plugin.json",
             "README.md",
             "LICENSE",
