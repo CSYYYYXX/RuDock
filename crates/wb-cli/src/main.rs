@@ -4,7 +4,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use interprocess::local_socket::{prelude::*, GenericNamespaced};
 use interprocess::TryClone;
-use std::io::{BufRead, BufReader, IsTerminal, Write};
+use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
 use wb_core::error::{CoreError, ErrorCode};
 use wb_core::protocol::{Request, Response};
 
@@ -128,7 +128,12 @@ enum PluginOp {
     },
     /// Validate a plugin manifest and every declared local file
     Validate { dir: String },
-    Install { source: String },
+    Install {
+        source: String,
+        /// Required for HTTP(S); accepts 64 hex characters or sha256:<hex>
+        #[arg(long, value_name = "HEX")]
+        sha256: Option<String>,
+    },
     Remove { id: String },
     Approve { id: String },
     Revoke { id: String },
@@ -437,7 +442,35 @@ fn pack_plugin(dir: &str, output: Option<&str>) -> Result<serde_json::Value, Cor
         let detail = String::from_utf8_lossy(&outp.stderr).trim().to_string();
         return Err(CoreError::new(ErrorCode::Internal, if detail.is_empty() { "打包插件失败".into() } else { detail }));
     }
-    Ok(serde_json::json!({"packed": manifest.id, "version": manifest.version, "output": out}))
+    let sha256 = archive_sha256(&out)?;
+    Ok(serde_json::json!({
+        "packed": manifest.id,
+        "version": manifest.version,
+        "output": out,
+        "sha256": format!("sha256:{sha256}"),
+    }))
+}
+
+fn archive_sha256(path: &std::path::Path) -> Result<String, CoreError> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            format!("读取插件归档失败 {}: {e}", path.display()),
+        )
+    })?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("计算 SHA-256 失败: {e}")))?;
+        if read == 0 {
+            break;
+        }
+        hash.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
 }
 
 #[cfg(not(windows))]
@@ -678,7 +711,10 @@ fn main() {
         Cmd::Plugin { op } => match op {
             PluginOp::List => ("plugin.list", serde_json::json!({})),
             PluginOp::Reload => ("plugin.reload", serde_json::json!({})),
-            PluginOp::Install { source } => ("plugin.install", serde_json::json!({"source": source})),
+            PluginOp::Install { source, sha256 } => (
+                "plugin.install",
+                serde_json::json!({"source": source, "sha256": sha256}),
+            ),
             PluginOp::Remove { id } => ("plugin.remove", serde_json::json!({"id": id})),
             PluginOp::Approve { id } => ("plugin.approve", serde_json::json!({"id": id})),
             PluginOp::Revoke { id } => ("plugin.revoke", serde_json::json!({"id": id})),
@@ -767,5 +803,28 @@ mod tests {
         let error = create_plugin("hello-world", None, PluginKind::Command, Some(&path)).unwrap_err();
         assert!(error.message.contains("拒绝覆盖"));
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn parses_checksummed_remote_plugin_install() {
+        let hash = "a".repeat(64);
+        let cli = Cli::try_parse_from([
+            "wb",
+            "plugin",
+            "install",
+            "https://plugins.example/test.zip",
+            "--sha256",
+            &hash,
+        ])
+        .unwrap();
+        match cli.cmd {
+            Cmd::Plugin {
+                op: PluginOp::Install { source, sha256 },
+            } => {
+                assert_eq!(source, "https://plugins.example/test.zip");
+                assert_eq!(sha256.as_deref(), Some(hash.as_str()));
+            }
+            _ => panic!("unexpected command"),
+        }
     }
 }

@@ -76,7 +76,8 @@ E:\cctest\wb\
 - Spotlight 搜索：daemon 启动后在后台广度优先索引 Desktop/Documents/Downloads/OneDrive，最多 50,000 项，与应用、剪贴板、笔记、待办、插件命令合并排序；`wb search ... --type file|plugin` 已真实验证。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费，视觉验收截图 `docs-assets/m5-spotlight-plugin-search-fixed.png`。
 - 面板单实例：正常启动使用 `Local\WBPanelSingleInstance` mutex，次实例向 `WBPanelPoc` 发送 `WM_WB_SHOW` 后退出；8 路并发启动实测最终仅 1 个进程，稳定态重复启动日志为 `{"event":"already_running","awakened":true}`。`--bench` 和显式 `--allow-multiple` 绕过该限制供自动化诊断。
 - 托盘与退出：daemon 创建 `WBTrayWindow` 通知区入口，左键打开面板，右键菜单提供“打开 WB / 退出 WB”；`wb daemon start|status|stop` 已闭环。status/stop 离线时不隐式启动，stop 在 RPC 响应 flush 后退出，并停止 hook、向 panel 发 `WM_CLOSE`、显式移除托盘图标。CLI stop、重复 stop、托盘退出均真实验证三进程归零。
-- 2026-08-22 全量测试基线：wb-core 8 + wb-daemon 2 + wb-plugin-sdk 9 + wb-plugin-host 6 + wb-cli 1，共 26 个单测；workspace build/check 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,927 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
+- 社区远程分发：`plugin.install` 支持 HTTP(S) URL 且强制 SHA-256；`wb plugin pack` 直接返回 `sha256:<hex>`。远程归档限 32MB，解压树限 64MB / 512 文件 / 16 层 / 单文件 16MB；`zip` 解析器在写盘前/写盘中拒绝越界路径、特殊文件、ADS、设备名、大小写冲突和超限内容。下载、解压、staging、backup 均与正式发现目录隔离，安装/卸载事务串行，daemon 重启清理遗留临时工作区，升级提交失败会回滚。极端回滚失败的旧版本保留在 `%LOCALAPPDATA%\WB\plugin-backups\`，只有正式目标存在时才自动清理。真实本机 HTTP E2E 已验证错误哈希拒绝、正确安装/执行/卸载，以及 0.1.0→0.2.0 升级后授权失效和重新批准。
+- 2026-08-22 全量测试基线：wb-core 8 + wb-daemon 6 + wb-plugin-sdk 9 + wb-plugin-host 6 + wb-cli 2，共 31 个单测；workspace build/check 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,927 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -85,10 +86,11 @@ E:\cctest\wb\
 - `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
 - `events.tail` 未实现。MCP 当前为单进程 stdio 会话，每个 MCP server 连接独立复用一个 daemon pipe。
 - Everything（voidtools）IPC 未接入；当前是用户常用目录的有界、启动时后台索引，不是全盘实时索引。
+- 远程 ZIP 安装与升级事务已完成，但官方/社区市场索引、版本解析和一键检查更新尚未实现。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **M5 插件生态深化**：把 1-2 个内置组件迁移成插件格式自证、插件市场/版本升级。Skill、权限管理页、开发脚手架和挂件热加载已接入。
+1. **M5 插件生态深化**：把 1-2 个内置组件迁移成插件格式自证、增加市场索引和一键检查更新。远程校验安装与原子升级底座已接通。
 2. **Agent 生态深化**：MCP 与外部配置样例已接通，下一步补事件订阅、写操作确认策略和安装级接入体验。
 3. **Everything 搜索接入**（WM_COPYDATA 客户端）——文件搜索从"本地存储"升级"全盘毫秒级"。
 4. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。

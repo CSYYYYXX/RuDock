@@ -153,6 +153,15 @@ wb plugin list
 wb plugin remove my-plugin
 ```
 
+`pack` 的 JSON 结果包含可发布的 `sha256:<hex>`。从 HTTP(S) 安装时校验值必填：
+
+```powershell
+wb plugin install https://plugins.example/my-plugin.zip `
+  --sha256 sha256:<pack 输出的哈希>
+```
+
+远程归档上限 32MB，解压后上限 64MB / 512 个文件 / 16 层目录。安装器逐项解析 ZIP，在写盘前/写盘中拒绝越界路径、符号链接、NTFS ADS、Windows 设备名、大小写冲突和超限内容。下载、校验和解压都在正式插件目录之外完成；升级提交失败会回滚旧版本，极端回滚失败时旧版本会保留在 `%LOCALAPPDATA%\WB\plugin-backups\` 并返回具体路径。公开分发应使用 HTTPS，HTTP 仅用于本地开发服务器。
+
 安装会校验 manifest 和所有声明文件、复制到 `%LOCALAPPDATA%\WB\plugins\` 并立即刷新 daemon 插件池；同 id 的用户插件会覆盖仓库开发态插件。卸载只删除用户插件，不会修改仓库里的开发插件。
 
 AI 面板会把 `skill_list` / `skill_get` 作为工具提供给模型。模型可以先读取插件 Skill，再调用同一插件声明的命令；Skill 本身只提供上下文，不直接执行代码。

@@ -65,7 +65,7 @@ pub fn schema() -> Value {
             {"name": "cmd.tools", "params": {}, "returns": {"type": "array"}, "status": "M4"},
             {"name": "plugin.list", "params": {}, "returns": {"type": "array"}, "status": "M4"},
             {"name": "plugin.reload", "params": {}, "returns": {"type": "object"}, "status": "M4"},
-            {"name": "plugin.install", "params": {"source": "string"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "plugin.install", "params": {"source": "path|http(s) URL", "sha256": "string (required for URL)"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "plugin.remove", "params": {"id": "string"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "plugin.approve", "params": {"id": "string"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "plugin.revoke", "params": {"id": "string"}, "returns": {"type": "object"}, "status": "M5"},

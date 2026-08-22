@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 interprocess = "2"
 sha2 = { workspace = true }
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",

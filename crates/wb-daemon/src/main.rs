@@ -3,9 +3,9 @@
 
 use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions};
 use interprocess::TryClone;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use wb_core::error::{CoreError, ErrorCode};
 use wb_core::models::{ClipEntry, ClipKind, Note, ResultKind, SearchResult, TodoItem};
@@ -27,11 +27,39 @@ struct Ctx {
     storage: Arc<Storage>,
     plugins: RwLock<Vec<LoadedPlugin>>,
     files: RwLock<Vec<SearchResult>>,
+    plugin_tx: Mutex<()>,
 }
 
 /// 插件目录：%LOCALAPPDATA%/WB/plugins（用户安装）+ 仓库 plugins/（开发态，exe 上三级）。
 fn user_plugin_dir() -> PathBuf {
     wb_core::paths::local_data_dir().join("plugins")
+}
+
+fn plugin_install_work_dir() -> PathBuf {
+    wb_core::paths::local_data_dir().join("plugin-installs")
+}
+
+fn plugin_backup_dir() -> PathBuf {
+    wb_core::paths::local_data_dir().join("plugin-backups")
+}
+
+fn cleanup_plugin_backups() {
+    let root = plugin_backup_dir();
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Ok(manifest) = read_manifest(&path) else {
+            continue;
+        };
+        if user_plugin_dir().join(manifest.id).is_dir() {
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
 }
 
 fn plugin_dirs() -> Vec<PathBuf> {
@@ -126,11 +154,296 @@ fn read_manifest(dir: &Path) -> Result<wb_plugin_sdk::Manifest, String> {
     Ok(manifest)
 }
 
-fn install_plugin(source: &str) -> Result<wb_plugin_sdk::Manifest, String> {
-    let input = PathBuf::from(source);
+const REMOTE_ARCHIVE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+const INSTALL_TREE_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const INSTALL_FILE_MAX_BYTES: u64 = 16 * 1024 * 1024;
+const INSTALL_TREE_MAX_FILES: usize = 512;
+const INSTALL_TREE_MAX_ENTRIES: usize = 1024;
+const INSTALL_TREE_MAX_DEPTH: usize = 16;
+
+fn is_remote_source(source: &str) -> bool {
+    let source = source.to_ascii_lowercase();
+    source.starts_with("https://") || source.starts_with("http://")
+}
+
+fn normalize_sha256(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let value = value.strip_prefix("sha256:").unwrap_or(value);
+    if value.len() != 64 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("SHA-256 必须是 64 位十六进制字符串".into());
+    }
+    Ok(value.to_ascii_lowercase())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("读取插件归档失败 {}: {e}", path.display()))?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("读取插件归档失败 {}: {e}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hash.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+fn verify_archive(path: &Path, expected: &str) -> Result<String, String> {
+    let expected = normalize_sha256(expected)?;
+    let size = std::fs::metadata(path)
+        .map_err(|e| format!("读取插件归档元数据失败: {e}"))?
+        .len();
+    if size > REMOTE_ARCHIVE_MAX_BYTES {
+        return Err(format!(
+            "插件归档超过 {}MB",
+            REMOTE_ARCHIVE_MAX_BYTES / 1024 / 1024
+        ));
+    }
+    let actual = sha256_file(path)?;
+    if actual != expected {
+        return Err(format!(
+            "插件归档 SHA-256 不匹配: expected {expected}, actual {actual}"
+        ));
+    }
+    Ok(actual)
+}
+
+fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, String), String> {
+    let expected = expected.ok_or_else(|| "远程插件安装必须提供 --sha256".to_string())?;
+    let expected = normalize_sha256(expected)?;
+    let root = plugin_install_work_dir();
+    std::fs::create_dir_all(&root).map_err(|e| format!("创建插件目录失败: {e}"))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let archive = root.join(format!(".download-{stamp}-{}.zip", std::process::id()));
+    let mut cmd = std::process::Command::new("curl.exe");
+    cmd.args([
+        "--fail",
+        "--location",
+        "--silent",
+        "--show-error",
+        "--proto",
+        "=http,https",
+        "--proto-redir",
+        "=http,https",
+        "--connect-timeout",
+        "10",
+        "--max-time",
+        "60",
+        "--max-filesize",
+        &REMOTE_ARCHIVE_MAX_BYTES.to_string(),
+        "--output",
+        &archive.to_string_lossy(),
+        source,
+    ])
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().map_err(|e| format!("下载插件失败: {e}"))?;
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&archive);
+        return Err(format!(
+            "下载插件失败: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    match verify_archive(&archive, &expected) {
+        Ok(actual) => Ok((archive, actual)),
+        Err(e) => {
+            let _ = std::fs::remove_file(&archive);
+            Err(e)
+        }
+    }
+}
+
+fn validate_install_tree(root: &Path) -> Result<(), String> {
+    fn visit(
+        dir: &Path,
+        depth: usize,
+        files: &mut usize,
+        bytes: &mut u64,
+    ) -> Result<(), String> {
+        if depth > INSTALL_TREE_MAX_DEPTH {
+            return Err(format!("插件目录层级超过 {INSTALL_TREE_MAX_DEPTH}"));
+        }
+        for entry in std::fs::read_dir(dir).map_err(|e| format!("读取插件目录失败: {e}"))? {
+            let entry = entry.map_err(|e| format!("读取插件目录项失败: {e}"))?;
+            let path = entry.path();
+            let meta = std::fs::symlink_metadata(&path)
+                .map_err(|e| format!("读取插件文件元数据失败: {e}"))?;
+            if meta.file_type().is_symlink() {
+                return Err(format!("插件包含不支持的符号链接: {}", path.display()));
+            }
+            if meta.is_dir() {
+                visit(&path, depth + 1, files, bytes)?;
+            } else if meta.is_file() {
+                *files += 1;
+                *bytes = bytes.saturating_add(meta.len());
+                if *files > INSTALL_TREE_MAX_FILES {
+                    return Err(format!("插件文件数超过 {INSTALL_TREE_MAX_FILES}"));
+                }
+                if meta.len() > INSTALL_FILE_MAX_BYTES {
+                    return Err(format!(
+                        "插件单文件超过 {}MB: {}",
+                        INSTALL_FILE_MAX_BYTES / 1024 / 1024,
+                        path.display()
+                    ));
+                }
+                if *bytes > INSTALL_TREE_MAX_BYTES {
+                    return Err(format!(
+                        "插件解压后超过 {}MB",
+                        INSTALL_TREE_MAX_BYTES / 1024 / 1024
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = 0;
+    let mut bytes = 0;
+    visit(root, 0, &mut files, &mut bytes)
+}
+
+fn safe_zip_path(path: &Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+
+    let mut safe = PathBuf::new();
+    let mut depth = 0;
+    for component in path.components() {
+        let Component::Normal(segment) = component else {
+            return Err(format!("ZIP 包含非法路径: {}", path.display()));
+        };
+        let segment = segment
+            .to_str()
+            .ok_or_else(|| "ZIP 文件名必须是 UTF-8".to_string())?;
+        let normalized = segment.trim_end_matches([' ', '.']).to_ascii_lowercase();
+        let stem = normalized.split('.').next().unwrap_or_default();
+        let reserved = matches!(stem, "con" | "prn" | "aux" | "nul")
+            || stem
+                .strip_prefix("com")
+                .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+            || stem
+                .strip_prefix("lpt")
+                .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"));
+        if normalized.is_empty()
+            || normalized != segment.to_ascii_lowercase()
+            || segment.contains(':')
+            || reserved
+        {
+            return Err(format!("ZIP 包含 Windows 非法文件名: {segment}"));
+        }
+        depth += 1;
+        if depth > INSTALL_TREE_MAX_DEPTH {
+            return Err(format!("插件目录层级超过 {INSTALL_TREE_MAX_DEPTH}"));
+        }
+        safe.push(segment);
+    }
+    if safe.as_os_str().is_empty() {
+        return Err("ZIP 包含空路径".into());
+    }
+    Ok(safe)
+}
+
+fn extract_plugin_archive(archive_path: &Path, output_root: &Path) -> Result<(), String> {
+    let file = std::fs::File::open(archive_path)
+        .map_err(|e| format!("读取插件 ZIP 失败 {}: {e}", archive_path.display()))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("插件 ZIP 格式错误: {e}"))?;
+    if archive.len() > INSTALL_TREE_MAX_ENTRIES {
+        return Err(format!("插件 ZIP 条目数超过 {INSTALL_TREE_MAX_ENTRIES}"));
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    let mut files = 0usize;
+    let mut declared_bytes = 0u64;
+    let mut written_bytes = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|e| format!("读取插件 ZIP 条目失败: {e}"))?;
+        let enclosed = entry
+            .enclosed_name()
+            .ok_or_else(|| format!("ZIP 包含越界路径: {}", entry.name()))?;
+        let relative = safe_zip_path(&enclosed)?;
+        let key = relative.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+        if !seen.insert(key) {
+            return Err(format!("ZIP 包含重复或大小写冲突路径: {}", relative.display()));
+        }
+
+        if let Some(mode) = entry.unix_mode() {
+            let kind = mode & 0o170000;
+            if kind != 0 && kind != 0o040000 && kind != 0o100000 {
+                return Err(format!("ZIP 包含不支持的特殊文件: {}", relative.display()));
+            }
+        }
+        let target = output_root.join(&relative);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target)
+                .map_err(|e| format!("创建插件目录失败 {}: {e}", target.display()))?;
+            continue;
+        }
+
+        files += 1;
+        if files > INSTALL_TREE_MAX_FILES {
+            return Err(format!("插件文件数超过 {INSTALL_TREE_MAX_FILES}"));
+        }
+        if entry.size() > INSTALL_FILE_MAX_BYTES {
+            return Err(format!(
+                "插件单文件超过 {}MB: {}",
+                INSTALL_FILE_MAX_BYTES / 1024 / 1024,
+                relative.display()
+            ));
+        }
+        declared_bytes = declared_bytes.saturating_add(entry.size());
+        if declared_bytes > INSTALL_TREE_MAX_BYTES {
+            return Err(format!(
+                "插件解压后超过 {}MB",
+                INSTALL_TREE_MAX_BYTES / 1024 / 1024
+            ));
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("创建插件目录失败 {}: {e}", parent.display()))?;
+        }
+        let mut output = std::fs::File::create(&target)
+            .map_err(|e| format!("创建插件文件失败 {}: {e}", target.display()))?;
+        let written = std::io::copy(
+            &mut entry.take(INSTALL_FILE_MAX_BYTES + 1),
+            &mut output,
+        )
+        .map_err(|e| format!("解压插件文件失败 {}: {e}", relative.display()))?;
+        if written > INSTALL_FILE_MAX_BYTES {
+            return Err(format!(
+                "插件单文件实际解压超过 {}MB: {}",
+                INSTALL_FILE_MAX_BYTES / 1024 / 1024,
+                relative.display()
+            ));
+        }
+        written_bytes = written_bytes.saturating_add(written);
+        if written_bytes > INSTALL_TREE_MAX_BYTES {
+            return Err(format!(
+                "插件实际解压超过 {}MB",
+                INSTALL_TREE_MAX_BYTES / 1024 / 1024
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn install_plugin_path(input: &Path) -> Result<wb_plugin_sdk::Manifest, String> {
     let input = input
         .canonicalize()
-        .map_err(|e| format!("插件源不存在: {source} ({e})"))?;
+        .map_err(|e| format!("插件源不存在: {} ({e})", input.display()))?;
     let input = if input.to_string_lossy().starts_with(r"\\?\") {
         PathBuf::from(&input.to_string_lossy()[4..])
     } else {
@@ -150,70 +463,122 @@ fn install_plugin(source: &str) -> Result<wb_plugin_sdk::Manifest, String> {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let tmp = user_plugin_dir().join(format!(".install-{stamp}-{}", std::process::id()));
+        let tmp = plugin_install_work_dir().join(format!(
+            "extract-{stamp}-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&tmp).map_err(|e| format!("创建临时目录失败: {e}"))?;
-        let ps_quote = |p: &Path| format!("'{}'", p.to_string_lossy().replace('\'', "''"));
-        let script = format!(
-            "Expand-Archive -LiteralPath {} -DestinationPath {} -Force -ErrorAction Stop",
-            ps_quote(&input),
-            ps_quote(&tmp)
-        );
-        let mut cmd = std::process::Command::new(
-            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-        );
-        cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &script,
-        ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        let out = cmd.output().map_err(|e| format!("解压插件失败: {e}"))?;
-        if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr);
+        if let Err(e) = extract_plugin_archive(&input, &tmp) {
             let _ = std::fs::remove_dir_all(&tmp);
-            return Err(format!("解压插件失败: {}", err.trim()));
+            return Err(e);
         }
-        let found = find_manifest_root(&tmp)?;
+        if let Err(e) = validate_install_tree(&tmp) {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+        let found = match find_manifest_root(&tmp) {
+            Ok(found) => found,
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(e);
+            }
+        };
         temp = Some(tmp);
         found
     } else {
         return Err("插件源必须是目录或 .zip 文件".into());
     };
 
-    let manifest = read_manifest(&root)?;
-    let candidate = LoadedPlugin { dir: root.clone(), manifest: manifest.clone() };
-    wb_plugin_host::validate_files(&candidate)
-        .map_err(|e| format!("插件文件校验失败: {e}"))?;
-    let target_root = user_plugin_dir();
-    std::fs::create_dir_all(&target_root).map_err(|e| format!("创建插件目录失败: {e}"))?;
-    let staging = target_root.join(format!(
-        ".{}-installing-{}",
-        manifest.id,
-        std::process::id()
-    ));
-    let target = target_root.join(&manifest.id);
-    let _ = std::fs::remove_dir_all(&staging);
-    if let Err(e) = copy_plugin_tree(&root, &staging) {
+    let result = (|| {
+        validate_install_tree(&root)?;
+        let manifest = read_manifest(&root)?;
+        let candidate = LoadedPlugin {
+            dir: root.clone(),
+            manifest: manifest.clone(),
+        };
+        wb_plugin_host::validate_files(&candidate)
+            .map_err(|e| format!("插件文件校验失败: {e}"))?;
+        let target_root = user_plugin_dir();
+        std::fs::create_dir_all(&target_root)
+            .map_err(|e| format!("创建插件目录失败: {e}"))?;
+        let work_root = plugin_install_work_dir();
+        std::fs::create_dir_all(&work_root)
+            .map_err(|e| format!("创建插件安装工作目录失败: {e}"))?;
+        let backup_root = plugin_backup_dir();
+        std::fs::create_dir_all(&backup_root)
+            .map_err(|e| format!("创建插件备份目录失败: {e}"))?;
+        let transaction = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let staging = work_root.join(format!(
+            "{}-staging-{}-{transaction}",
+            manifest.id,
+            std::process::id()
+        ));
+        let backup = backup_root.join(format!(
+            "{}-backup-{}-{transaction}",
+            manifest.id,
+            std::process::id()
+        ));
+        let target = target_root.join(&manifest.id);
         let _ = std::fs::remove_dir_all(&staging);
-        if let Some(t) = temp {
-            let _ = std::fs::remove_dir_all(t);
+        let _ = std::fs::remove_dir_all(&backup);
+        if let Err(e) = copy_plugin_tree(&root, &staging) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
         }
-        return Err(e);
-    }
-    if target.exists() {
-        std::fs::remove_dir_all(&target).map_err(|e| format!("替换旧插件失败: {e}"))?;
-    }
-    std::fs::rename(&staging, &target).map_err(|e| format!("提交插件安装失败: {e}"))?;
+        let had_target = target.exists();
+        if had_target {
+            if let Err(e) = std::fs::rename(&target, &backup) {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(format!("暂存旧插件失败: {e}"));
+            }
+        }
+        if let Err(e) = std::fs::rename(&staging, &target) {
+            let _ = std::fs::remove_dir_all(&staging);
+            if had_target {
+                if let Err(rollback) = std::fs::rename(&backup, &target) {
+                    return Err(format!(
+                        "提交插件安装失败: {e}; 回滚旧版本失败: {rollback}; 备份位于 {}",
+                        backup.display()
+                    ));
+                }
+            }
+            return Err(format!("提交插件安装失败: {e}"));
+        }
+        if had_target {
+            let _ = std::fs::remove_dir_all(&backup);
+        }
+        Ok(manifest)
+    })();
     if let Some(t) = temp {
         let _ = std::fs::remove_dir_all(t);
     }
-    Ok(manifest)
+    result
+}
+
+fn install_plugin(
+    source: &str,
+    expected_sha256: Option<&str>,
+) -> Result<(wb_plugin_sdk::Manifest, Option<String>), String> {
+    if is_remote_source(source) {
+        let (archive, actual) = download_plugin(source, expected_sha256)?;
+        let result = install_plugin_path(&archive).map(|manifest| (manifest, Some(actual)));
+        let _ = std::fs::remove_file(archive);
+        return result;
+    }
+
+    let input = PathBuf::from(source);
+    let actual = if let Some(expected) = expected_sha256 {
+        if input.is_dir() {
+            return Err("--sha256 只适用于 ZIP 文件或远程 URL".into());
+        }
+        Some(verify_archive(&input, expected)?)
+    } else {
+        None
+    };
+    install_plugin_path(&input).map(|manifest| (manifest, actual))
 }
 
 fn remove_plugin(id: &str) -> Result<(), String> {
@@ -536,6 +901,8 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let name = wb_core::paths::pipe_name().to_ns_name::<GenericNamespaced>()?;
     let listener = ListenerOptions::new().name(name).create_sync()?;
+    let _ = std::fs::remove_dir_all(plugin_install_work_dir());
+    cleanup_plugin_backups();
     let storage = Arc::new(Storage::open(&wb_core::paths::db_path())?);
     let plugins = discover_plugins();
     eprintln!(
@@ -547,6 +914,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         storage: Arc::clone(&storage),
         plugins: RwLock::new(plugins),
         files: RwLock::new(wb_core::search::list_recent_files(200)),
+        plugin_tx: Mutex::new(()),
     });
     {
         let ctx = Arc::clone(&ctx);
@@ -1033,9 +1401,11 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         }
 
         "plugin.install" => {
+            let _tx = ctx.plugin_tx.lock().unwrap();
             let source = str_param(params, "source")?;
-            let manifest =
-                install_plugin(source).map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
+            let expected_sha256 = params.get("sha256").and_then(|value| value.as_str());
+            let (manifest, archive_sha256) = install_plugin(source, expected_sha256)
+                .map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
             let found = discover_plugins();
             let n = found.len();
             *ctx.plugins.write().unwrap() = found;
@@ -1045,6 +1415,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 "version": manifest.version,
                 "permissions": manifest.permissions,
                 "approval_required": !manifest.permissions.is_empty(),
+                "archive_sha256": archive_sha256,
                 "reloaded": n,
             }))
         }
@@ -1106,6 +1477,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         }
 
         "plugin.remove" => {
+            let _tx = ctx.plugin_tx.lock().unwrap();
             let id = str_param(params, "id")?;
             remove_plugin(id).map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
             let mut settings = read_settings();
@@ -1351,6 +1723,76 @@ mod tests {
                 manifest,
             },
         )
+    }
+
+    #[test]
+    fn validates_archive_sha256() {
+        let path = std::env::temp_dir().join(format!(
+            "wb-daemon-sha-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, b"abc").unwrap();
+        let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(verify_archive(&path, expected).unwrap(), expected);
+        assert!(verify_archive(&path, &"0".repeat(64))
+            .unwrap_err()
+            .contains("不匹配"));
+        assert_eq!(
+            normalize_sha256(&format!("sha256:{}", expected.to_uppercase())).unwrap(),
+            expected
+        );
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn remote_install_requires_checksum_before_network() {
+        let error = install_plugin("https://plugins.invalid/example.zip", None).unwrap_err();
+        assert!(error.contains("必须提供 --sha256"));
+    }
+
+    #[test]
+    fn rejects_oversized_install_tree() {
+        let root = std::env::temp_dir().join(format!(
+            "wb-daemon-tree-limit-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = std::fs::File::create(root.join("too-large.bin")).unwrap();
+        file.set_len(INSTALL_FILE_MAX_BYTES + 1).unwrap();
+        assert!(validate_install_tree(&root)
+            .unwrap_err()
+            .contains("单文件超过"));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn rejects_unsafe_windows_zip_paths() {
+        assert_eq!(
+            safe_zip_path(Path::new("assets/widget.html")).unwrap(),
+            PathBuf::from("assets/widget.html")
+        );
+        for path in [
+            "../escape.txt",
+            "assets/../../escape.txt",
+            "payload:stream",
+            "CON.txt",
+            "assets/name.",
+        ] {
+            assert!(safe_zip_path(Path::new(path)).is_err(), "accepted {path}");
+        }
+        let deep = (0..=INSTALL_TREE_MAX_DEPTH)
+            .map(|_| "d")
+            .collect::<Vec<_>>()
+            .join("/");
+        assert!(safe_zip_path(Path::new(&deep)).is_err());
     }
 
     #[test]
