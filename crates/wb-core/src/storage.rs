@@ -321,6 +321,20 @@ mod tests {
     }
 
     #[test]
+    fn file_index_is_bounded_and_searchable() {
+        let root = std::env::temp_dir().join(format!("wb-file-index-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        std::fs::write(root.join("nested/quarterly-report.txt"), "x").unwrap();
+        std::fs::write(root.join("notes.md"), "x").unwrap();
+        let files = crate::search::index_files_from_roots(&[root.clone()], 10);
+        let hits = crate::search::search_indexed_files(&files, "quarterly-report", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "quarterly-report.txt");
+        assert_eq!(crate::search::index_files_from_roots(&[root.clone()], 1).len(), 1);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn ids_are_unique_and_sortable() {
         let a = new_id();
         let b = new_id();

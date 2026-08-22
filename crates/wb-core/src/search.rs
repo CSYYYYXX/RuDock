@@ -1,5 +1,5 @@
 //! Search aggregation: local stores (notes/todos/clips) + Start-menu apps.
-//! Everything IPC and the USN fallback land in M1 polish; provider isolation
+//! Everything IPC can replace the background user-file index later; provider isolation
 //! rule: every provider returns Result and a failure must never block others.
 
 use crate::models::{ResultKind, SearchResult};
@@ -219,6 +219,76 @@ pub fn list_recent_files(limit: usize) -> Vec<SearchResult> {
         .collect();
     items.sort_by(|a, b| b.0.cmp(&a.0));
     items.into_iter().take(limit).map(|(_, r)| r).collect()
+}
+
+/// Build a bounded index of user-visible files without blocking search queries.
+/// The daemon runs this in a background thread and atomically swaps the result.
+pub fn index_user_files(limit: usize) -> Vec<SearchResult> {
+    let Some(profile) = std::env::var_os("USERPROFILE") else { return Vec::new() };
+    let profile = std::path::PathBuf::from(profile);
+    let mut roots = vec![profile.join("Desktop"), profile.join("Documents"), profile.join("Downloads")];
+    if let Some(one_drive) = std::env::var_os("OneDrive") {
+        roots.push(std::path::PathBuf::from(one_drive));
+    }
+    index_files_from_roots(&roots, limit)
+}
+
+pub fn index_files_from_roots(roots: &[std::path::PathBuf], limit: usize) -> Vec<SearchResult> {
+    let mut out = Vec::new();
+    let mut queue: std::collections::VecDeque<(std::path::PathBuf, u8)> =
+        roots.iter().filter(|p| p.is_dir()).cloned().map(|p| (p, 0)).collect();
+    while let Some((dir, depth)) = queue.pop_front() {
+        if out.len() >= limit { break; }
+        if depth > 12 { continue; }
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            if out.len() >= limit { break; }
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_symlink() { continue; }
+            let path = entry.path();
+            if kind.is_dir() {
+                queue.push_back((path, depth + 1));
+                continue;
+            }
+            if !kind.is_file() { continue; }
+            let title = entry.file_name().to_string_lossy().to_string();
+            if title.is_empty() || title.starts_with('~') { continue; }
+            out.push(SearchResult {
+                kind: ResultKind::File,
+                title,
+                subtitle: path.parent().map(|p| p.to_string_lossy().to_string()),
+                path: Some(path.to_string_lossy().to_string()),
+                score: 0.72,
+                source: "files".into(),
+            });
+        }
+    }
+    out
+}
+
+pub fn search_indexed_files(files: &[SearchResult], query: &str, limit: usize) -> Vec<SearchResult> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    let mut matches: Vec<SearchResult> = files
+        .iter()
+        .filter_map(|item| {
+            let title = item.title.to_lowercase();
+            let path_hit = item.path.as_deref().is_some_and(|p| p.to_lowercase().contains(&q));
+            if !title.contains(&q) && !path_hit {
+                return None;
+            }
+            let mut item = item.clone();
+            if title.starts_with(&q) {
+                item.score += 0.12;
+            }
+            Some(item)
+        })
+        .collect();
+    matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    matches.truncate(limit);
+    matches
 }
 
 fn visit(dir: &std::path::Path, out: &mut Vec<SearchResult>, depth: u32) {

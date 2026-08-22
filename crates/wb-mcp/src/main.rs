@@ -19,7 +19,20 @@ struct DaemonClient {
 impl DaemonClient {
     fn connect() -> Result<Self, String> {
         let name = wb_core::paths::pipe_name().to_ns_name::<GenericNamespaced>().map_err(|e| format!("pipe name: {e}"))?;
-        let stream = interprocess::local_socket::Stream::connect(name).map_err(|e| format!("daemon unavailable: {e}"))?;
+        let stream = match interprocess::local_socket::Stream::connect(name.clone()) {
+            Ok(stream) => stream,
+            Err(_) => {
+                spawn_daemon();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                loop {
+                    match interprocess::local_socket::Stream::connect(name.clone()) {
+                        Ok(stream) => break stream,
+                        Err(e) if std::time::Instant::now() >= deadline => return Err(format!("daemon unavailable: {e}")),
+                        Err(_) => std::thread::sleep(std::time::Duration::from_millis(80)),
+                    }
+                }
+            }
+        };
         let reader = BufReader::new(stream.try_clone().map_err(|e| format!("pipe clone: {e}"))?);
         Ok(Self { reader, writer: stream, next_id: 1 })
     }
@@ -39,6 +52,19 @@ impl DaemonClient {
         Ok(resp.result.unwrap_or(serde_json::Value::Null))
     }
 }
+
+#[cfg(windows)]
+fn spawn_daemon() {
+    use std::os::windows::process::CommandExt;
+    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("wb-daemon.exe")));
+    if let Some(exe) = exe.filter(|p| p.is_file()) {
+        let _ = std::process::Command::new(exe).creation_flags(0x0800_0000 | 0x0000_0008)
+            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    }
+}
+
+#[cfg(not(windows))]
+fn spawn_daemon() {}
 
 fn rpc_result(id: &serde_json::Value, result: serde_json::Value) -> serde_json::Value {
     serde_json::json!({"jsonrpc":"2.0","id":id,"result":result})

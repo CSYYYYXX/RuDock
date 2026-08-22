@@ -3,16 +3,16 @@
 > 设计文档：[`../docs/技术方案-v0.1.md`](../docs/技术方案-v0.1.md)
 > 人按 Win 键用面板，Agent 走 CLI/MCP 用能力，插件一次开发服务两者。
 
-## 当前状态（M5 起步：插件 Skill 已接入 Agent 能力面）
+## 当前状态（M5：插件/Skill/MCP + Spotlight 统一搜索）
 
 | 组件 | 状态 |
 | --- | --- |
-| wb-core（模型/存储/搜索/协议） | ✅ 含 6 个单元测试 |
-| wb-daemon（JSON-RPC over Named Pipe） | ✅ 可用，内嵌剪贴板实时监听 |
+| wb-core（模型/存储/搜索/协议） | ✅ 含 7 个单元测试 |
+| wb-daemon（JSON-RPC over Named Pipe） | ✅ 可用，剪贴板实时监听 + 用户文件后台索引 |
 | wb-cli（`wb.exe` 全命令面 + `--json` 契约） | ✅ 可用 |
 | wb-hook（**Win 键钩子：接管开关 / 开机自启 / 单实例**） | ✅ 可用 |
 | wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由） | ✅ 可用 |
-| wb-mcp（M5 Agent 适配层） | ✅ stdio MCP（tools + Skill resources） |
+| wb-mcp（M5 Agent 适配层） | ✅ stdio MCP（tools + Skill resources，可冷启动 daemon） |
 | wb-plugin-sdk / wb-plugin-host（M4 插件系统） | ✅ 可用（发现/校验/进程执行/挂件桥） |
 | 插件生态（M5 第一阶段） | ✅ 可用（Skill / pack / install / remove / daemon 热重载 / 面板挂件热加载 / AI Skill 工具） |
 
@@ -25,7 +25,7 @@
   - WebView2 手写 vtable COM 嵌入成功：透明背景 + file:// 本地页 + 导航事件正常，截图 `docs-assets/poc2p.png`。
   - 踩坑记录见方案文档 §10.1（WebView2.h 的 propget 解析坑等 5 条）。
 - **剪贴板实时监听**：daemon 内嵌 message-only 窗口 + `WM_CLIPBOARDUPDATE`，复制即入库（去重、10 万字符上限），E2E 已验证。
-- **Everything**：本机未安装，daemon 启动时检测并打日志（`Everything present: false`），文件搜索走本地降级；真 IPC 集成排到 M1.5。
+- **文件搜索降级**：Everything 未接入时，daemon 后台广度优先索引 Desktop/Documents/Downloads/OneDrive（最多 50,000 个文件），搜索请求不被扫描阻塞；Everything IPC 仍是后续的全盘毫秒级方案。
 
 ### M2 面板（已验证链路）
 
@@ -37,7 +37,7 @@
 - **Win 键设置**：面板 ⚙ 设置、`wb settings get|win true|false|autostart true|false` 共用 `%APPDATA%\WB\settings.json`；daemon 按设置自动启动 hook，开机自启写入 HKCU Run；hook 使用 `Local\WBHookSingleInstance` mutex 防重复实例。
 - **10 个小组件**（`assets/panel-ui/index.html`）：时钟 / 日历 / 天气(占位) / 系统状态(CPU+内存,宿主 `sysinfo` 每 2s 推) / 番茄钟 / 计算 / 待办(增删勾) / 随手记 / 剪贴板(实时,点击复制) / 应用(预览 4 格 + 全量抽屉网格)。
 - **真应用图标**：宿主 `SHGetFileInfoW` 提取 32×32 → 手写零依赖 PNG 编码器 → base64 dataUrl 推给页面缓存（`crates/wb-panel/src/icons.rs`）。无头验证：`wb-panel --icon-test <lnk> <out.png>`。
-- **搜索模式**：输入即切换搜索结果视图（分组+真图标+↑↓/Enter），清空回到组件面板；前缀 `= 计算`（本地）· `? AI`（M3）· `> 命令`（M4）。深链 `#q=` / `#view=apps`。
+- **搜索模式**：输入即统一搜索应用、用户文件、剪贴板、笔记、待办和插件命令（分组+真图标+↑↓/Enter）；插件结果回车后走同一个 `cmd.run` 执行面。清空回到组件面板；前缀 `= 计算`（本地）· `? AI`（M3）· `> 命令`（M4）。深链 `#q=` / `#view=apps`。插件搜索视觉验收见 `docs-assets/m5-spotlight-plugin-search-fixed.png`。
 - 调试辅助：`wb-hook-poc --inject-win`（注入一次裸 Win 驱动 --panel 钩子做自动化）。
 
 ### UI v4：全屏 Spotlight 形态（当前线上版本）
@@ -124,7 +124,7 @@
 - **实测**（2026-08-22）：`wb cmd run util.hello --arg name=WB` 中文往返无乱码；AI 实测 `?跟 Luna 打个招呼` → 模型自主调 `util_hello` → PS1 插件执行 → 自然语言确认；插件页挂件正常渲染。截图：`docs-assets/m4-ai-plugin.png`、`docs-assets/m4-plugins-page.png`。
 - **边界**：插件是用户自装的本地代码，v1 权限仅声明不强制；破坏性命令不暴露 `ai` 段即可避开模型。
 - **Skill**：插件可以随附 Markdown Skill 文档；面板 AI 通过 `skill_list` / `skill_get` 读取工作流说明，再调用插件命令完成任务。Skill 不拥有额外执行权限。
-- **MCP**：`wb-mcp.exe` 通过 stdio 提供 MCP `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read`；工具转发 daemon `cmd.run`，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。Claude/Cursor 等 Agent 不需要了解 Windows Named Pipe。
+- **MCP**：`wb-mcp.exe` 通过 stdio 提供 MCP `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read`；工具转发 daemon `cmd.run`，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。daemon 离线时 MCP 会从同一产物目录静默拉起它并等待就绪，Claude/Cursor 等 Agent 不需要了解 Windows Named Pipe 或预先管理进程。
 
 ## 构建环境（Windows，已固化在本仓库）
 
@@ -151,7 +151,7 @@ wb todo add "发周报" --due friday --json
 wb clip add "https://example.com" --json
 wb search "周报" --json          # 命中 → exit 0
 wb search "不存在xyz"            # 无结果 → exit 2
-wb panel show                    # 未实现 → exit 5
+wb panel show                    # 跨进程显示正式 WebView2 面板
 wb schema --json                 # Agent 自省命令面
 ```
 
@@ -166,4 +166,4 @@ wb schema --json                 # Agent 自省命令面
 ## 已知事项
 
 - AI provider 测试端点（api.json）：`/v1/models` 可列、`gpt-5.6-luna` 在列，但推理端点（responses 与 chat/completions）目前返回 `Service temporarily unavailable`。M3 才用到，不阻塞。代理规则：网络异常走 `http://127.0.0.1:7890`。
-- `wb daemon stop`、Everything 真 IPC、面板真前端（WebMessage 通道）：按里程碑 M1.5–M2 排期。
+- `wb daemon stop` 与 Everything 真 IPC 尚未实现；当前文件检索是用户常用目录的有界后台索引，不等同于全盘实时索引。

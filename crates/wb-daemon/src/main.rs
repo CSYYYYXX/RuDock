@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use wb_core::error::{CoreError, ErrorCode};
-use wb_core::models::{ClipEntry, ClipKind, Note, TodoItem};
+use wb_core::models::{ClipEntry, ClipKind, Note, ResultKind, SearchResult, TodoItem};
 use wb_core::protocol::{Request, Response};
 use wb_core::search::Searcher;
 use wb_core::storage::Storage;
@@ -25,6 +25,7 @@ mod panelctl;
 struct Ctx {
     storage: Arc<Storage>,
     plugins: RwLock<Vec<LoadedPlugin>>,
+    files: RwLock<Vec<SearchResult>>,
 }
 
 /// 插件目录：%LOCALAPPDATA%/WB/plugins（用户安装）+ 仓库 plugins/（开发态，exe 上三级）。
@@ -208,7 +209,7 @@ fn plugin_revision(p: &LoadedPlugin) -> u128 {
 }
 
 fn default_settings() -> serde_json::Value {
-    serde_json::json!({"takeover_win": true, "autostart": false})
+    serde_json::json!({"takeover_win": false, "autostart": false})
 }
 
 fn read_settings() -> serde_json::Value {
@@ -285,9 +286,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = Arc::new(Ctx {
         storage: Arc::clone(&storage),
         plugins: RwLock::new(plugins),
+        files: RwLock::new(wb_core::search::list_recent_files(200)),
     });
+    {
+        let ctx = Arc::clone(&ctx);
+        std::thread::spawn(move || {
+            // Reserve room for the separate Recent-items provider while keeping
+            // the complete in-memory file result set bounded at 50,000 entries.
+            let mut files = wb_core::search::index_user_files(49_800);
+            files.extend(wb_core::search::list_recent_files(200));
+            let mut seen = std::collections::HashSet::new();
+            files.retain(|f| f.path.as_ref().is_some_and(|p| seen.insert(p.to_lowercase())));
+            files.truncate(50_000);
+            eprintln!("wb-daemon: 用户文件索引 {} 项", files.len());
+            *ctx.files.write().unwrap() = files;
+        });
+    }
     let settings = read_settings();
-    if settings.get("takeover_win").and_then(|v| v.as_bool()).unwrap_or(true) {
+    if settings.get("takeover_win").and_then(|v| v.as_bool()).unwrap_or(false) {
         if let Err(e) = set_hook_running(true) { eprintln!("wb-daemon: Win 键接管启动失败: {e}"); }
     }
     ctx.storage.audit("daemon", "daemon.start", env!("CARGO_PKG_VERSION"))?;
@@ -378,6 +394,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             "name": "wb-daemon",
             "version": env!("CARGO_PKG_VERSION"),
             "status": "ok",
+            "files_indexed": ctx.files.read().unwrap().len(),
         })),
 
         "schema" => Ok(wb_core::protocol::schema()),
@@ -417,7 +434,45 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         "search" => {
             let query = str_param(params, "query")?;
             let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
-            let results = Searcher::new(&ctx.storage).search(query, limit);
+            let q = query.trim().to_lowercase();
+            if q.is_empty() {
+                return Err(CoreError::new(ErrorCode::NoResults, "empty search query"));
+            }
+            // Type filters are applied after aggregation. Ask providers for their
+            // full bounded result sets first, otherwise a large app/clip set can
+            // truncate a lower-scoring note or todo before it is filtered in.
+            let provider_limit = if params.get("type").and_then(|v| v.as_str()).is_some() {
+                usize::MAX
+            } else {
+                limit.max(100)
+            };
+            let mut results = Searcher::new(&ctx.storage).search(query, provider_limit);
+            results.extend(wb_core::search::search_indexed_files(
+                &ctx.files.read().unwrap(),
+                query,
+                provider_limit,
+            ));
+            for plugin in ctx.plugins.read().unwrap().iter() {
+                for command in &plugin.manifest.commands {
+                    if command.id.to_lowercase().contains(&q) || command.title.to_lowercase().contains(&q) || command.hint.to_lowercase().contains(&q) {
+                        results.push(SearchResult {
+                            kind: ResultKind::Plugin,
+                            title: command.title.clone(),
+                            subtitle: Some(format!("{} · {}", plugin.manifest.name, command.hint)),
+                            path: Some(format!("wb://cmd/{}", command.id)),
+                            score: if command.title.to_lowercase().starts_with(&q) { 0.86 } else { 0.67 },
+                            source: "plugin".into(),
+                        });
+                    }
+                }
+            }
+            if let Some(kind) = params.get("type").and_then(|v| v.as_str()) {
+                results.retain(|r| matches!((kind, r.kind),
+                    ("file", ResultKind::File) | ("app", ResultKind::App) | ("clip", ResultKind::Clip) |
+                    ("note", ResultKind::Note) | ("todo", ResultKind::Todo) | ("plugin", ResultKind::Plugin)));
+            }
+            results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            results.truncate(limit);
             if results.is_empty() {
                 return Err(CoreError::new(ErrorCode::NoResults, format!("no results for: {query}")));
             }

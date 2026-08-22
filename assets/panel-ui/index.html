@@ -978,6 +978,20 @@ function openAt(i) {
   const r = results[i];
   if (!r) return;
   if (r._cmd) { runCmd(r._cmd, r._arg); return; }
+  if (r.path && String(r.path).startsWith('wb://cmd/')) {
+    const id = decodeURIComponent(String(r.path).slice('wb://cmd/'.length));
+    const execute = spec => {
+      if (spec) { runCmd(spec, ''); return; }
+      q.value = ''; doQuery();
+      rpc('cmd.run', { id, args: {} }).then(m => {
+        if (m && m.error) showToast('✗ ' + r.title + '：' + m.error);
+        else showToast('✓ ' + r.title);
+      });
+    };
+    const spec = Array.isArray(cmdCache) ? cmdCache.find(c => c.id === id) : null;
+    if (spec) execute(spec); else ensureCmds().then(items => execute(items.find(c => c.id === id)));
+    return;
+  }
   if (r._copy) send({ kind: 'action', action: 'copy', content: r._copy });
   else if (r.path && !String(r.path).startsWith('wb://')) send({ kind: 'action', action: 'open', path: r.path });
   else if (r.kind === 'clip') send({ kind: 'action', action: 'copy', content: r.title });
@@ -1250,6 +1264,11 @@ if (hasBridge) {
         send({ kind: 'selftest', detail: 'hold removed @' + Math.round(performance.now()), ok: true });
       }));
       q.focus();
+      if (initialQuery) {
+        q.value = initialQuery;
+        initialQuery = '';
+        doQuery();
+      }
       if (REDUCE_MOTION) { clearTimeout(rectsTimer); rectsTimer = setTimeout(reportRects, 60); }
       else {
         // 磨砂窗全程跟随卡片动画：120ms 后卡片开始可见，逐帧流式上报到动画结束
@@ -1559,8 +1578,7 @@ setInterval(() => loadPluginWidgets(false), 3000);
 /* boot */
 document.querySelectorAll('.board .w').forEach((el, i) => el.style.setProperty('--i', i));
 const m0 = location.hash.match(/^#q=(.*)$/);
-if (m0) { q.value = decodeURIComponent(m0[1]); }
-if (m0) doQuery();
+let initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
 applyWidgetVisibility();
 loadTodos(); loadNotes(); loadClips(); loadRecent();
 send({ kind: 'ready' });
