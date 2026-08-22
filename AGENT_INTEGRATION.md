@@ -34,6 +34,8 @@ args = []
 
 内建命令和已批准插件的 AI 命令会成为 MCP tools。插件 command id 会通过真实工具注册表解析，避免用字符串替换猜回 id。已批准的 Skill 以 `wb://skill/<plugin>/<skill>` resource 暴露，另提供 `skill_list` / `skill_get` 工具。
 
+每个 tool 都带 MCP 标准 `annotations`：`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`，并附可读标题。搜索、剪贴板读取和 Skill 读取标记为本地只读；新增待办/笔记标记为非破坏性写入；插件命令使用 manifest 声明，旧插件或缺失声明一律按最保守风险处理。annotations 供 MCP 客户端在执行前呈现风险并触发其确认策略，不替代 WB 的插件批准边界。
+
 若 daemon 未运行，MCP 会从 `wb-mcp.exe` 所在目录静默启动 `wb-daemon.exe`，等待就绪后继续当前请求。客户端不需要了解 Windows Named Pipe。
 
 ## CLI 接入

@@ -1089,6 +1089,17 @@ fn same_market_source(left: &str, right: &str) -> bool {
     left.eq_ignore_ascii_case(right)
 }
 
+fn plugin_annotations_json(command: &wb_plugin_sdk::CommandSpec) -> serde_json::Value {
+    let annotations = command.annotations;
+    serde_json::json!({
+        "title": command.title,
+        "readOnlyHint": annotations.read_only_hint,
+        "destructiveHint": annotations.destructive_hint,
+        "idempotentHint": annotations.idempotent_hint,
+        "openWorldHint": annotations.open_world_hint,
+    })
+}
+
 fn write_settings(value: &serde_json::Value) -> Result<(), String> {
     let path = wb_core::paths::settings_path();
     if let Some(parent) = path.parent() {
@@ -1651,6 +1662,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                         "title": c.title,
                         "hint": c.hint,
                         "arg": c.arg.as_ref().map(|a| serde_json::json!({"name": a.name, "prompt": a.prompt})),
+                        "annotations": plugin_annotations_json(c),
                         "source": "plugin",
                         "plugin": p.manifest.id,
                     }));
@@ -1661,7 +1673,15 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
 
         "cmd.tools" => {
             // AI function calling 的 tools：注册表内建 + 插件中声明了 ai 的命令
-            let mut v = wb_core::commands::tools_json();
+            let include_annotations = params
+                .get("include_annotations")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let mut v = if include_annotations {
+                wb_core::commands::tools_json_with_annotations()
+            } else {
+                wb_core::commands::tools_json()
+            };
             let arr = v.as_array_mut().unwrap();
             let settings = read_settings();
             for p in ctx.plugins.read().unwrap().iter() {
@@ -1670,7 +1690,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 }
                 for c in &p.manifest.commands {
                     if let Some(ai) = &c.ai {
-                        arr.push(serde_json::json!({
+                        let mut tool = serde_json::json!({
                             "type": "function",
                             "name": wb_plugin_sdk::Manifest::tool_name(&c.id),
                             "description": ai.description,
@@ -1680,7 +1700,11 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                                 "required": ai.required,
                                 "additionalProperties": false,
                             },
-                        }));
+                        });
+                        if include_annotations {
+                            tool["annotations"] = plugin_annotations_json(c);
+                        }
+                        arr.push(tool);
                     }
                 }
             }

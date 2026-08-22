@@ -53,12 +53,43 @@ pub struct CommandSpec {
     pub title: String,
     #[serde(default)]
     pub hint: String,
+    /// MCP 标准风险提示。未声明时按可写、可破坏、非幂等、开放世界处理。
+    #[serde(default)]
+    pub annotations: ToolAnnotations,
     /// 主参数（`>` 模式与 CLI --arg 用）；None = 无参命令
     #[serde(default)]
     pub arg: Option<ArgSpec>,
     /// 暴露给 AI 的工具描述；None = 不给模型用（破坏性操作别暴露）
     #[serde(default)]
     pub ai: Option<AiSpec>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolAnnotations {
+    #[serde(default)]
+    pub read_only_hint: bool,
+    #[serde(default = "default_true")]
+    pub destructive_hint: bool,
+    #[serde(default)]
+    pub idempotent_hint: bool,
+    #[serde(default = "default_true")]
+    pub open_world_hint: bool,
+}
+
+impl Default for ToolAnnotations {
+    fn default() -> Self {
+        Self {
+            read_only_hint: false,
+            destructive_hint: true,
+            idempotent_hint: false,
+            open_world_hint: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -405,6 +436,32 @@ mod tests {
     fn tool_name_is_openai_safe() {
         assert_eq!(Manifest::tool_name("util.hello"), "util_hello");
         assert_eq!(Manifest::tool_name("util.say_hi"), "util_say_hi");
+    }
+
+    #[test]
+    fn tool_annotations_default_conservative_and_accept_mcp_names() {
+        let default = base().commands[0].annotations;
+        assert!(!default.read_only_hint);
+        assert!(default.destructive_hint);
+        assert!(!default.idempotent_hint);
+        assert!(default.open_world_hint);
+
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "id": "reader", "name": "Reader", "version": "0.1.0",
+            "handler": "main.ps1", "permissions": ["process"],
+            "commands": [{
+                "id": "reader.get", "title": "读取",
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                }
+            }]
+        }))
+        .unwrap();
+        assert!(manifest.commands[0].annotations.read_only_hint);
+        assert!(!manifest.commands[0].annotations.destructive_hint);
     }
 
     #[test]

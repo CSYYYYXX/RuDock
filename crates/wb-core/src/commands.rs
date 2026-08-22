@@ -15,6 +15,8 @@ pub struct CmdSpec {
     pub arg: Option<(&'static str, &'static str)>,
     /// 暴露给 AI 的工具描述；None = 不给模型用
     pub ai_tool: Option<AiTool>,
+    /// MCP/Agent 用的操作风险提示；不参与命令执行授权。
+    pub annotations: ToolAnnotations,
 }
 
 pub struct AiTool {
@@ -22,6 +24,63 @@ pub struct AiTool {
     pub description: &'static str,
     pub properties: fn() -> Value,
     pub required: &'static [&'static str],
+}
+
+#[derive(Clone, Copy)]
+pub struct ToolAnnotations {
+    pub read_only_hint: bool,
+    pub destructive_hint: bool,
+    pub idempotent_hint: bool,
+    pub open_world_hint: bool,
+}
+
+impl ToolAnnotations {
+    pub const READ_ONLY_LOCAL: Self = Self {
+        read_only_hint: true,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: false,
+    };
+    pub const WRITE_LOCAL: Self = Self {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: false,
+        open_world_hint: false,
+    };
+    pub const DESTRUCTIVE_LOCAL: Self = Self {
+        read_only_hint: false,
+        destructive_hint: true,
+        idempotent_hint: true,
+        open_world_hint: false,
+    };
+    pub const UI_IDEMPOTENT: Self = Self {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: false,
+    };
+    pub const UI_TOGGLE: Self = Self {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: false,
+        open_world_hint: false,
+    };
+    pub const READ_ONLY_OPEN_WORLD: Self = Self {
+        read_only_hint: true,
+        destructive_hint: false,
+        idempotent_hint: false,
+        open_world_hint: true,
+    };
+
+    fn json(self, title: &str) -> Value {
+        serde_json::json!({
+            "title": title,
+            "readOnlyHint": self.read_only_hint,
+            "destructiveHint": self.destructive_hint,
+            "idempotentHint": self.idempotent_hint,
+            "openWorldHint": self.open_world_hint,
+        })
+    }
 }
 
 pub fn registry() -> &'static [CmdSpec] {
@@ -43,6 +102,7 @@ static REGISTRY: &[CmdSpec] = &[
             }),
             required: &["title"],
         }),
+        annotations: ToolAnnotations::WRITE_LOCAL,
     },
     CmdSpec {
         id: "note.add",
@@ -57,6 +117,7 @@ static REGISTRY: &[CmdSpec] = &[
             }),
             required: &["content"],
         }),
+        annotations: ToolAnnotations::WRITE_LOCAL,
     },
     CmdSpec {
         id: "search",
@@ -71,6 +132,7 @@ static REGISTRY: &[CmdSpec] = &[
             }),
             required: &["query"],
         }),
+        annotations: ToolAnnotations::READ_ONLY_LOCAL,
     },
     CmdSpec {
         id: "clip.get",
@@ -83,6 +145,7 @@ static REGISTRY: &[CmdSpec] = &[
             properties: || serde_json::json!({}),
             required: &[],
         }),
+        annotations: ToolAnnotations::READ_ONLY_LOCAL,
     },
     CmdSpec {
         id: "clip.clear",
@@ -90,6 +153,7 @@ static REGISTRY: &[CmdSpec] = &[
         hint: "删除全部剪贴板历史记录",
         arg: None,
         ai_tool: None, // 破坏性：不交给模型
+        annotations: ToolAnnotations::DESTRUCTIVE_LOCAL,
     },
     CmdSpec {
         id: "panel.hide",
@@ -102,6 +166,7 @@ static REGISTRY: &[CmdSpec] = &[
             properties: || serde_json::json!({}),
             required: &[],
         }),
+        annotations: ToolAnnotations::UI_IDEMPOTENT,
     },
     CmdSpec {
         id: "panel.show",
@@ -109,6 +174,7 @@ static REGISTRY: &[CmdSpec] = &[
         hint: "显示 WB 面板（没在跑则启动）",
         arg: None,
         ai_tool: None,
+        annotations: ToolAnnotations::UI_IDEMPOTENT,
     },
     CmdSpec {
         id: "panel.toggle",
@@ -116,6 +182,7 @@ static REGISTRY: &[CmdSpec] = &[
         hint: "显示 ↔ 隐藏",
         arg: None,
         ai_tool: None,
+        annotations: ToolAnnotations::UI_TOGGLE,
     },
     CmdSpec {
         id: "system.lock",
@@ -123,6 +190,7 @@ static REGISTRY: &[CmdSpec] = &[
         hint: "立即锁定 Windows 会话",
         arg: None,
         ai_tool: None, // 破坏性：不交给模型
+        annotations: ToolAnnotations::DESTRUCTIVE_LOCAL,
     },
     CmdSpec {
         id: "agent.ask",
@@ -130,6 +198,7 @@ static REGISTRY: &[CmdSpec] = &[
         hint: "同步问一次 AI（CLI 用，面板里直接用 ? 前缀更顺）",
         arg: Some(("prompt", "问什么？")),
         ai_tool: None,
+        annotations: ToolAnnotations::READ_ONLY_OPEN_WORLD,
     },
 ];
 
@@ -144,6 +213,7 @@ pub fn list_json() -> Value {
                     "title": c.title,
                     "hint": c.hint,
                     "arg": c.arg.map(|(name, prompt)| serde_json::json!({"name": name, "prompt": prompt})),
+                    "annotations": c.annotations.json(c.title),
                 })
             })
             .collect(),
@@ -152,12 +222,22 @@ pub fn list_json() -> Value {
 
 /// Responses API 的 tools 数组（function calling）
 pub fn tools_json() -> Value {
+    tools_json_inner(false)
+}
+
+/// MCP 适配层使用的工具清单。面板 AI 必须继续调用 `tools_json()`，避免把
+/// 非 OpenAI 字段发给 Responses API。
+pub fn tools_json_with_annotations() -> Value {
+    tools_json_inner(true)
+}
+
+fn tools_json_inner(include_annotations: bool) -> Value {
     Value::Array(
         registry()
             .iter()
             .filter_map(|c| {
                 c.ai_tool.as_ref().map(|t| {
-                    serde_json::json!({
+                    let mut tool = serde_json::json!({
                         "type": "function",
                         "name": t.name,
                         "description": t.description,
@@ -167,7 +247,11 @@ pub fn tools_json() -> Value {
                             "required": t.required,
                             "additionalProperties": false,
                         },
-                    })
+                    });
+                    if include_annotations {
+                        tool["annotations"] = c.annotations.json(c.title);
+                    }
+                    tool
                 })
             })
             .collect(),
@@ -183,5 +267,35 @@ pub fn tool_to_method(tool: &str) -> Option<&'static str> {
         "clip_get" => Some("clip.get"),
         "panel_hide" => Some("panel.hide"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn annotations_are_opt_in_for_openai_compatibility() {
+        let plain = tools_json();
+        assert!(plain.as_array().unwrap().iter().all(|tool| tool.get("annotations").is_none()));
+
+        let annotated = tools_json_with_annotations();
+        let search = annotated
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "search")
+            .unwrap();
+        assert_eq!(search["annotations"]["readOnlyHint"], true);
+        assert_eq!(search["annotations"]["openWorldHint"], false);
+
+        let todo = annotated
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "todo_add")
+            .unwrap();
+        assert_eq!(todo["annotations"]["readOnlyHint"], false);
+        assert_eq!(todo["annotations"]["destructiveHint"], false);
     }
 }

@@ -11,6 +11,12 @@
       "title": "打招呼",
       "hint": "插件示例：向你问好",
       "arg": { "name": "name", "prompt": "跟谁打招呼？" },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
       "ai": {
         "description": "向某人打招呼（WB 插件示例命令）。用户说「跟xxx打个招呼」时调用。",
         "properties": { "name": { "type": "string", "description": "要打招呼的名字" } },

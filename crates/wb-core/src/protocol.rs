@@ -62,7 +62,7 @@ pub fn schema() -> Value {
             {"name": "cmd.list", "params": {}, "returns": {"type": "array"}, "status": "M3.5"},
             {"name": "cmd.run", "params": {"id": "string", "args": "object?"}, "returns": {"type": "any"}, "status": "M3.5"},
             {"name": "cmd.tool.run", "params": {"name": "string", "args": "object?"}, "returns": {"type": "any"}, "status": "M5"},
-            {"name": "cmd.tools", "params": {}, "returns": {"type": "array"}, "status": "M4"},
+            {"name": "cmd.tools", "params": {"include_annotations": "bool?"}, "returns": {"type": "array"}, "status": "M5"},
             {"name": "plugin.list", "params": {}, "returns": {"type": "array"}, "status": "M4"},
             {"name": "plugin.reload", "params": {}, "returns": {"type": "object"}, "status": "M4"},
             {"name": "plugin.install", "params": {"source": "path|http(s) URL", "sha256": "string (required for URL)"}, "returns": {"type": "object"}, "status": "M5"},

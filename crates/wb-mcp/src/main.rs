@@ -88,11 +88,17 @@ fn mcp_tools(daemon_tools: serde_json::Value) -> serde_json::Value {
                 "name": name,
                 "description": tool.get("description").cloned().unwrap_or(serde_json::json!("")),
                 "inputSchema": tool.get("parameters").cloned().unwrap_or(serde_json::json!({"type":"object","properties":{}})),
+                "annotations": tool.get("annotations").cloned().unwrap_or_else(|| serde_json::json!({
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": false,
+                    "openWorldHint": true,
+                })),
             }));
         }
     }
-    out.push(serde_json::json!({"name":"skill_list","description":"列出社区插件提供的 Agent Skills。","inputSchema":{"type":"object","properties":{},"required":[],"additionalProperties":false}}));
-    out.push(serde_json::json!({"name":"skill_get","description":"读取一个插件 Skill 的完整 Markdown 说明。","inputSchema":{"type":"object","properties":{"plugin":{"type":"string"},"id":{"type":"string"}},"required":["plugin","id"],"additionalProperties":false}}));
+    out.push(serde_json::json!({"name":"skill_list","description":"列出社区插件提供的 Agent Skills。","inputSchema":{"type":"object","properties":{},"required":[],"additionalProperties":false},"annotations":{"title":"列出 WB Skills","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}}));
+    out.push(serde_json::json!({"name":"skill_get","description":"读取一个插件 Skill 的完整 Markdown 说明。","inputSchema":{"type":"object","properties":{"plugin":{"type":"string"},"id":{"type":"string"}},"required":["plugin","id"],"additionalProperties":false},"annotations":{"title":"读取 WB Skill","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}}));
     serde_json::json!({"tools":out})
 }
 
@@ -131,7 +137,7 @@ fn handle(client: &mut DaemonClient, request: serde_json::Value) -> Option<serde
     let result = match method {
         "initialize" => Ok(serde_json::json!({"protocolVersion":"2024-11-05","capabilities":{"tools":{},"resources":{"subscribe":false,"listChanged":false}},"serverInfo":{"name":"wb-mcp","version":env!("CARGO_PKG_VERSION")}})),
         "ping" => Ok(serde_json::json!({})),
-        "tools/list" => client.call("cmd.tools", serde_json::json!({})).map(mcp_tools),
+        "tools/list" => client.call("cmd.tools", serde_json::json!({"include_annotations":true})).map(mcp_tools),
         "tools/call" => {
             let name = request.pointer("/params/name").and_then(|v| v.as_str()).ok_or_else(|| "missing tool name".to_string());
             let args = request.pointer("/params/arguments").cloned().unwrap_or(serde_json::json!({}));
@@ -159,5 +165,51 @@ fn main() {
             Err(e) => { let out = rpc_error(&serde_json::Value::Null, -32700, e.to_string()); let _ = writeln!(stdout, "{}", out); let _ = stdout.flush(); continue; }
         };
         if let Some(response) = handle(&mut client, request) { let _ = writeln!(stdout, "{}", response); let _ = stdout.flush(); }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_daemon_annotations_to_mcp_tools() {
+        let tools = mcp_tools(serde_json::json!([{
+            "type": "function",
+            "name": "search",
+            "description": "search",
+            "parameters": {"type":"object","properties":{}},
+            "annotations": {
+                "title": "全局搜索",
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        }]));
+        let search = &tools["tools"][0];
+        assert_eq!(search["annotations"]["readOnlyHint"], true);
+        assert_eq!(search["annotations"]["title"], "全局搜索");
+        assert!(search.get("inputSchema").is_some());
+    }
+
+    #[test]
+    fn unknown_tool_risk_defaults_conservative() {
+        let tools = mcp_tools(serde_json::json!([{
+            "name": "legacy_plugin",
+            "parameters": {"type":"object","properties":{}}
+        }]));
+        let annotations = &tools["tools"][0]["annotations"];
+        assert_eq!(annotations["readOnlyHint"], false);
+        assert_eq!(annotations["destructiveHint"], true);
+        assert_eq!(annotations["openWorldHint"], true);
+
+        let skill = tools["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "skill_get")
+            .unwrap();
+        assert_eq!(skill["annotations"]["readOnlyHint"], true);
     }
 }

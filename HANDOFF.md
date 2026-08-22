@@ -69,7 +69,7 @@ E:\cctest\wb\
 - M1 内核 / M2 面板 / v11 磨砂 / M3 随手问流式 / M3.5 命令注册表+function calling / M4 插件系统。
 - M4 实测：`wb cmd run util.hello --arg name=WB` 中文无乱码；`?跟 Luna 打个招呼` → 模型自动调插件 `util_hello` → 确认；插件页挂件渲染 + wbRpc 桥读剪贴板统计正常。
 - M5 第一阶段：插件 manifest 支持 `skills` 文档；daemon 暴露 `skill.list` / `skill.get`、`plugin.install` / `plugin.remove`，CLI 提供 `wb skill ...`、`wb plugin pack/install/remove`；ZIP/目录安装会校验、复制到用户目录并立即刷新 daemon 插件池；面板 AI 增加 `skill_list` / `skill_get` 工具。插件页现在每 3 秒检查清单 revision，新增/删除/替换挂件会自动重建 iframe，另有手动刷新按钮。`hello-assistant` 已带 `SKILL.md` 示例。真实 CLI 安装/执行/卸载冒烟、插件页新增挂件截图验证通过，workspace 测试全绿。
-- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。协议级冒烟已验证能看到 `util_hello`、`skill_list` 并读取 Skill；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
+- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。工具现携带标准 MCP annotations（只读/破坏性/幂等/开放世界），旧插件缺省按最保守风险，供客户端执行前展示和确认；面板 AI 的 OpenAI schema 不混入扩展字段。真实 stdio 冒烟已验证 `search`、`todo_add`、`skill_get` 和临时批准插件 `util_hello` 的标注；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
@@ -78,7 +78,7 @@ E:\cctest\wb\
 - 托盘与退出：daemon 创建 `WBTrayWindow` 通知区入口，左键打开面板，右键菜单提供“打开 WB / 退出 WB”；`wb daemon start|status|stop` 已闭环。status/stop 离线时不隐式启动，stop 在 RPC 响应 flush 后退出，并停止 hook、向 panel 发 `WM_CLOSE`、显式移除托盘图标。CLI stop、重复 stop、托盘退出均真实验证三进程归零。
 - 社区远程分发：`plugin.install` 支持 HTTP(S) URL 且强制 SHA-256；`wb plugin pack` 直接返回 `sha256:<hex>`。远程归档限 32MB，解压树限 64MB / 512 文件 / 16 层 / 单文件 16MB；`zip` 解析器在写盘前/写盘中拒绝越界路径、特殊文件、ADS、设备名、大小写冲突和超限内容。下载、解压、staging、backup 均与正式发现目录隔离，安装/卸载事务串行，daemon 重启清理遗留临时工作区，升级提交失败会回滚。极端回滚失败的旧版本保留在 `%LOCALAPPDATA%\WB\plugin-backups\`，只有正式目标存在时才自动清理。真实本机 HTTP E2E 已验证错误哈希拒绝、正确安装/执行/卸载，以及 0.1.0→0.2.0 升级后授权失效和重新批准。
 - 开放插件市场：`plugins/market-index.schema.json` 固化 v1 静态索引契约，官方与社区使用同一格式；设置可持久化最多 8 个市场源，CLI/RPC 不传 `index` 时聚合来源并自动解析插件，重复 id 会要求显式选源。面板第三页已是“已安装 / 市场”双视图，支持搜索、来源管理、安装、更新与用户插件卸载。市场版本强制 SemVer，远程索引下载限 2MB，远程条目只接受绝对 HTTP(S) 包地址；安装提交前同时核对 SHA-256、插件 id 和版本。真实 HTTP E2E 已验证持久化源、多源聚合和无 `--index` 安装；截图为 `m5-market-page.png`、`m5-market-sources.png`、`m5-plugins-installed-uninstall.png`。
-- 2026-08-22 全量测试基线：wb-core 8 + wb-daemon 9 + wb-plugin-sdk 11 + wb-plugin-host 6 + wb-cli 4，共 38 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,927 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
+- 2026-08-22 全量测试基线：wb-core 9 + wb-daemon 9 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 4 + wb-mcp 2，共 42 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,927 项，MCP 冷启动、risk annotations、文件类型过滤、插件类型过滤与插件命令执行均通过。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -86,16 +86,17 @@ E:\cctest\wb\
 - 插件挂件支持面板内自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
 - `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
 - `events.tail` 未实现。MCP 当前为单进程 stdio 会话，每个 MCP server 连接独立复用一个 daemon pipe。
+- MCP risk annotations 已能驱动支持该标准的客户端确认策略，但 daemon 尚未实现独立于客户端的二次确认或 MCP elicitation；不要把 Hint 当成授权。
 - Everything（voidtools）IPC 未接入；当前是用户常用目录的有界、启动时后台索引，不是全盘实时索引。
 - 市场底层、持久化多源和可视化页面均已接通；正式官方索引地址尚未配置，必须等真实托管地址，不写占位 URL。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **Agent 生态深化**：MCP 与外部配置样例已接通，下一步补写操作确认策略、MCP risk annotations、事件订阅和安装级接入体验。
+1. **Agent 生态深化**：MCP risk annotations 已接通，下一步评估高风险操作的 MCP elicitation/服务端策略，并补事件订阅和安装级接入体验。
 2. **插件生态深化**：把 1-2 个内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
 3. **Everything 搜索接入**（WM_COPYDATA 客户端）——文件搜索从"本地存储"升级"全盘毫秒级"。
 4. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。
 
 ## 8. 上次会话最后在做的事
 
-刚完成持久化多市场源、无 `--index` 聚合/安装、面板可视化市场与用户插件卸载入口，真实 HTTP E2E 和截图验收均通过。下一步优先推进 Agent 写操作确认与 MCP risk annotations，再做内置组件插件化或 Everything IPC。
+刚完成持久化多市场源、面板可视化市场，以及内建/插件统一的 MCP risk annotations；42 个测试和真实 HTTP/MCP stdio E2E 均通过。下一步优先评估服务端二次确认或事件订阅，再做内置组件插件化或 Everything IPC。

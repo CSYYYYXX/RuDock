@@ -49,6 +49,12 @@ wb plugin pack path\to\my-plugin --output my-plugin.zip
       "title": "打招呼",
       "hint": "一句话说明",
       "arg": { "name": "name", "prompt": "跟谁打招呼？" },   // 可省（无参命令）
+      "annotations": {                                        // MCP 标准风险提示
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
       "ai": {                                              // 可省；写了就暴露给 AI 工具
         "description": "给模型看的调用时机说明",
         "properties": { "name": { "type": "string" } },     // JSON Schema properties
@@ -94,6 +100,8 @@ wb plugin revoke hello-assistant
 ```
 
 授权写入 `%APPDATA%\WB\settings.json`，并绑定插件版本、排序后的权限集合和 manifest/handler/widget/Skill 文件的 SHA-256 内容指纹。任一文件、版本或权限发生变化，旧授权会自动失效，必须重新审阅并批准当前版本。
+
+`commands[].annotations` 使用 MCP Tool Annotations 的四个标准 Hint，供 Agent 客户端在调用前展示风险和决定是否请求用户确认。未声明时 WB 按最保守值处理：可写、可能破坏、非幂等、可能访问外部世界。它只是提示，不会扩大插件权限，也不能替代版本级批准；插件作者应按 handler 的真实最坏行为填写。
 
 ## 命令一旦声明，三处自动可用
 

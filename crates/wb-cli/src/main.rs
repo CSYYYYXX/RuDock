@@ -354,6 +354,12 @@ fn create_plugin(
             "title": format!("Run {name}"),
             "hint": format!("Run the {name} plugin"),
             "arg": {"name": "name", "prompt": "Name"},
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            },
             "ai": {
                 "description": format!("Use {name} to greet a named person."),
                 "properties": {"name": {"type": "string", "description": "Person to greet"}},
