@@ -148,28 +148,40 @@ enum PluginOp {
 
 #[derive(Subcommand)]
 enum MarketOp {
+    /// Manage persistent official/community market sources
+    Source {
+        #[command(subcommand)]
+        op: MarketSourceOp,
+    },
     /// List catalog entries and their installed/update status
     List {
         #[arg(long)]
-        index: String,
+        index: Option<String>,
     },
     /// List only plugins with a newer SemVer release
     Check {
         #[arg(long)]
-        index: String,
+        index: Option<String>,
     },
     /// Install the catalog release and verify id, version, and SHA-256
     Install {
         id: String,
         #[arg(long)]
-        index: String,
+        index: Option<String>,
     },
     /// Upgrade an installed plugin when the catalog has a newer release
     Update {
         id: String,
         #[arg(long)]
-        index: String,
+        index: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum MarketSourceOp {
+    List,
+    Add { index: String },
+    Remove { index: String },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -747,6 +759,20 @@ fn main() {
                 serde_json::json!({"source": source, "sha256": sha256}),
             ),
             PluginOp::Market { op } => match op {
+                MarketOp::Source { op } => match op {
+                    MarketSourceOp::List => (
+                        "plugin.market.sources",
+                        serde_json::json!({}),
+                    ),
+                    MarketSourceOp::Add { index } => (
+                        "plugin.market.source.add",
+                        serde_json::json!({"index": index}),
+                    ),
+                    MarketSourceOp::Remove { index } => (
+                        "plugin.market.source.remove",
+                        serde_json::json!({"index": index}),
+                    ),
+                },
                 MarketOp::List { index } => (
                     "plugin.market.list",
                     serde_json::json!({"index": index}),
@@ -897,8 +923,33 @@ mod tests {
                     },
             } => {
                 assert_eq!(id, "hello");
-                assert_eq!(index, "https://plugins.example/index.json");
+                assert_eq!(index.as_deref(), Some("https://plugins.example/index.json"));
             }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parses_persistent_market_source() {
+        let cli = Cli::try_parse_from([
+            "wb",
+            "plugin",
+            "market",
+            "source",
+            "add",
+            "https://plugins.example/index.json",
+        ])
+        .unwrap();
+        match cli.cmd {
+            Cmd::Plugin {
+                op:
+                    PluginOp::Market {
+                        op:
+                            MarketOp::Source {
+                                op: MarketSourceOp::Add { index },
+                            },
+                    },
+            } => assert_eq!(index, "https://plugins.example/index.json"),
             _ => panic!("unexpected command"),
         }
     }

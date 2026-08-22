@@ -184,14 +184,19 @@ wb plugin install https://plugins.example/my-plugin.zip `
 }
 ```
 
-远程索引中的 `download` 必须是绝对 HTTP(S) URL；本地索引可以引用索引目录内的相对 ZIP，也可以引用 HTTP(S)。市场列表、更新检查和一键安装/升级均有 CLI 与 JSON-RPC 契约：
+远程索引中的 `download` 必须是绝对 HTTP(S) URL；本地索引可以引用索引目录内的相对 ZIP，也可以引用 HTTP(S)。可以持久化最多 8 个官方或社区市场源；不传 `--index` 时会聚合全部已配置来源：
 
 ```powershell
-wb plugin market list --index https://plugins.example/index.json
-wb plugin market check --index https://plugins.example/index.json
-wb plugin market install my-plugin --index https://plugins.example/index.json
-wb plugin market update my-plugin --index https://plugins.example/index.json
+wb plugin market source add https://plugins.example/index.json
+wb plugin market source list
+wb plugin market list
+wb plugin market check
+wb plugin market install my-plugin
+wb plugin market update my-plugin
+wb plugin market source remove https://plugins.example/index.json
 ```
+
+也可以给 `list|check|install|update` 传 `--index <path-or-url>`，只访问一次指定索引。多个已配置来源含有同一个插件 id 时，自动解析会拒绝歧义，需用 `--index` 选择来源。面板插件页提供同一套市场浏览、来源管理、安装与更新能力。
 
 市场元数据不替代包内 manifest。安装提交前会同时核对归档 SHA-256、插件 id 和版本；任一不一致都不会覆盖现有版本。升级后原有授权按版本和内容指纹自动失效，需要重新批准。
 

@@ -28,6 +28,7 @@ struct Ctx {
     plugins: RwLock<Vec<LoadedPlugin>>,
     files: RwLock<Vec<SearchResult>>,
     plugin_tx: Mutex<()>,
+    settings_tx: Mutex<()>,
 }
 
 /// 插件目录：%LOCALAPPDATA%/WB/plugins（用户安装）+ 仓库 plugins/（开发态，exe 上三级）。
@@ -214,7 +215,13 @@ fn verify_archive(path: &Path, expected: &str) -> Result<String, String> {
     Ok(actual)
 }
 
-fn download_http(source: &str, output_path: &Path, max_bytes: u64, label: &str) -> Result<(), String> {
+fn download_http(
+    source: &str,
+    output_path: &Path,
+    max_bytes: u64,
+    max_time_seconds: u64,
+    label: &str,
+) -> Result<(), String> {
     let mut cmd = std::process::Command::new("curl.exe");
     cmd.args([
         "--fail",
@@ -228,7 +235,7 @@ fn download_http(source: &str, output_path: &Path, max_bytes: u64, label: &str) 
         "--connect-timeout",
         "10",
         "--max-time",
-        "60",
+        &max_time_seconds.to_string(),
         "--max-filesize",
         &max_bytes.to_string(),
         "--output",
@@ -272,7 +279,7 @@ fn download_plugin(source: &str, expected: Option<&str>) -> Result<(PathBuf, Str
         .unwrap_or_default()
         .as_millis();
     let archive = root.join(format!(".download-{stamp}-{}.zip", std::process::id()));
-    download_http(source, &archive, REMOTE_ARCHIVE_MAX_BYTES, "插件")?;
+    download_http(source, &archive, REMOTE_ARCHIVE_MAX_BYTES, 60, "插件")?;
     match verify_archive(&archive, &expected) {
         Ok(actual) => Ok((archive, actual)),
         Err(e) => {
@@ -624,6 +631,13 @@ struct LoadedMarket {
     index: wb_plugin_sdk::MarketIndex,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarketSource {
+    name: String,
+    index: String,
+}
+
 fn read_bounded(path: &Path, max_bytes: u64, label: &str) -> Result<Vec<u8>, String> {
     let file = std::fs::File::open(path)
         .map_err(|e| format!("读取{label}失败 {}: {e}", path.display()))?;
@@ -658,7 +672,7 @@ fn load_market(source: &str) -> Result<LoadedMarket, String> {
             ".market-{}-{stamp}.json",
             std::process::id()
         ));
-        download_http(source, &path, MARKET_INDEX_MAX_BYTES, "插件市场索引")?;
+        download_http(source, &path, MARKET_INDEX_MAX_BYTES, 15, "插件市场索引")?;
         let result = read_bounded(&path, MARKET_INDEX_MAX_BYTES, "插件市场索引")
             .and_then(|bytes| parse_market_index(&bytes));
         let _ = std::fs::remove_file(path);
@@ -752,6 +766,8 @@ fn market_json(
             "id": plugin.id,
             "name": plugin.name,
             "version": plugin.version,
+            "market": market.index.name,
+            "index": market.source,
             "description": plugin.description,
             "author": plugin.author,
             "download": plugin.download,
@@ -772,20 +788,109 @@ fn market_json(
     })
 }
 
+fn aggregate_markets_json(
+    installed: &[LoadedPlugin],
+    updates_only: bool,
+) -> serde_json::Value {
+    let sources = market_sources_from_settings(&read_settings());
+    let mut source_states = Vec::new();
+    let mut rows = Vec::new();
+    let mut updates = 0u64;
+    let mut errors = 0usize;
+    for source in sources {
+        match load_market(&source.index) {
+            Ok(market) => {
+                let mut value = market_json(&market, installed, updates_only);
+                let count = value["plugins"].as_array().map_or(0, Vec::len);
+                updates += value["updates"].as_u64().unwrap_or(0);
+                if let Some(items) = value["plugins"].as_array_mut() {
+                    rows.append(items);
+                }
+                source_states.push(serde_json::json!({
+                    "name": market.index.name,
+                    "index": market.source,
+                    "status": "ok",
+                    "plugins": count,
+                }));
+            }
+            Err(error) => {
+                errors += 1;
+                source_states.push(serde_json::json!({
+                    "name": source.name,
+                    "index": source.index,
+                    "status": "error",
+                    "error": error,
+                }));
+            }
+        }
+    }
+    rows.sort_by(|a, b| {
+        b["update_available"]
+            .as_bool()
+            .cmp(&a["update_available"].as_bool())
+            .then_with(|| {
+                a["name"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(b["name"].as_str().unwrap_or_default())
+            })
+    });
+    let source_count = source_states.len();
+    serde_json::json!({
+        "sources": source_states,
+        "source_count": source_count,
+        "errors": errors,
+        "updates": updates,
+        "plugins": rows,
+    })
+}
+
+fn market_for_plugin(
+    index_source: Option<&str>,
+    id: &str,
+) -> Result<(LoadedMarket, wb_plugin_sdk::MarketPlugin), String> {
+    let sources = if let Some(source) = index_source {
+        vec![MarketSource {
+            name: String::new(),
+            index: source.into(),
+        }]
+    } else {
+        let sources = market_sources_from_settings(&read_settings());
+        if sources.is_empty() {
+            return Err("尚未配置插件市场源，请先添加市场源或提供 --index".into());
+        }
+        sources
+    };
+    let mut matches = Vec::new();
+    for source in sources {
+        let market = load_market(&source.index)
+            .map_err(|e| format!("读取市场源 {} 失败: {e}", source.index))?;
+        if let Some(plugin) = market
+            .index
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == id)
+            .cloned()
+        {
+            matches.push((market, plugin));
+        }
+    }
+    match matches.len() {
+        0 => Err(format!("插件市场中不存在: {id}")),
+        1 => Ok(matches.remove(0)),
+        _ => Err(format!(
+            "多个市场源都包含插件 {id}，请使用 --index 指定来源"
+        )),
+    }
+}
+
 fn install_market_plugin(
-    index_source: &str,
+    index_source: Option<&str>,
     id: &str,
     installed: &[LoadedPlugin],
     update_only: bool,
-) -> Result<(wb_plugin_sdk::Manifest, Option<String>, String), String> {
-    let market = load_market(index_source)?;
-    let plugin = market
-        .index
-        .plugins
-        .iter()
-        .find(|plugin| plugin.id == id)
-        .cloned()
-        .ok_or_else(|| format!("插件市场中不存在: {id}"))?;
+) -> Result<(wb_plugin_sdk::Manifest, Option<String>, String, String), String> {
+    let (market, plugin) = market_for_plugin(index_source, id)?;
     if update_only {
         let current = installed
             .iter()
@@ -804,7 +909,7 @@ fn install_market_plugin(
         Some(&sha256),
         Some((&plugin.id, &plugin.version)),
     )?;
-    Ok((manifest, actual, market.index.name))
+    Ok((manifest, actual, market.index.name, market.source))
 }
 
 fn remove_plugin(id: &str) -> Result<(), String> {
@@ -931,7 +1036,12 @@ fn plugin_fingerprint(p: &LoadedPlugin) -> Option<String> {
 }
 
 fn default_settings() -> serde_json::Value {
-    serde_json::json!({"takeover_win": false, "autostart": false, "plugin_grants": {}})
+    serde_json::json!({
+        "takeover_win": false,
+        "autostart": false,
+        "plugin_grants": {},
+        "plugin_markets": [],
+    })
 }
 
 fn read_settings() -> serde_json::Value {
@@ -950,6 +1060,33 @@ fn read_settings() -> serde_json::Value {
         obj.entry(k.clone()).or_insert_with(|| v.clone());
     }
     value
+}
+
+fn market_sources_from_settings(settings: &serde_json::Value) -> Vec<MarketSource> {
+    settings
+        .get("plugin_markets")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|value| serde_json::from_value::<MarketSource>(value.clone()).ok())
+        .filter(|source| {
+            !source.name.trim().is_empty()
+                && !source.index.trim().is_empty()
+                && source.name.len() <= 120
+                && source.index.len() <= 2048
+        })
+        .collect()
+}
+
+fn set_market_sources(settings: &mut serde_json::Value, sources: &[MarketSource]) {
+    settings.as_object_mut().unwrap().insert(
+        "plugin_markets".into(),
+        serde_json::to_value(sources).unwrap_or_else(|_| serde_json::json!([])),
+    );
+}
+
+fn same_market_source(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
 }
 
 fn write_settings(value: &serde_json::Value) -> Result<(), String> {
@@ -1141,6 +1278,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         plugins: RwLock::new(plugins),
         files: RwLock::new(wb_core::search::list_recent_files(200)),
         plugin_tx: Mutex::new(()),
+        settings_tx: Mutex::new(()),
     });
     {
         let ctx = Arc::clone(&ctx);
@@ -1295,6 +1433,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         }
 
         "settings.set" => {
+            let _settings = ctx.settings_tx.lock().unwrap();
             let mut settings = read_settings();
             let obj = settings.as_object_mut().unwrap();
             if let Some(value) = params.get("takeover_win").and_then(|v| v.as_bool()) {
@@ -1612,6 +1751,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                         "skills": p.manifest.skills.iter().map(|s| serde_json::json!({
                             "id": s.id, "name": s.name, "description": s.description, "tags": s.tags,
                         })).collect::<Vec<_>>(),
+                        "user_installed": p.dir.starts_with(user_plugin_dir()),
                         "dir": p.dir.to_string_lossy(),
                     })
                 })
@@ -1646,21 +1786,87 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             }))
         }
 
-        "plugin.market.list" | "plugin.market.check" => {
+        "plugin.market.sources" => Ok(serde_json::json!({
+            "sources": market_sources_from_settings(&read_settings()),
+        })),
+
+        "plugin.market.source.add" => {
             let source = str_param(params, "index")?;
+            if source.len() > 2048 {
+                return Err(CoreError::new(
+                    ErrorCode::InvalidParams,
+                    "插件市场源地址超过 2048 字符",
+                ));
+            }
             let market = load_market(source)
                 .map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
+            let canonical = MarketSource {
+                name: market.index.name.clone(),
+                index: market.source.clone(),
+            };
+            let _settings = ctx.settings_tx.lock().unwrap();
+            let mut settings = read_settings();
+            let mut sources = market_sources_from_settings(&settings);
+            let added = if let Some(existing) = sources
+                .iter_mut()
+                .find(|existing| same_market_source(&existing.index, &canonical.index))
+            {
+                existing.name = canonical.name.clone();
+                false
+            } else {
+                if sources.len() >= 8 {
+                    return Err(CoreError::new(
+                        ErrorCode::InvalidParams,
+                        "最多配置 8 个插件市场源",
+                    ));
+                }
+                sources.push(canonical.clone());
+                true
+            };
+            set_market_sources(&mut settings, &sources);
+            write_settings(&settings).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+            Ok(serde_json::json!({
+                "added": added,
+                "source": canonical,
+                "sources": sources,
+            }))
+        }
+
+        "plugin.market.source.remove" => {
+            let source = str_param(params, "index")?;
+            let _settings = ctx.settings_tx.lock().unwrap();
+            let mut settings = read_settings();
+            let mut sources = market_sources_from_settings(&settings);
+            let before = sources.len();
+            sources.retain(|existing| !same_market_source(&existing.index, source));
+            let removed = sources.len() != before;
+            if removed {
+                set_market_sources(&mut settings, &sources);
+                write_settings(&settings)
+                    .map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+            }
+            Ok(serde_json::json!({
+                "removed": removed,
+                "index": source,
+                "sources": sources,
+            }))
+        }
+
+        "plugin.market.list" | "plugin.market.check" => {
             let installed = ctx.plugins.read().unwrap().clone();
-            Ok(market_json(
-                &market,
-                &installed,
-                method == "plugin.market.check",
-            ))
+            let updates_only = method == "plugin.market.check";
+            if let Some(source) = params.get("index").and_then(|value| value.as_str()) {
+                let market = load_market(source)
+                    .map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
+                Ok(market_json(&market, &installed, updates_only))
+            } else {
+                Ok(aggregate_markets_json(&installed, updates_only))
+            }
         }
 
         "plugin.market.install" | "plugin.market.update" => {
             let _tx = ctx.plugin_tx.lock().unwrap();
-            let source = str_param(params, "index")?;
+            let source = params.get("index").and_then(|value| value.as_str());
             let id = str_param(params, "id")?;
             let installed = ctx.plugins.read().unwrap().clone();
             let previous_version = installed
@@ -1668,7 +1874,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 .find(|plugin| plugin.manifest.id == id)
                 .map(|plugin| plugin.manifest.version.clone());
             let update_only = method == "plugin.market.update";
-            let (manifest, archive_sha256, market) =
+            let (manifest, archive_sha256, market, index) =
                 install_market_plugin(source, id, &installed, update_only)
                     .map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
             let found = discover_plugins();
@@ -1677,6 +1883,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             Ok(serde_json::json!({
                 "action": if update_only { "updated" } else { "installed" },
                 "market": market,
+                "index": index,
                 "id": manifest.id,
                 "name": manifest.name,
                 "version": manifest.version,
@@ -1705,6 +1912,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                     format!("plugin {pid} contains missing or escaped files"),
                 )
             })?;
+            let _settings = ctx.settings_tx.lock().unwrap();
             let mut settings = read_settings();
             let grants = settings
                 .as_object_mut()
@@ -1734,6 +1942,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
 
         "plugin.revoke" => {
             let pid = str_param(params, "id")?;
+            let _settings = ctx.settings_tx.lock().unwrap();
             let mut settings = read_settings();
             let removed = settings
                 .get_mut("plugin_grants")
@@ -1748,6 +1957,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             let _tx = ctx.plugin_tx.lock().unwrap();
             let id = str_param(params, "id")?;
             remove_plugin(id).map_err(|e| CoreError::new(ErrorCode::InvalidParams, e))?;
+            let _settings = ctx.settings_tx.lock().unwrap();
             let mut settings = read_settings();
             if let Some(grants) = settings
                 .get_mut("plugin_grants")
@@ -2150,6 +2360,35 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("身份与市场索引不匹配"));
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn market_sources_are_typed_and_round_trip_through_settings() {
+        let mut settings = default_settings();
+        let sources = vec![
+            MarketSource {
+                name: "WB Official".into(),
+                index: "https://plugins.example/index.json".into(),
+            },
+            MarketSource {
+                name: "Local".into(),
+                index: r"E:\markets\index.json".into(),
+            },
+        ];
+        set_market_sources(&mut settings, &sources);
+        let restored = market_sources_from_settings(&settings);
+        assert_eq!(restored.len(), 2);
+        assert_eq!(restored[0].name, "WB Official");
+        assert!(same_market_source(
+            &restored[0].index,
+            "HTTPS://PLUGINS.EXAMPLE/INDEX.JSON"
+        ));
+
+        settings["plugin_markets"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"unexpected": true}));
+        assert_eq!(market_sources_from_settings(&settings).len(), 2);
     }
 
     #[test]

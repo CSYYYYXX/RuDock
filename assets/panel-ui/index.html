@@ -235,17 +235,31 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .page { width: 33.3333%; height: 100%; position: relative; }
 .board { position: absolute; inset: 0; padding: 6px 18px 18px; }
 
-/* 插件页：社区组件的开放网格（自动行，卡片宽高与内置一致） */
+/* 插件页：已安装组件与开放市场 */
 #page-plugins .plugin-head { position: absolute; left: 18px; right: 18px; top: 2px; height: 30px; display: flex;
   align-items: center; gap: 8px; color: var(--fg-2); font-size: 13px; font-weight: 650; z-index: 2; }
+#page-plugins .plugin-title { white-space: nowrap; }
 #page-plugins .plugin-head .status { color: var(--fg-4); font-size: 11px; font-weight: 400; }
-#page-plugins .plugin-head button { margin-left: auto; width: 28px; height: 28px; border: 1px solid var(--stroke-soft);
+#page-plugins .plugin-tabs { display: flex; align-items: center; height: 28px; padding: 2px;
+  border: 1px solid var(--stroke-soft); border-radius: 8px; background: rgba(255,255,255,.05); }
+#page-plugins .plugin-tabs button { width: auto; height: 22px; margin: 0; padding: 0 11px; border: 0;
+  border-radius: 6px; background: transparent; color: var(--fg-3); font-size: 11.5px; cursor: pointer; }
+#page-plugins .plugin-tabs button.on { background: rgba(255,255,255,.13); color: var(--fg); }
+#page-plugins .plugin-head .head-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+#page-plugins .plugin-head .icon-btn { width: 28px; height: 28px; border: 1px solid var(--stroke-soft);
   border-radius: 8px; background: rgba(255,255,255,.07); color: var(--fg-2); font-size: 17px; line-height: 1;
   cursor: pointer; }
-#page-plugins .plugin-head button:hover { background: var(--hover); color: var(--fg); }
-#page-plugins .plugin-head button:disabled { opacity: .45; cursor: default; }
-#page-plugins .pgrid { position: absolute; inset: 34px 0 0; padding: 6px 18px 18px; display: grid; gap: 12px;
-  grid-template-columns: repeat(6, 1fr); grid-auto-rows: 1fr; }
+#page-plugins .plugin-head .icon-btn:hover { background: var(--hover); color: var(--fg); }
+#page-plugins .plugin-head .icon-btn:disabled { opacity: .45; cursor: default; }
+#market-sources { display: none; }
+#page-plugins.market-on #market-sources { display: block; }
+#page-plugins .plugin-pane { position: absolute; inset: 34px 0 0; display: none; }
+#page-plugins .plugin-pane.on { display: block; }
+#page-plugins .pgrid { position: absolute; inset: 0; padding: 6px 18px 18px; display: grid; gap: 12px;
+  grid-template-columns: repeat(6, 1fr); grid-auto-rows: minmax(154px, 1fr); overflow-y: auto; align-content: start; }
+#page-plugins .pgrid::-webkit-scrollbar, #page-plugins .market-grid::-webkit-scrollbar { width: 6px; }
+#page-plugins .pgrid::-webkit-scrollbar-thumb, #page-plugins .market-grid::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.16); border-radius: 3px; }
 #page-plugins .approval { grid-column: span 2; align-self: start; min-height: 154px; padding: 15px 17px;
   border: 1px solid var(--stroke); border-radius: var(--r-card); background: rgba(22,24,38,.82);
   display: flex; flex-direction: column; gap: 8px; color: var(--fg-2); }
@@ -254,19 +268,94 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #page-plugins .approval .perms { display: flex; flex-wrap: wrap; gap: 5px; }
 #page-plugins .approval .perm { padding: 3px 7px; border: 1px solid var(--stroke-soft); border-radius: 6px;
   background: rgba(255,255,255,.06); color: var(--fg-3); font-size: 10.5px; }
-#page-plugins .approval button, #page-plugins .grant-btn { align-self: flex-start; margin-top: auto; padding: 5px 12px;
+#page-plugins .approval .plugin-actions { display: flex; gap: 7px; margin-top: auto; }
+#page-plugins .approval button, #page-plugins .grant-btn { align-self: flex-start; padding: 5px 12px;
   border: 1px solid var(--stroke-soft); border-radius: 7px; background: rgba(76,194,255,.16);
   color: var(--accent); font-size: 11.5px; cursor: pointer; }
 #page-plugins .approval button:hover, #page-plugins .grant-btn:hover { background: rgba(76,194,255,.25); }
-#page-plugins .grant-btn { margin: -2px 0 0 auto; padding: 3px 8px; background: rgba(255,255,255,.06);
+#page-plugins .grant-btn { margin: -2px 0 0 0; padding: 3px 8px; background: rgba(255,255,255,.06);
   color: var(--fg-3); }
-#page-plugins .ph-empty { position: absolute; inset: 34px 0 0; display: none; flex-direction: column; gap: 8px;
+#page-plugins .plugin-card-actions { margin-left: auto; display: flex; gap: 5px; }
+#page-plugins .ph-empty { position: absolute; inset: 0; display: none; flex-direction: column; gap: 10px;
   align-items: center; justify-content: center; color: var(--fg-3); font-size: 14px; }
 #page-plugins .ph-empty .sub { font-size: 12px; opacity: .8; }
-#page-plugins.empty .ph-empty { display: flex; }
+#page-plugins .ph-empty button { padding: 6px 14px; border: 1px solid var(--stroke-soft); border-radius: 7px;
+  background: rgba(76,194,255,.16); color: var(--accent); font-size: 12px; cursor: pointer; }
+#page-plugins.empty #plugin-installed .ph-empty { display: flex; }
 .w > .bd.pluginbd { padding: 0; display: flex; }
 iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: transparent;
   border-radius: 0 0 var(--r-card) var(--r-card); }
+
+#plugin-market .market-tools { position: absolute; left: 18px; right: 18px; top: 6px; height: 34px;
+  display: flex; align-items: center; gap: 10px; }
+#plugin-market .market-summary { min-width: 0; flex: 1; color: var(--fg-3); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#plugin-market .market-search { width: min(300px, 34%); height: 32px; padding: 0 11px;
+  border: 1px solid var(--stroke-soft); border-radius: 8px; outline: none;
+  background: rgba(18,20,32,.72); color: var(--fg); font-size: 12px; }
+#plugin-market .market-search:focus { border-color: rgba(76,194,255,.55); }
+#plugin-market .market-grid { position: absolute; inset: 46px 0 0; padding: 4px 18px 18px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 160px;
+  gap: 12px; overflow-y: auto; align-content: start; }
+#plugin-market .market-card { min-width: 0; padding: 14px 15px; border: 1px solid var(--stroke-soft);
+  border-radius: 12px; background: rgba(20,22,35,.78); display: flex; flex-direction: column; gap: 7px; }
+#plugin-market .market-card:hover { border-color: rgba(255,255,255,.22); background: rgba(24,27,42,.84); }
+#plugin-market .market-card .market-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+#plugin-market .market-card .market-icon { width: 34px; height: 34px; flex: none; display: flex;
+  align-items: center; justify-content: center; border-radius: 8px; background: rgba(76,194,255,.12);
+  color: var(--accent); font-size: 16px; font-weight: 700; }
+#plugin-market .market-card .market-ident { min-width: 0; flex: 1; }
+#plugin-market .market-card .market-name { color: var(--fg); font-size: 13.5px; font-weight: 650;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#plugin-market .market-card .market-origin { color: var(--fg-4); font-size: 10.5px; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#plugin-market .market-card .market-desc { color: var(--fg-3); font-size: 11.5px; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 33px; }
+#plugin-market .market-card .market-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; }
+#plugin-market .market-card .market-ver { color: var(--fg-4); font-size: 10.5px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#plugin-market .market-card .market-action { margin-left: auto; min-width: 58px; height: 28px; padding: 0 11px;
+  border: 1px solid var(--stroke-soft); border-radius: 7px; background: rgba(76,194,255,.16);
+  color: var(--accent); font-size: 11.5px; cursor: pointer; }
+#plugin-market .market-card .market-action.update { background: var(--accent); color: #00345c; border-color: transparent; font-weight: 650; }
+#plugin-market .market-card .market-action:disabled { opacity: .48; cursor: default; }
+#plugin-market .market-empty { grid-column: 1 / -1; min-height: 240px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; color: var(--fg-3); font-size: 13px; }
+#plugin-market .market-empty button { height: 30px; padding: 0 14px; border: 1px solid var(--stroke-soft);
+  border-radius: 7px; background: rgba(76,194,255,.16); color: var(--accent); cursor: pointer; }
+
+/* 市场源管理层 */
+#marketSourceView { position: absolute; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+  background: rgba(8,9,14,.48); }
+#marketSourceView.on { display: flex; }
+#marketSourceView .sheet { width: min(520px, 82%); max-height: 70%; padding: 18px;
+  border-radius: 16px; background: rgba(20,22,36,.96); border: 1px solid var(--stroke);
+  box-shadow: 0 24px 80px rgba(0,0,0,.52); }
+#marketSourceView h3 { display: flex; align-items: center; font-size: 14px; margin-bottom: 12px; }
+#marketSourceView h3 .x { margin-left: auto; cursor: pointer; color: var(--fg-3); padding: 0 6px; }
+#marketSourceView .source-add { display: flex; gap: 8px; margin-bottom: 12px; }
+#marketSourceView .source-add input { min-width: 0; flex: 1; height: 34px; padding: 0 10px;
+  border: 1px solid var(--stroke-soft); border-radius: 8px; outline: none; background: rgba(255,255,255,.06);
+  color: var(--fg); font-size: 12px; user-select: text; -webkit-user-select: text; }
+#marketSourceView .source-add input:focus { border-color: rgba(76,194,255,.55); }
+#marketSourceView .source-add button { width: 34px; height: 34px; flex: none; border: 1px solid var(--stroke-soft);
+  border-radius: 8px; background: rgba(76,194,255,.16); color: var(--accent); font-size: 18px; cursor: pointer; }
+#marketSourceView .source-list { max-height: 300px; overflow-y: auto; }
+#marketSourceView .source-row { display: flex; align-items: center; gap: 10px; min-height: 50px;
+  padding: 8px 4px; border-top: 1px solid var(--stroke-soft); }
+#marketSourceView .source-meta { min-width: 0; flex: 1; }
+#marketSourceView .source-name { color: var(--fg); font-size: 12.5px; }
+#marketSourceView .source-url { color: var(--fg-4); font-size: 10.5px; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; }
+#marketSourceView .source-remove { width: 28px; height: 28px; flex: none; border: 1px solid var(--stroke-soft);
+  border-radius: 7px; background: rgba(255,255,255,.05); color: var(--fg-3); cursor: pointer; }
+#marketSourceView .source-remove:hover { color: #ff9b9b; background: rgba(255,95,95,.12); }
+#marketSourceView .source-none { padding: 28px 6px; text-align: center; color: var(--fg-4); font-size: 12px; }
+
+@media (max-width: 980px) {
+  #plugin-market .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #page-plugins .approval { grid-column: span 3; }
+}
 
 /* 页指示点 */
 .dots { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; gap: 7px; z-index: 5; }
@@ -535,11 +624,29 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   </div>
 
   <div class="page" id="page-plugins">
-    <div class="plugin-head"><span>🧩 插件</span><span class="status" id="plugin-status"></span>
-      <button id="plugin-refresh" title="刷新插件">↻</button></div>
-    <div class="pgrid" id="pgrid"></div>
-    <div class="ph-empty">🧩 还没有插件组件
-      <div class="sub">把插件文件夹放进 %LOCALAPPDATA%\WB\plugins，然后运行 wb plugin reload</div>
+    <div class="plugin-head"><span class="plugin-title">🧩 插件</span>
+      <div class="plugin-tabs" role="tablist" aria-label="插件视图">
+        <button class="on" id="plugin-tab-installed" role="tab" aria-selected="true">已安装</button>
+        <button id="plugin-tab-market" role="tab" aria-selected="false">市场</button>
+      </div>
+      <span class="status" id="plugin-status"></span>
+      <div class="head-actions">
+        <button class="icon-btn" id="market-sources" title="管理市场源" aria-label="管理市场源">⊕</button>
+        <button class="icon-btn" id="plugin-refresh" title="刷新当前视图" aria-label="刷新当前视图">↻</button>
+      </div>
+    </div>
+    <div class="plugin-pane on" id="plugin-installed">
+      <div class="pgrid" id="pgrid"></div>
+      <div class="ph-empty">还没有已安装插件
+        <button id="plugin-empty-market">打开市场</button>
+      </div>
+    </div>
+    <div class="plugin-pane" id="plugin-market">
+      <div class="market-tools">
+        <div class="market-summary" id="market-summary">尚未加载</div>
+        <input class="market-search" id="market-search" placeholder="搜索插件" aria-label="搜索插件" spellcheck="false">
+      </div>
+      <div class="market-grid" id="market-grid"></div>
     </div>
   </div>
   </div>
@@ -560,6 +667,15 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
     <div class="tip">勾选要显示在组件页的内容</div>
     <div id="cfgList"></div>
   </div></div>
+
+  <div id="marketSourceView"><div class="sheet">
+    <h3>市场源<span class="x" id="marketSourceClose">✕</span></h3>
+    <div class="source-add">
+      <input id="marketSourceInput" placeholder="https://example.com/index.json" aria-label="市场索引地址" spellcheck="false">
+      <button id="marketSourceAdd" title="添加市场源" aria-label="添加市场源">＋</button>
+    </div>
+    <div class="source-list" id="marketSourceList"></div>
+  </div></div>
 </div>
 <div id="toast"></div>
 
@@ -574,13 +690,13 @@ const hasBridge = !!(window.chrome && window.chrome.webview);
 function send(msg) { if (hasBridge) window.chrome.webview.postMessage(msg); }
 
 let rpcSeq = 0; const rpcPending = new Map();
-function rpc(method, params) {
+function rpc(method, params, timeoutMs) {
   return new Promise(resolve => {
     if (!hasBridge) return resolve(null);
     const id = 'r' + (++rpcSeq);
     rpcPending.set(id, resolve);
     send({ kind: 'rpc', id, method, params: params || {} });
-    setTimeout(() => { if (rpcPending.delete(id)) resolve(null); }, 6000);
+    setTimeout(() => { if (rpcPending.delete(id)) resolve(null); }, timeoutMs || 6000);
   });
 }
 
@@ -918,7 +1034,7 @@ document.querySelectorAll('#dots i').forEach(d => d.addEventListener('click', ()
 let pd = null;
 pages.addEventListener('pointerdown', ev => {
   if (ev.button !== 0) return;
-  if (ev.target.closest('input, button, .x, .hchip, #folderView, #cfgView, .dock-toolbar')) return;
+  if (ev.target.closest('input, button, .x, .hchip, #folderView, #cfgView, #marketSourceView, .dock-toolbar')) return;
   pd = { x0: ev.clientX, moved: false };
 });
 pages.addEventListener('pointermove', ev => {
@@ -1160,8 +1276,10 @@ function reportRects() {
     if (r.width > 4 && r.height > 4) rects.push([Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]);
   };
   push($('.spot-box'));
-  if (curPage === 1) { push($('#page-apps .dock-wrap')); } // 程序坞页：整区磨砂
-  else { document.querySelectorAll('#board .w:not(.w-hidden)').forEach(push); }
+  if (curPage === 1) push($('#page-apps .dock-wrap')); // 程序坞页：整区磨砂
+  else if (curPage === 2) {
+    document.querySelectorAll('#page-plugins .approval, #page-plugins .w, #page-plugins .market-card').forEach(push);
+  } else document.querySelectorAll('#board .w:not(.w-hidden)').forEach(push);
   send({ kind: 'cardrects', rects });
 }
 /* 在 ms 毫秒内每个动画帧上报一次（进入动画/切页滑动期间调用） */
@@ -1182,7 +1300,7 @@ function showPanel() {
   stage.classList.remove('exit');
   q.value = ''; listEl.classList.remove('on');
   aiMode = false; aiStreaming = false;
-  $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on');
+  $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on'); $('#marketSourceView').classList.remove('on');
   if (editMode) $('#apps-edit').click();
   setPage(0, { instant: true });
   results = [];
@@ -1205,7 +1323,7 @@ function hidePanel() {
   hiding = true;
   send({ kind: 'selftest', detail: 'hide recv @' + Math.round(performance.now()), ok: true });
   send({ kind: 'cardrects', rects: [] }); // 消失动画起步即撤磨砂，两层同步
-  listEl.classList.remove('on'); $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on');
+  listEl.classList.remove('on'); $('#folderView').classList.remove('on'); $('#cfgView').classList.remove('on'); $('#marketSourceView').classList.remove('on');
   if (REDUCE_MOTION) { hiding = false; send({ kind: 'hide.done' }); return; }
   stage.classList.remove('enter', 'hold');
   stage.classList.add('exit');
@@ -1293,6 +1411,10 @@ if (hasBridge) {
       if (location.hash === '#view=apps') setTimeout(() => setPage(1), 350);
       // 测试钩子：#view=plugins 切到插件页
       if (location.hash === '#view=plugins') setTimeout(() => setPage(2), 350);
+      // 测试钩子：#view=market 切到插件市场
+      if (location.hash === '#view=market') setTimeout(() => { setPage(2); setPluginView('market'); }, 350);
+      // 测试钩子：#view=market-sources 打开市场源管理层
+      if (location.hash === '#view=market-sources') setTimeout(() => { setPage(2); setPluginView('market'); openMarketSources(); }, 350);
       // 测试钩子：#test-ai 自动发一次 AI 提问验证链路
       if (location.hash === '#test-ai') setTimeout(() => {
         q.value = '?用一句话证明你在线，并说出你的模型名';
@@ -1353,6 +1475,7 @@ window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') {
     if ($('#folderView').classList.contains('on')) $('#folderView').classList.remove('on');
     else if ($('#cfgView').classList.contains('on')) $('#cfgView').classList.remove('on');
+    else if ($('#marketSourceView').classList.contains('on')) $('#marketSourceView').classList.remove('on');
     else if (editMode) $('#apps-edit').click();
     else if (curPage > 0) setPage(0);
     else if (aiMode) { q.value = ''; doQuery(); }
@@ -1376,7 +1499,8 @@ stage.addEventListener('click', ev => {
   if (dragged) return;
   const c = ev.target.classList;
   if (ev.target === stage || c.contains('spot-wrap') || c.contains('pages') || c.contains('page')
-      || ev.target.id === 'board' || c.contains('grid') || c.contains('dock-wrap') || ev.target.id === 'dockgrid') {
+      || ev.target.id === 'board' || c.contains('grid') || c.contains('pgrid') || c.contains('market-grid')
+      || c.contains('plugin-pane') || c.contains('dock-wrap') || ev.target.id === 'dockgrid') {
     hidePanel();
   }
 });
@@ -1462,7 +1586,33 @@ window.addEventListener('message', ev => {
 
 const pluginWidgetIds = new Set();
 let pluginListSignature = '', pluginLoadSeq = 0, pluginRefreshing = false;
-function pluginStatus(text) { const el = $('#plugin-status'); if (el) el.textContent = text || ''; }
+let pluginView = 'installed', marketItems = [], marketMeta = null, marketLoaded = false, marketLoading = false;
+const pluginStatuses = { installed: '', market: '' };
+function rpcError(m, fallback) {
+  if (!m) return fallback || '服务未响应';
+  if (!m.error) return '';
+  if (typeof m.error === 'string') return m.error;
+  return m.error.message || fallback || '操作失败';
+}
+function pluginStatus(text, view) {
+  view = view || pluginView;
+  pluginStatuses[view] = text || '';
+  if (view === pluginView) $('#plugin-status').textContent = pluginStatuses[view];
+}
+function setPluginView(view) {
+  pluginView = view === 'market' ? 'market' : 'installed';
+  const market = pluginView === 'market';
+  $('#page-plugins').classList.toggle('market-on', market);
+  $('#plugin-installed').classList.toggle('on', !market);
+  $('#plugin-market').classList.toggle('on', market);
+  $('#plugin-tab-installed').classList.toggle('on', !market);
+  $('#plugin-tab-market').classList.toggle('on', market);
+  $('#plugin-tab-installed').setAttribute('aria-selected', String(!market));
+  $('#plugin-tab-market').setAttribute('aria-selected', String(market));
+  $('#plugin-status').textContent = pluginStatuses[pluginView] || '';
+  if (market && !marketLoaded) loadMarket(false);
+  clearTimeout(rectsTimer); rectsTimer = setTimeout(reportRects, 120);
+}
 function clearPluginWidgets() {
   pluginWidgetIds.forEach(id => {
     const el = document.getElementById(id); if (el) el.remove();
@@ -1471,16 +1621,30 @@ function clearPluginWidgets() {
   pluginWidgetIds.clear();
   $('#pgrid').innerHTML = '';
 }
+function uninstallPlugin(p, button) {
+  if (!p.user_installed || !confirm('卸载 ' + p.name + '？')) return;
+  button.disabled = true;
+  rpc('plugin.remove', { id: p.id }, 30000).then(m => {
+    const error = rpcError(m, '卸载失败');
+    if (error) { showToast(error); button.disabled = false; return; }
+    showToast('已卸载 ' + p.name);
+    cmdCache = null; pluginListSignature = '';
+    loadPluginWidgets(true); loadMarket(true);
+  });
+}
 function loadPluginWidgets(force) {
   if (pluginRefreshing && !force) return;
   const seq = ++pluginLoadSeq;
-  if (force) { pluginRefreshing = true; pluginStatus('刷新中…'); }
-  rpc('plugin.list', {}).then(m => {
+  if (force) { pluginRefreshing = true; pluginStatus('刷新中…', 'installed'); }
+  return rpc('plugin.list', {}).then(m => {
     if (seq !== pluginLoadSeq) return;
-    const list = (m && Array.isArray(m.result)) ? m.result : [];
+    if (!m || m.error || !Array.isArray(m.result)) {
+      pluginRefreshing = false; pluginStatus(rpcError(m, '连接失败'), 'installed'); return;
+    }
+    const list = m.result;
     const withW = list.filter(p => p.widget);
     const pendingApproval = list.filter(p => p.approval_required);
-    const signature = JSON.stringify(list.map(p => [p.id, p.version, p.revision, p.approved, p.permissions, p.widget && p.widget.title]));
+    const signature = JSON.stringify(list.map(p => [p.id, p.version, p.revision, p.approved, p.permissions, p.user_installed, p.widget && p.widget.title]));
     if (!force && signature === pluginListSignature) return;
     pluginListSignature = signature;
     clearPluginWidgets();
@@ -1492,14 +1656,17 @@ function loadPluginWidgets(force) {
       card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
         + `<div class="desc">${esc(p.description || '此插件请求以下权限')}</div>`
         + `<div class="perms">${(p.permissions || []).map(x => `<span class="perm">${esc(x)}</span>`).join('')}</div>`
-        + '<button>批准当前版本</button>';
-      card.querySelector('button').addEventListener('click', ev => {
+        + `<div class="plugin-actions"><button class="approve-btn">批准当前版本</button>${p.user_installed ? '<button class="remove-btn">卸载</button>' : ''}</div>`;
+      card.querySelector('.approve-btn').addEventListener('click', ev => {
         ev.currentTarget.disabled = true;
         rpc('plugin.approve', { id: p.id }).then(m => {
-          if (!m || m.error) { showToast('插件授权失败'); ev.currentTarget.disabled = false; return; }
+          const error = rpcError(m, '插件授权失败');
+          if (error) { showToast(error); ev.currentTarget.disabled = false; return; }
           showToast('已批准 ' + p.name); loadPluginWidgets(true);
         });
       });
+      const remove = card.querySelector('.remove-btn');
+      if (remove) remove.addEventListener('click', () => uninstallPlugin(p, remove));
       $('#pgrid').appendChild(card);
     });
     const managedOnly = list.filter(p => p.approved && !p.widget);
@@ -1510,20 +1677,23 @@ function loadPluginWidgets(force) {
       card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
         + `<div class="desc">${esc(p.description || '插件能力已加载')}</div>`
         + `<div class="perms">${permissions.length ? permissions.map(x => `<span class="perm">${esc(x)}</span>`).join('') : '<span class="perm">无需权限</span>'}</div>`
-        + (permissions.length ? '<button>撤销权限</button>' : '');
-      const button = card.querySelector('button');
-      if (button) button.addEventListener('click', ev => {
+        + `<div class="plugin-actions">${permissions.length ? '<button class="revoke-btn">撤销权限</button>' : ''}${p.user_installed ? '<button class="remove-btn">卸载</button>' : ''}</div>`;
+      const revoke = card.querySelector('.revoke-btn');
+      if (revoke) revoke.addEventListener('click', ev => {
         ev.currentTarget.disabled = true;
         rpc('plugin.revoke', { id: p.id }).then(m => {
-          if (!m || m.error) { showToast('撤销插件权限失败'); ev.currentTarget.disabled = false; return; }
+          const error = rpcError(m, '撤销插件权限失败');
+          if (error) { showToast(error); ev.currentTarget.disabled = false; return; }
           showToast('已撤销 ' + p.name + ' 权限'); loadPluginWidgets(true);
         });
       });
+      const remove = card.querySelector('.remove-btn');
+      if (remove) remove.addEventListener('click', () => uninstallPlugin(p, remove));
       $('#pgrid').appendChild(card);
     });
     const approvedWidgets = withW.filter(p => p.approved);
     if (!approvedWidgets.length) {
-      pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''));
+      pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''), 'installed');
       pluginRefreshing = false;
       return;
     }
@@ -1537,7 +1707,7 @@ function loadPluginWidgets(force) {
         card.className = 'w span' + (w.span || 2);
         card.id = 'plugin-' + p.id;
         card.style.setProperty('--i', Math.min(idx++, 20));
-        card.innerHTML = `<div class="hd">🧩 ${esc(w.title || p.name)}<span class="right">${esc(p.id)}</span></div>`
+        card.innerHTML = `<div class="hd"><span>🧩 ${esc(w.title || p.name)}</span><span class="right">${esc(p.id)}</span><span class="plugin-card-actions"></span></div>`
           + `<div class="hairline"></div><div class="bd pluginbd"></div>`;
         const f = document.createElement('iframe');
         f.className = 'pluginw';
@@ -1548,17 +1718,25 @@ function loadPluginWidgets(force) {
           : '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data:; object-src \'none\'; base-uri \'none\'; form-action \'none\'; navigate-to \'none\';">';
         f.srcdoc = csp + PLUGIN_SHIM + w.html;
         card.querySelector('.pluginbd').appendChild(f);
+        const actions = card.querySelector('.plugin-card-actions');
         if ((p.permissions || []).length) {
           const revoke = document.createElement('button');
           revoke.className = 'grant-btn'; revoke.textContent = '撤销权限'; revoke.title = '撤销此版本的插件授权';
           revoke.addEventListener('click', () => {
             revoke.disabled = true;
             rpc('plugin.revoke', { id: p.id }).then(m => {
-              if (!m || m.error) { showToast('撤销插件权限失败'); revoke.disabled = false; return; }
+              const error = rpcError(m, '撤销插件权限失败');
+              if (error) { showToast(error); revoke.disabled = false; return; }
               showToast('已撤销 ' + p.name + ' 权限'); loadPluginWidgets(true);
             });
           });
-          card.querySelector('.hd').appendChild(revoke);
+          actions.appendChild(revoke);
+        }
+        if (p.user_installed) {
+          const remove = document.createElement('button');
+          remove.className = 'grant-btn'; remove.textContent = '卸载'; remove.title = '卸载此插件';
+          remove.addEventListener('click', () => uninstallPlugin(p, remove));
+          actions.appendChild(remove);
         }
         $('#pgrid').appendChild(card);
         pluginWidgetIds.add(card.id);
@@ -1567,15 +1745,152 @@ function loadPluginWidgets(force) {
       }).finally(() => {
         if (--pending === 0 && seq === pluginLoadSeq) {
           pluginRefreshing = false;
-          pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''));
+          pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''), 'installed');
         }
       });
     });
-  }).catch(() => { if (seq === pluginLoadSeq) { pluginRefreshing = false; pluginStatus('连接失败'); } });
+  }).catch(() => { if (seq === pluginLoadSeq) { pluginRefreshing = false; pluginStatus('连接失败', 'installed'); } });
 }
+
+function renderMarket() {
+  const grid = $('#market-grid');
+  const term = $('#market-search').value.trim().toLowerCase();
+  const items = marketItems.filter(p => !term || [p.id, p.name, p.description, p.author, p.market, ...(p.tags || [])]
+    .some(value => String(value || '').toLowerCase().includes(term)));
+  grid.innerHTML = '';
+  if (!marketMeta || !marketMeta.source_count) {
+    grid.innerHTML = '<div class="market-empty"><span>尚未配置市场源</span><button id="market-empty-source">添加源</button></div>';
+    $('#market-empty-source').addEventListener('click', openMarketSources);
+    return;
+  }
+  if (!items.length && Number(marketMeta.errors || 0) >= Number(marketMeta.source_count || 0)) {
+    grid.innerHTML = '<div class="market-empty"><span>市场源暂不可用</span><button id="market-error-source">管理源</button></div>';
+    $('#market-error-source').addEventListener('click', openMarketSources);
+    return;
+  }
+  if (!items.length) {
+    grid.innerHTML = `<div class="market-empty"><span>${term ? '没有匹配插件' : '市场中暂无插件'}</span></div>`;
+    return;
+  }
+  items.forEach(p => {
+    const card = document.createElement('article'); card.className = 'market-card';
+    const initial = esc(Array.from(p.name || p.id || '?')[0] || '?');
+    const installed = p.installed_version ? `已装 ${esc(p.installed_version)}` : '未安装';
+    let label = '安装', action = 'plugin.market.install', disabled = false, actionClass = '';
+    if (p.status === 'update_available') { label = '更新'; action = 'plugin.market.update'; actionClass = ' update'; }
+    else if (p.status === 'installed') { label = '已安装'; disabled = true; }
+    else if (p.status === 'ahead') { label = '本机较新'; disabled = true; }
+    else if (p.status === 'invalid_installed_version') { label = '版本异常'; disabled = true; }
+    card.innerHTML = `<div class="market-top"><div class="market-icon">${initial}</div>`
+      + `<div class="market-ident"><div class="market-name">${esc(p.name)}</div>`
+      + `<div class="market-origin">${esc(p.market || '')} · ${esc(p.author || p.id)}</div></div></div>`
+      + `<div class="market-desc">${esc(p.description || '暂无简介')}</div>`
+      + `<div class="market-foot"><span class="market-ver">${installed} · 最新 ${esc(p.version)}</span>`
+      + `<button class="market-action${actionClass}"${disabled ? ' disabled' : ''}>${label}</button></div>`;
+    const button = card.querySelector('.market-action');
+    if (!disabled) button.addEventListener('click', () => {
+      button.disabled = true; button.textContent = '处理中';
+      rpc(action, { id: p.id, index: p.index }, 90000).then(m => {
+        const error = rpcError(m, action.endsWith('update') ? '更新失败' : '安装失败');
+        if (error) { showToast(error); button.disabled = false; button.textContent = label; return; }
+        const needsApproval = !!(m.result && m.result.approval_required);
+        showToast((action.endsWith('update') ? '已更新 ' : '已安装 ') + p.name + (needsApproval ? '，等待批准' : ''));
+        cmdCache = null; pluginListSignature = '';
+        loadPluginWidgets(true); loadMarket(true);
+        if (needsApproval) setPluginView('installed');
+      });
+    });
+    grid.appendChild(card);
+  });
+}
+
+function loadMarket(force) {
+  if (marketLoading) return;
+  marketLoading = true;
+  if (force || !marketLoaded) pluginStatus('加载市场…', 'market');
+  return rpc('plugin.market.list', {}, 90000).then(m => {
+    const error = rpcError(m, '市场加载失败');
+    if (error || !m.result || !Array.isArray(m.result.plugins)) {
+      pluginStatus(error || '市场数据无效', 'market');
+      $('#market-summary').textContent = error || '市场数据无效';
+      return;
+    }
+    marketMeta = m.result; marketItems = m.result.plugins; marketLoaded = true;
+    const sourceCount = Number(m.result.source_count || 0), errors = Number(m.result.errors || 0);
+    const summary = sourceCount + ' 个源 · ' + marketItems.length + ' 个插件'
+      + (m.result.updates ? ' · ' + m.result.updates + ' 个可更新' : '')
+      + (errors ? ' · ' + errors + ' 个源异常' : '');
+    $('#market-summary').textContent = summary;
+    pluginStatus(m.result.updates ? m.result.updates + ' 个更新' : '', 'market');
+    renderMarket();
+  }).catch(() => {
+    pluginStatus('市场加载失败', 'market'); $('#market-summary').textContent = '市场加载失败';
+  }).finally(() => { marketLoading = false; });
+}
+
+function renderMarketSources(sources) {
+  const list = $('#marketSourceList'); list.innerHTML = '';
+  if (!sources.length) { list.innerHTML = '<div class="source-none">尚未配置市场源</div>'; return; }
+  sources.forEach(source => {
+    const row = document.createElement('div'); row.className = 'source-row';
+    row.innerHTML = `<div class="source-meta"><div class="source-name">${esc(source.name)}</div>`
+      + `<div class="source-url">${esc(source.index)}</div></div>`
+      + '<button class="source-remove" title="移除市场源" aria-label="移除市场源">×</button>';
+    const remove = row.querySelector('.source-remove');
+    remove.addEventListener('click', () => {
+      if (!confirm('移除市场源 ' + source.name + '？')) return;
+      remove.disabled = true;
+      rpc('plugin.market.source.remove', { index: source.index }, 30000).then(m => {
+        const error = rpcError(m, '移除市场源失败');
+        if (error) { showToast(error); remove.disabled = false; return; }
+        renderMarketSources((m.result && m.result.sources) || []);
+        marketLoaded = false; loadMarket(true);
+      });
+    });
+    list.appendChild(row);
+  });
+}
+function loadMarketSources() {
+  return rpc('plugin.market.sources', {}, 15000).then(m => {
+    const error = rpcError(m, '读取市场源失败');
+    if (error) { showToast(error); return; }
+    renderMarketSources((m.result && m.result.sources) || []);
+  });
+}
+function openMarketSources() {
+  $('#marketSourceView').classList.add('on');
+  loadMarketSources();
+  setTimeout(() => $('#marketSourceInput').focus(), 0);
+}
+function addMarketSource() {
+  const input = $('#marketSourceInput'), source = input.value.trim(), button = $('#marketSourceAdd');
+  if (!source) { input.focus(); return; }
+  button.disabled = true;
+  rpc('plugin.market.source.add', { index: source }, 30000).then(m => {
+    const error = rpcError(m, '添加市场源失败');
+    if (error) { showToast(error); return; }
+    input.value = '';
+    renderMarketSources((m.result && m.result.sources) || []);
+    showToast(m.result && m.result.added ? '已添加市场源' : '市场源已存在');
+    marketLoaded = false; loadMarket(true);
+  }).finally(() => { button.disabled = false; });
+}
+
+$('#plugin-tab-installed').addEventListener('click', () => setPluginView('installed'));
+$('#plugin-tab-market').addEventListener('click', () => setPluginView('market'));
+$('#plugin-empty-market').addEventListener('click', () => setPluginView('market'));
+$('#market-search').addEventListener('input', () => { renderMarket(); clearTimeout(rectsTimer); rectsTimer = setTimeout(reportRects, 80); });
+$('#market-sources').addEventListener('click', openMarketSources);
+$('#marketSourceAdd').addEventListener('click', addMarketSource);
+$('#marketSourceInput').addEventListener('keydown', ev => { if (ev.key === 'Enter') addMarketSource(); });
+$('#marketSourceClose').addEventListener('click', () => $('#marketSourceView').classList.remove('on'));
+$('#marketSourceView').addEventListener('click', ev => { if (ev.target.id === 'marketSourceView') ev.currentTarget.classList.remove('on'); });
 $('#plugin-refresh').addEventListener('click', () => {
   const btn = $('#plugin-refresh'); btn.disabled = true;
-  rpc('plugin.reload', {}).then(() => loadPluginWidgets(true)).finally(() => { btn.disabled = false; });
+  const work = pluginView === 'market'
+    ? loadMarket(true)
+    : rpc('plugin.reload', {}).then(() => loadPluginWidgets(true));
+  Promise.resolve(work).finally(() => { btn.disabled = false; });
 });
 loadPluginWidgets(false);
 setInterval(() => loadPluginWidgets(false), 3000);
