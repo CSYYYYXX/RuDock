@@ -39,7 +39,7 @@ struct Ctx {
     settings_tx: Mutex<()>,
 }
 
-/// 插件目录：%LOCALAPPDATA%/WB/plugins（用户安装）+ 仓库 plugins/（开发态，exe 上三级）。
+/// 插件目录优先级：用户安装、发布包内置、仓库开发态。
 fn user_plugin_dir() -> PathBuf {
     wb_core::paths::local_data_dir().join("plugins")
 }
@@ -72,17 +72,24 @@ fn cleanup_plugin_backups() {
 }
 
 fn plugin_dirs() -> Vec<PathBuf> {
-    let mut dirs = vec![user_plugin_dir()];
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(repo) = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-        {
-            let dev = repo.join("plugins");
-            if dev.is_dir() {
-                dirs.push(dev);
-            }
+    let exe = std::env::current_exe().ok();
+    plugin_dirs_for_exe(user_plugin_dir(), exe.as_deref())
+}
+
+fn plugin_dirs_for_exe(user_dir: PathBuf, exe: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs = vec![user_dir];
+    let Some(exe_dir) = exe.and_then(Path::parent) else {
+        return dirs;
+    };
+
+    let bundled = exe_dir.join("plugins");
+    if bundled.is_dir() {
+        dirs.push(bundled);
+    }
+    if let Some(repo) = exe_dir.parent().and_then(Path::parent) {
+        let development = repo.join("plugins");
+        if development.is_dir() && !dirs.contains(&development) {
+            dirs.push(development);
         }
     }
     dirs
@@ -2509,6 +2516,38 @@ fn run_plugin_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_root(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "wb-daemon-{name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn plugin_directories_prefer_user_then_bundle_then_development() {
+        let root = temp_root("plugin-dirs");
+        let user = root.join("user-plugins");
+        let exe = root
+            .join("repo")
+            .join("target")
+            .join("debug")
+            .join("wb-daemon.exe");
+        let bundled = exe.parent().unwrap().join("plugins");
+        let development = root.join("repo").join("plugins");
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::create_dir_all(&development).unwrap();
+
+        assert_eq!(
+            plugin_dirs_for_exe(user.clone(), Some(&exe)),
+            vec![user, bundled, development]
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
 
     fn permission_plugin() -> (PathBuf, LoadedPlugin) {
         let root = std::env::temp_dir().join(format!(

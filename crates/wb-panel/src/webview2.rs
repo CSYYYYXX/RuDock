@@ -636,6 +636,42 @@ pub fn embed(hwnd: HWND) -> Result<(), String> {
 
 static WV_PTR: AtomicUsize = AtomicUsize::new(0);
 
+fn panel_html_path(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let exe_dir = exe.parent()?;
+    let relative = std::path::Path::new("assets")
+        .join("panel-ui")
+        .join("index.html");
+    let portable = exe_dir.join(&relative);
+    if portable.is_file() {
+        return Some(portable);
+    }
+
+    // Development layout: <repo>/target/{debug,release}/wb-panel.exe.
+    let repo = exe_dir.parent()?.parent()?;
+    let development = repo.join(relative);
+    development.is_file().then_some(development)
+}
+
+fn file_url(path: &std::path::Path) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let mut encoded = String::with_capacity(normalized.len());
+    for byte in normalized.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/' | b':') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+    if encoded.starts_with("//") {
+        format!("file:{encoded}")
+    } else {
+        format!("file:///{}", encoded.trim_start_matches('/'))
+    }
+}
+
 /// URL override: --url <url> (default: local PoC page via file://)
 pub fn resolve_url() -> Result<String, String> {
     let cli_url: Option<String> = std::env::args()
@@ -646,12 +682,14 @@ pub fn resolve_url() -> Result<String, String> {
     match cli_url {
         Some(u) => Ok(u),
         None => {
-            let html_path = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().and_then(|d| d.parent()).and_then(|d| d.parent()).map(|r| r.to_path_buf()))
-                .map(|r| r.join("assets").join("panel-ui").join("index.html"))
-                .ok_or("locate index.html")?;
-            Ok(format!("file:///{}", html_path.to_string_lossy().replace('\\', "/")))
+            let exe = std::env::current_exe().map_err(|e| format!("locate wb-panel.exe: {e}"))?;
+            let html_path = panel_html_path(&exe).ok_or_else(|| {
+                format!(
+                    "panel UI not found beside {} or in the development tree",
+                    exe.display()
+                )
+            })?;
+            Ok(file_url(&html_path))
         }
     }
 }
@@ -673,4 +711,62 @@ pub fn navigate(url: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "wb-panel-{name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn portable_panel_ui_takes_priority_over_development_tree() {
+        let root = temp_root("ui-path");
+        let exe = root.join("target").join("debug").join("wb-panel.exe");
+        let portable = exe
+            .parent()
+            .unwrap()
+            .join("assets")
+            .join("panel-ui")
+            .join("index.html");
+        let development = root.join("assets").join("panel-ui").join("index.html");
+        std::fs::create_dir_all(portable.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(development.parent().unwrap()).unwrap();
+        std::fs::write(&portable, "portable").unwrap();
+        std::fs::write(&development, "development").unwrap();
+
+        assert_eq!(panel_html_path(&exe), Some(portable));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn panel_ui_falls_back_to_development_tree() {
+        let root = temp_root("ui-dev-path");
+        let exe = root.join("target").join("debug").join("wb-panel.exe");
+        let development = root.join("assets").join("panel-ui").join("index.html");
+        std::fs::create_dir_all(development.parent().unwrap()).unwrap();
+        std::fs::write(&development, "development").unwrap();
+
+        assert_eq!(panel_html_path(&exe), Some(development));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn file_url_escapes_reserved_and_utf8_bytes() {
+        assert_eq!(
+            file_url(Path::new("C:\\Ru Dock\\\u{754c}\u{9762}#1.html")),
+            "file:///C:/Ru%20Dock/%E7%95%8C%E9%9D%A2%231.html"
+        );
+    }
 }
