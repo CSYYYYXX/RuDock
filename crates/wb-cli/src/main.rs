@@ -228,6 +228,8 @@ enum SettingsOp {
     Get,
     Win { #[arg(action = clap::ArgAction::Set)] enabled: bool },
     Autostart { #[arg(action = clap::ArgAction::Set)] enabled: bool },
+    /// Widgets pinned to the desktop; pass no ids to disable the desktop host
+    Desktop { widgets: Vec<String> },
     /// MCP write handling: trust client prompts, require elicitation, or block writes
     Mcp { #[arg(value_enum)] policy: McpWritePolicy },
 }
@@ -847,6 +849,7 @@ fn main() {
             SettingsOp::Get => ("settings.get", serde_json::json!({})),
             SettingsOp::Win { enabled } => ("settings.set", serde_json::json!({"takeover_win":enabled})),
             SettingsOp::Autostart { enabled } => ("settings.set", serde_json::json!({"autostart":enabled})),
+            SettingsOp::Desktop { widgets } => ("settings.set", serde_json::json!({"desktop_widgets":widgets})),
             SettingsOp::Mcp { policy } => (
                 "settings.set",
                 serde_json::json!({"mcp_write_policy":policy.as_str()}),
@@ -1015,6 +1018,25 @@ mod tests {
             Cmd::Settings {
                 op: SettingsOp::Mcp { policy },
             } => assert_eq!(policy.as_str(), "read-only"),
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parses_desktop_widget_selection() {
+        let cli = Cli::try_parse_from([
+            "wb",
+            "settings",
+            "desktop",
+            "w-clock",
+            "w-weather",
+            "w-ai",
+        ])
+        .unwrap();
+        match cli.cmd {
+            Cmd::Settings {
+                op: SettingsOp::Desktop { widgets },
+            } => assert_eq!(widgets, ["w-clock", "w-weather", "w-ai"]),
             _ => panic!("unexpected command"),
         }
     }

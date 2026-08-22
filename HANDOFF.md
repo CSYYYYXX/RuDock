@@ -1,4 +1,4 @@
-# WB 项目交接文档（2026-08-22）
+# WB 项目交接文档（2026-08-23）
 
 > 新 session 开场直接说：「读 E:\cctest\wb\HANDOFF.md，继续 WB 开发」即可。
 > 本文档 = 项目现状 + 操作纪律 + 下一步。改代码前先把「操作纪律」读完，全是血泪。
@@ -55,6 +55,7 @@ E:\cctest\wb\
 12. 测试产生的待办/笔记数据测完随手清掉（`wb todo rm`）。
 13. 用户正常使用的实例：wb-daemon.exe（托盘/事实源）+ wb-hook-poc.exe（`--panel`，他靠它按 Win）+ 正式 wb-panel（`--wv2`，无测试旗标），各 1 个。hook 与 panel 都有 named mutex 单实例保护；只有基准或多窗口诊断才给 panel 传 `--allow-multiple`。测试完务必恢复正式状态，taskkill 面板不会动 daemon/hook。
 14. 回复用户用中文、简洁；结尾一条**加粗**的下一步建议。用户审美要求高——UI 改动要截图自审，对标 DeskBox（参考项目在 `E:\cctest\deskbox-ref`）。
+15. 用户正在使用这台机器时，只允许源码修改、编译、单测和 headless Chromium；未经明确同意，不启动 daemon、panel、WebView2 或任何可见窗口。
 
 ## 4. 架构要点（新人 5 分钟版）
 
@@ -72,7 +73,8 @@ E:\cctest\wb\
 - M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。工具现携带标准 MCP annotations（只读/破坏性/幂等/开放世界），旧插件缺省按最保守风险，供客户端执行前展示和确认；面板 AI 的 OpenAI schema 不混入扩展字段。初始化声明 tool/resource `listChanged`，插件生命周期或开发态刷新真正改变目录后主动通知客户端重新枚举。真实 stdio 冒烟已验证 `search`、`todo_add`、`skill_get`、临时批准插件 `util_hello` 的标注，以及同一会话安装/批准/卸载时的双目录通知；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
-- M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
+- M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
+- 桌面常驻组件：设置页可选择内置或插件组件常驻桌面，AI 问答也已成为独立组件；独立 `wb-panel.exe --desktop` 使用窗口类 `WBDesktopWidgets` 和单实例 mutex，窗口区域裁剪为实际卡片并保持普通桌面层级。Win 面板默认打开应用页，左侧仍保留完整组件页。CLI 支持 `wb settings desktop <ids...>`，空列表关闭宿主。设置变更通过 `WM_WB_DESKTOP_REFRESH` 事件推送，不再轮询；hook 状态改读 `Local\WBHookSingleInstance`，完全移除会闪控制台的 `tasklist` 查询。
 - Spotlight 搜索：应用索引在 daemon 启动阶段同步建立，开始处理命名管道请求前已完成，之后每 5 分钟后台刷新；`apps.list` 和统一搜索只读内存快照，首次打开面板/搜索不会现场扫描或启动 `Get-StartApps`。`wb daemon status` 暴露 `apps_indexed` / `apps_index_ready`。文件类请求优先通过 Everything 1.4/1.5 Unicode v1 IPC 做全盘查询，单次最多 200 条，发送/回包各 1.5 秒超时并严格校验回包；Everything 不可用、数据库未就绪或 IPC 失败时自动降级到 Desktop/Documents/Downloads/OneDrive 的后台有界索引（最多 50,000 项）。结果继续与应用、剪贴板、笔记、待办、插件命令合并排序；状态接口同时暴露 Everything 进程/数据库两个状态。结果 UI 现显示人类可读的来源徽标、选中项详情和真实文件图标；文件支持打开、资源管理器定位、复制路径，笔记/剪贴板支持复制正文，待办可直接完成，`Ctrl+K` / `→` 进入动作区。选择频率与最近使用时间只写本机 `localStorage` 并参与同类结果排序。搜索协议的可选 `preview` 最多 4000 字符，临时隔离配置 E2E 已验证笔记预览和 `wb://todo/<id>` 动作标识。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费。视觉回归可用完全脱敏的 `#test-search` 固定数据入口。
 - 面板单实例：正常启动使用 `Local\WBPanelSingleInstance` mutex，次实例向 `WBPanelPoc` 发送 `WM_WB_SHOW` 后退出；8 路并发启动实测最终仅 1 个进程，稳定态重复启动日志为 `{"event":"already_running","awakened":true}`。`--bench` 和显式 `--allow-multiple` 绕过该限制供自动化诊断。
 - 托盘与退出：daemon 创建 `WBTrayWindow` 通知区入口，左键打开面板，右键菜单提供“打开 WB / 退出 WB”；`wb daemon start|status|stop` 已闭环。status/stop 离线时不隐式启动，stop 在 RPC 响应 flush 后退出，并停止 hook、向 panel 发 `WM_CLOSE`、显式移除托盘图标。CLI stop、重复 stop、托盘退出均真实验证三进程归零。
@@ -80,7 +82,7 @@ E:\cctest\wb\
 - 开放插件市场：`plugins/market-index.schema.json` 固化 v1 静态索引契约，官方与社区使用同一格式；设置可持久化最多 8 个市场源，CLI/RPC 不传 `index` 时聚合来源并自动解析插件，重复 id 会要求显式选源。面板插件页是“已安装 / 市场”双视图，支持搜索、来源管理、安装、更新与用户插件卸载。市场版本强制 SemVer，远程索引下载限 2MB，远程条目只接受绝对 HTTP(S) 包地址；安装提交前同时核对 SHA-256、插件 id 和版本。真实 HTTP E2E 已验证持久化源、多源聚合和无 `--index` 安装；截图为 `m5-market-page.png`、`m5-market-sources.png`、`m5-plugins-installed-uninstall.png`。
 - MCP 服务端策略：设置页和 `wb settings mcp client|ask|read-only` 提供客户端确认、逐次 elicitation、强制只读三档。ask 仅接受 MCP 2025-06-18 且声明 elicitation 的客户端，并要求 `accept + confirm=true`；拒绝、无能力和业务错误统一为 `isError:true`，成功结果带 `structuredContent`。
 - 审计与事件：RPC 审计只保留 actor、方法、状态、错误码、耗时和参数形状，旧明文记录启动时一次性脱敏，最多保留 5000 条。`events.tail`、CLI `wb events`、MCP `events_tail` 支持 id 游标和最长 30 秒长轮询。真实 E2E 已验证游标跨连接唤醒，测试 secret 不进入 `wb audit`。
-- 2026-08-22 全量测试基线：wb-core 12 + wb-daemon 14 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 8，共 58 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。设置 UI 截图为 `docs-assets/m5-mcp-write-policy.png`。
+- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 15 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 7 + wb-mcp 8，共 60 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。桌面组件另经 headless Chromium 在 1920×1080 与 1366×768 完成无隐私视觉回归，正式截图为 `docs-assets/desktop-widgets.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -101,4 +103,4 @@ E:\cctest\wb\
 
 ## 8. 上次会话最后在做的事
 
-刚完成 Spotlight 结果交互深化：来源徽标、详情侧栏、真实文件图标、文件打开/定位/复制路径、笔记与剪贴板复制、待办就地完成，以及只存在本机的选择排序学习均已接入；搜索协议增加向后兼容的有界 `preview` 字段，隔离临时配置的真实 daemon E2E 通过。新增 `#test-search` 脱敏固定数据入口。随后按用户实机反馈再次重排天气/日历：取消 84px 固定日历和 760px 直接隐藏小时预报的旧策略，改为卡片尺寸驱动密度、720p 扩大第一行、极矮窗口滚动兜底。workspace 58 项测试和隔离 target build 通过（既有 11 条 panel warning），前端 JS 语法通过；当前隔离桌面会话无法创建 WebView2 controller，因此这次未生成有效视觉截图，需在用户桌面重启正式 panel 完成最终肉眼验收。README 同时改为纯用户视角，首图已替换为脱敏截图；文档提交 `d55287f` 与本次功能提交仍需用户终端的 GitHub 凭据推送。
+完成独立桌面组件宿主：设置中选择常驻组件，Win 面板默认进入应用页，左侧保留全部组件，AI 问答可作为桌面组件使用。修复桌面页每 2 秒 `settings.get` 导致 `tasklist` 控制台闪现的问题：删除轮询、改为 daemon 主动事件刷新，并直接用 hook mutex 判断运行状态，不再创建查询进程。视觉上参考 `E:\cctest\deskbox-ref` 的稳定标题层级、薄描边和克制阴影，桌面模式使用 8px 圆角；新增 `#test-desktop` 脱敏 fixture 和 `docs-assets/desktop-widgets.png`。当前 `%APPDATA%\WB\settings.json` 的 `desktop_widgets` 已临时设为 `[]`，所有 RuDock 进程保持关闭；未经用户明确同意不要做实机启动测试。提交 `13c793f` 与本次桌面组件提交仍需推送 GitHub。

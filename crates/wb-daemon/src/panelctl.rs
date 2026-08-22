@@ -3,18 +3,30 @@
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindowVisible, PostMessageW, WM_CLOSE};
+use windows::Win32::UI::WindowsAndMessaging::{
+    FindWindowW, IsWindowVisible, PostMessageW, WM_CLOSE,
+};
 
 /// 与 wb-panel host.rs 保持一致
 pub const WM_WB_TOGGLE: u32 = 0x8000 + 41;
 pub const WM_WB_SHOW: u32 = 0x8000 + 43;
 pub const WM_WB_HIDE: u32 = 0x8000 + 44;
+pub const WM_WB_DESKTOP_REFRESH: u32 = 0x8000 + 45;
+
+const PANEL_CLASS: &str = "WBPanelPoc";
+const DESKTOP_CLASS: &str = "WBDesktopWidgets";
+
+fn find_window(class: &str) -> Option<HWND> {
+    unsafe {
+        let class: Vec<u16> = format!("{class}\0").encode_utf16().collect();
+        FindWindowW(PCWSTR(class.as_ptr()), PCWSTR::null())
+            .ok()
+            .filter(|h| !h.0.is_null())
+    }
+}
 
 fn find_panel() -> Option<HWND> {
-    unsafe {
-        let class: Vec<u16> = "WBPanelPoc\0".encode_utf16().collect();
-        FindWindowW(PCWSTR(class.as_ptr()), PCWSTR::null()).ok().filter(|h| !h.0.is_null())
-    }
+    find_window(PANEL_CLASS)
 }
 
 fn post(hwnd: HWND, msg: u32) {
@@ -27,7 +39,7 @@ fn panel_visible(hwnd: HWND) -> bool {
     unsafe { IsWindowVisible(hwnd).as_bool() }
 }
 
-fn spawn_panel() {
+fn spawn_panel(desktop: bool) {
     use std::os::windows::process::CommandExt;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -39,6 +51,7 @@ fn spawn_panel() {
             // 必须带 --wv2，否则只建透明空窗（血泪教训）
             let _ = std::process::Command::new(exe)
                 .arg("--wv2")
+                .args(desktop.then_some("--desktop"))
                 .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
@@ -55,7 +68,7 @@ pub fn show() -> serde_json::Value {
             serde_json::json!({"panel": "shown"})
         }
         None => {
-            spawn_panel();
+            spawn_panel(false);
             serde_json::json!({"panel": "started"})
         }
     }
@@ -78,7 +91,7 @@ pub fn toggle() -> serde_json::Value {
             serde_json::json!({"panel": "toggled"})
         }
         None => {
-            spawn_panel();
+            spawn_panel(false);
             serde_json::json!({"panel": "started"})
         }
     }
@@ -91,5 +104,27 @@ pub fn close() -> serde_json::Value {
             serde_json::json!({"panel": "closing"})
         }
         None => serde_json::json!({"panel": "not running"}),
+    }
+}
+
+pub fn desktop_running() -> bool {
+    find_window(DESKTOP_CLASS).is_some()
+}
+
+pub fn sync_desktop(enabled: bool) -> serde_json::Value {
+    match (enabled, find_window(DESKTOP_CLASS)) {
+        (true, Some(hwnd)) => {
+            post(hwnd, WM_WB_DESKTOP_REFRESH);
+            serde_json::json!({"desktop": "refreshed"})
+        }
+        (true, None) => {
+            spawn_panel(true);
+            serde_json::json!({"desktop": "started"})
+        }
+        (false, Some(hwnd)) => {
+            post(hwnd, WM_CLOSE);
+            serde_json::json!({"desktop": "closing"})
+        }
+        (false, None) => serde_json::json!({"desktop": "stopped"}),
     }
 }

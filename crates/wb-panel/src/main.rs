@@ -17,7 +17,7 @@ mod weather;
 mod webview2;
 
 use std::time::Instant;
-use windows::core::w;
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, WPARAM,
 };
@@ -40,14 +40,24 @@ impl Drop for SingleInstance {
 
 /// Returns `None` for a secondary process after it has asked the existing
 /// panel to show. The named mutex also closes the startup race before HWND exists.
-fn acquire_single_instance() -> Result<Option<SingleInstance>, String> {
-    let mutex = unsafe { CreateMutexW(None, true, w!("Local\\WBPanelSingleInstance")) }
+fn acquire_single_instance(desktop: bool) -> Result<Option<SingleInstance>, String> {
+    let mutex_name: Vec<u16> = if desktop {
+        "Local\\WBDesktopWidgetsSingleInstance\0"
+    } else {
+        "Local\\WBPanelSingleInstance\0"
+    }
+    .encode_utf16()
+    .collect();
+    let mutex = unsafe { CreateMutexW(None, true, PCWSTR(mutex_name.as_ptr())) }
         .map_err(|e| format!("single-instance mutex failed: {e}"))?;
     if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
         return Ok(Some(SingleInstance(mutex)));
     }
 
-    let hwnd = unsafe { FindWindowW(w!("WBPanelPoc"), None) }.unwrap_or_default();
+    let class_name: Vec<u16> = if desktop { "WBDesktopWidgets\0" } else { "WBPanelPoc\0" }
+        .encode_utf16()
+        .collect();
+    let hwnd = unsafe { FindWindowW(PCWSTR(class_name.as_ptr()), None) }.unwrap_or_default();
     let awakened = if hwnd.0.is_null() {
         false
     } else {
@@ -71,6 +81,7 @@ fn main() {
         );
     }
     let args: Vec<String> = std::env::args().collect();
+    let desktop = args.iter().any(|a| a == "--desktop");
 
     // Headless icon-extraction test: wb-panel --icon-test <lnk-or-exe> <out.png>
     if let Some(pos) = args.iter().position(|a| a == "--icon-test") {
@@ -102,7 +113,7 @@ fn main() {
     let _single_instance = if diagnostic_instance {
         None
     } else {
-        match acquire_single_instance() {
+        match acquire_single_instance(desktop) {
             Ok(Some(instance)) => Some(instance),
             Ok(None) => return,
             Err(e) => {
@@ -114,7 +125,8 @@ fn main() {
 
     let wv2 = args.iter().any(|a| a == "--wv2");
     // 测试用：失焦不自动隐藏（截图验证 AI 流式等慢速链路时，用户的窗口会抢焦点）
-    host::set_autohide(!args.iter().any(|a| a == "--no-autohide"));
+    host::set_desktop_mode(desktop);
+    host::set_autohide(!desktop && !args.iter().any(|a| a == "--no-autohide"));
     let duration: Option<u64> = args
         .windows(2)
         .find(|w| w[0] == "--duration")
@@ -125,8 +137,10 @@ fn main() {
         .and_then(|w| w[1].parse().ok());
 
     // 磨砂池必须先创建：后创建的面板在 Z 序上盖过它们。
-    dwm::create_frost_pool();
-    let hwnd = match dwm::create_panel_window() {
+    if !desktop {
+        dwm::create_frost_pool();
+    }
+    let hwnd = match dwm::create_panel_window(desktop) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("fatal: {e}");
@@ -136,6 +150,9 @@ fn main() {
     let plain = args.iter().any(|a| a == "--plain-win");
     let material = if plain { "none(ab-test)" } else { dwm::apply_material(hwnd) };
     host::set_host_hwnd(hwnd);
+    if desktop {
+        dwm::set_desktop_regions(hwnd, &[]);
+    }
     println!("{}", serde_json::json!({"event": "window_created", "material": material, "w": WINDOW_W, "h": WINDOW_H}));
 
     if wv2 {
@@ -162,7 +179,13 @@ fn main() {
         if wv2 {
             // Start HIDDEN: the page posts "ready" after boot; only then do we
             // capture the backdrop, show and foreground — no dark/white flash.
-            match webview2::resolve_url().and_then(|u| webview2::navigate(&u)) {
+            let url = webview2::resolve_url().map(|mut url| {
+                if desktop {
+                    url.push_str(if url.contains('?') { "&mode=desktop" } else { "?mode=desktop" });
+                }
+                url
+            });
+            match url.and_then(|u| webview2::navigate(&u)) {
                 Ok(()) => {}
                 Err(e) => println!("{}", serde_json::json!({"event":"navigate_failed","detail": e})),
             }
@@ -266,6 +289,12 @@ pub(crate) unsafe extern "system" fn wnd_proc(
             }
             LRESULT(0)
         }
+        m if m == host::WM_WB_DESKTOP_REFRESH => {
+            if host::desktop_mode() {
+                host::post_to_page(serde_json::json!({"kind":"desktop.refresh"}));
+            }
+            LRESULT(0)
+        }
         WM_ERASEBKGND => LRESULT(1), // let DWM backdrop show through
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
@@ -278,6 +307,10 @@ pub(crate) unsafe extern "system" fn wnd_proc(
             LRESULT(0)
         }
         WM_ACTIVATE => {
+            if host::desktop_mode() {
+                dwm::pin_to_desktop(hwnd);
+                return LRESULT(0);
+            }
             // Spotlight semantics: losing focus dismisses the panel.
             if host::autohide()
                 && !host::interaction_locked()

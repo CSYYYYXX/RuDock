@@ -11,7 +11,7 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, KillTimer, PostMessageW, SetForegroundWindow, SetTimer, ShowWindow,
-    SW_HIDE, SW_SHOW, SW_SHOWNORMAL, WM_APP,
+    SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, SW_SHOWNORMAL, WM_APP,
 };
 
 pub const WM_WB_POST: u32 = WM_APP + 42;
@@ -20,6 +20,8 @@ pub const WM_WB_TOGGLE: u32 = WM_APP + 41;
 /// Sent by wb-daemon（panel.show / panel.hide）：显式显隐，供 CLI/Agent 调用。
 pub const WM_WB_SHOW: u32 = WM_APP + 43;
 pub const WM_WB_HIDE: u32 = WM_APP + 44;
+/// Sent by wb-daemon after the pinned desktop widget selection changes.
+pub const WM_WB_DESKTOP_REFRESH: u32 = WM_APP + 45;
 /// Fallback timer id: force-hide if the page never answers "hide.done".
 pub const HIDE_TIMER_ID: usize = 7;
 /// Fallback timer id: reveal even if the page never answers "show.ready".
@@ -29,6 +31,7 @@ static PENDING_HIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 static PENDING_SHOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static AUTOHIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 static INTERACTION_LOCK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DESKTOP_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 失焦自动隐藏开关（--no-autohide 测试用）
 pub fn set_autohide(on: bool) {
@@ -39,6 +42,12 @@ pub fn autohide() -> bool {
 }
 pub fn interaction_locked() -> bool {
     INTERACTION_LOCK.load(std::sync::atomic::Ordering::SeqCst)
+}
+pub fn set_desktop_mode(on: bool) {
+    DESKTOP_MODE.store(on, std::sync::atomic::Ordering::SeqCst);
+}
+pub fn desktop_mode() -> bool {
+    DESKTOP_MODE.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 static PENDING: Mutex<Vec<serde_json::Value>> = Mutex::new(Vec::new());
@@ -185,7 +194,13 @@ pub fn on_web_message(text: &str) {
                          (w * scale).round() as i32, (h * scale).round() as i32)
                     })
                     .collect();
-                crate::dwm::set_card_regions(hwnd, &phys, (20.0 * scale).round() as i32);
+                if desktop_mode() {
+                    crate::dwm::set_desktop_regions(hwnd, &phys);
+                    crate::dwm::set_blur_regions(hwnd, &phys, (20.0 * scale).round() as i32);
+                    crate::dwm::pin_to_desktop(hwnd);
+                } else {
+                    crate::dwm::set_card_regions(hwnd, &phys, (20.0 * scale).round() as i32);
+                }
             }
         }
         "selftest" => {
@@ -352,6 +367,15 @@ fn sysinfo_json(id: serde_json::Value) -> serde_json::Value {
 pub fn show_panel() {
     let hwnd = HWND(HOST_HWND.load(std::sync::atomic::Ordering::SeqCst) as *mut c_void);
     if hwnd.0.is_null() {
+        return;
+    }
+    if desktop_mode() {
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+        }
+        crate::dwm::pin_to_desktop(hwnd);
         return;
     }
     cancel_hide();

@@ -138,6 +138,23 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .ai-cursor { display: inline-block; color: var(--accent); animation: aiblink 1s steps(1) infinite; }
 @keyframes aiblink { 50% { opacity: 0; } }
 
+/* AI widget: usable on the widget page and as a persistent desktop card. */
+#w-ai .bd { display: flex; flex-direction: column; gap: 8px; }
+.widget-ai-log { flex: 1; min-height: 0; overflow-y: auto; color: var(--fg-2); font-size: 12.5px;
+  line-height: 1.55; user-select: text; -webkit-user-select: text; }
+.widget-ai-log::-webkit-scrollbar { width: 5px; }
+.widget-ai-log::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
+.widget-ai-empty { height: 100%; display: grid; place-items: center; color: var(--fg-4); font-size: 18px; }
+.widget-ai-q { color: var(--fg-3); font-size: 11px; margin-bottom: 5px; }
+.widget-ai-form { flex: none; display: flex; align-items: center; gap: 6px; }
+.widget-ai-form input { flex: 1; min-width: 0; height: 32px; border: 1px solid var(--stroke-soft);
+  border-radius: 7px; outline: none; background: rgba(255,255,255,.055); color: var(--fg);
+  padding: 0 10px; font: inherit; font-size: 12px; user-select: text; -webkit-user-select: text; }
+.widget-ai-form input:focus { border-color: rgba(76,194,255,.48); }
+.widget-ai-form button { width: 32px; height: 32px; flex: none; border: 1px solid rgba(76,194,255,.28);
+  border-radius: 7px; background: rgba(76,194,255,.15); color: var(--accent); font-size: 17px; cursor: pointer; }
+.widget-ai-form button:disabled { opacity: .45; cursor: default; }
+
 /* ---------- 组件马赛克：铺满剩余区域，无滚动 ---------- */
 .grid { height: 100%; display: grid; gap: 12px;
   grid-template-columns: repeat(6, 1fr);
@@ -587,6 +604,7 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 #cfgView .cfgrow input { accent-color: var(--accent); width: 15px; height: 15px; }
 #cfgView .cfgsection { margin: 10px 0 4px; padding-top: 10px; border-top: 1px solid var(--stroke-soft);
   color: var(--fg-4); font-size: 10.5px; text-transform: uppercase; }
+#cfgView .cfgsection .state { float: right; text-transform: none; }
 #cfgView .sysrow { display: flex; align-items: center; min-height: 38px; padding: 6px 4px; color: var(--fg-2); font-size: 13px; }
 #cfgView .sysrow .state { margin-left: 8px; color: var(--fg-4); font-size: 11px; }
 #cfgView .sysrow input { margin-left: auto; width: 34px; height: 18px; accent-color: var(--accent); }
@@ -601,6 +619,34 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 .spot-box .gear { flex: none; font-size: 15px; color: var(--fg-3); cursor: pointer; padding: 2px 4px;
   border-radius: 6px; }
 .spot-box .gear:hover { color: var(--fg); background: var(--hover); }
+
+/* Desktop host: same cards, independent visibility, no panel chrome. */
+body.desktop-mode .stage { background: transparent !important; }
+body.desktop-mode.desktop-fixture { background: #151820; }
+body.desktop-mode .spot-wrap,
+body.desktop-mode #page-apps,
+body.desktop-mode #page-plugins,
+body.desktop-mode .dots,
+body.desktop-mode #folderView,
+body.desktop-mode #cfgView,
+body.desktop-mode #marketSourceView,
+body.desktop-mode #toast { display: none !important; }
+body.desktop-mode .pages { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  transform: none !important; transition: none; }
+body.desktop-mode #page-widgets { display: block; width: 100%; height: 100%; }
+body.desktop-mode .board { padding: 24px; overflow: visible; }
+body.desktop-mode .grid { width: min(760px, calc(100% - 48px)); height: auto; min-height: 0; margin-left: auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: none;
+  grid-auto-rows: minmax(160px, auto); grid-auto-flow: dense; gap: 12px; }
+body.desktop-mode .w { animation: none !important; border-radius: 8px;
+  border-color: rgba(255,255,255,.16);
+  box-shadow: 0 4px 16px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.08); }
+body.desktop-mode .w > .hd { min-height: 38px; padding: 10px 14px 7px; }
+body.desktop-mode .w > .hairline { margin: 0 14px; }
+body.desktop-mode .w > .bd { padding: 8px 14px 14px; }
+body.desktop-mode .w.w-hidden { display: flex; }
+body.desktop-mode .w.desktop-hidden { display: none !important; }
+body.desktop-mode #w-ai { min-height: 200px; }
 
 /* ---------- 呼出/消失动效（DeskBox：opacity+translation 交错） ---------- */
 @keyframes wbIn  { from { opacity: 0; transform: translateY(26px) scale(.97); } to { opacity: 1; transform: none; } }
@@ -747,6 +793,18 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
       <div class="bd" id="htk-bd" title="点击换一句"><div class="sentence">加载中…</div><div class="from"></div></div>
     </div>
 
+    <div class="w span4" id="w-ai">
+      <div class="hd">✦ AI<span class="right">Luna</span></div>
+      <div class="hairline"></div>
+      <div class="bd">
+        <div class="widget-ai-log"><div class="widget-ai-empty">✦</div></div>
+        <div class="widget-ai-form">
+          <input placeholder="问点什么…" autocomplete="off" spellcheck="false" aria-label="AI 问题">
+          <button title="发送" aria-label="发送">↑</button>
+        </div>
+      </div>
+    </div>
+
   </div></div>
   </div>
 
@@ -812,6 +870,8 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
     <div class="cfgsection">组件</div>
     <div class="tip">勾选要显示在组件页的内容</div>
     <div id="cfgList"></div>
+    <div class="cfgsection">桌面常驻<span class="state" id="desktop-state"></span></div>
+    <div id="cfgDesktopList"></div>
   </div></div>
 
   <div id="marketSourceView"><div class="sheet">
@@ -835,6 +895,10 @@ const stage = $('#stage');
 let initialQuery = '';
 
 const hasBridge = !!(window.chrome && window.chrome.webview);
+const DESKTOP_MODE = new URLSearchParams(location.search).get('mode') === 'desktop';
+const DESKTOP_FIXTURE = DESKTOP_MODE && location.hash === '#test-desktop';
+if (DESKTOP_MODE) document.body.classList.add('desktop-mode');
+if (DESKTOP_FIXTURE) document.body.classList.add('desktop-fixture');
 function send(msg) { if (hasBridge) window.chrome.webview.postMessage(msg); }
 window.addEventListener('error', ev => send({ kind: 'selftest', detail: 'js error ' + ev.message + ' @' + ev.lineno + ':' + ev.colno, ok: false }));
 window.addEventListener('unhandledrejection', ev => send({ kind: 'selftest', detail: 'promise error ' + ev.reason, ok: false }));
@@ -1186,7 +1250,7 @@ $('#folderView').addEventListener('click', ev => { if (ev.target.id === 'folderV
 
 /* ---------- 双页切换：左/右拖动 + 圆点 + 滑动动画 ---------- */
 const pages = $('#pages');
-let curPage = 0;
+let curPage = 1;
 const PAGE_COUNT = 3;
 function setPage(i, opts) {
   opts = opts || {};
@@ -1432,6 +1496,42 @@ function askAi() {
   aiRender(false);
 }
 
+let widgetAiId = 1000000, widgetAiStreaming = false, widgetAiQuestion = '', widgetAiAnswer = '';
+function renderWidgetAi() {
+  const log = $('#w-ai .widget-ai-log');
+  const button = $('#w-ai .widget-ai-form button');
+  button.disabled = widgetAiStreaming;
+  if (!widgetAiQuestion && !widgetAiAnswer) {
+    log.innerHTML = '<div class="widget-ai-empty">✦</div>';
+    return;
+  }
+  log.innerHTML = `<div class="widget-ai-q">${esc(widgetAiQuestion)}</div><div>${mdLite(widgetAiAnswer)}${widgetAiStreaming ? '<span class="ai-cursor">▋</span>' : ''}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+function askWidgetAi() {
+  const input = $('#w-ai .widget-ai-form input');
+  const question = input.value.trim();
+  if (!question || widgetAiStreaming) return;
+  widgetAiQuestion = question; widgetAiAnswer = ''; widgetAiStreaming = true; input.value = '';
+  send({ kind: 'ai.ask', id: ++widgetAiId, text: question });
+  renderWidgetAi();
+}
+$('#w-ai .widget-ai-form button').addEventListener('click', askWidgetAi);
+$('#w-ai .widget-ai-form input').addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { askWidgetAi(); ev.preventDefault(); ev.stopPropagation(); }
+});
+function handleWidgetAiMessage(m) {
+  if (m.id !== widgetAiId) return false;
+  if (m.kind === 'ai.delta' && widgetAiStreaming) widgetAiAnswer += m.delta || '';
+  else if (m.kind === 'ai.done') widgetAiStreaming = false;
+  else if (m.kind === 'ai.error') {
+    widgetAiStreaming = false;
+    widgetAiAnswer += (widgetAiAnswer ? '\n\n' : '') + '请求失败：' + (m.error || '未知错误');
+  } else return false;
+  renderWidgetAi();
+  return true;
+}
+
 /* ---------- 命令模式（> 前缀，与 AI 工具/CLI 共用 wb-core 命令注册表） ---------- */
 let cmdCache = null; // null=未拉取；[]=daemon 不可用
 function ensureCmds() {
@@ -1568,6 +1668,11 @@ function reportRects() {
     const r = el.getBoundingClientRect();
     if (r.width > 4 && r.height > 4) rects.push([Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]);
   };
+  if (DESKTOP_MODE) {
+    document.querySelectorAll('#board .w:not(.desktop-hidden)').forEach(push);
+    send({ kind: 'cardrects', rects });
+    return;
+  }
   push($('.spot-box'));
   if (curPage === 1) push($('#page-apps .dock-wrap')); // 程序坞页：整区磨砂
   else if (curPage === 2) {
@@ -1596,7 +1701,7 @@ function showPanel() {
   aiMode = false; aiStreaming = false;
   $('#folderView').classList.remove('on'); setConfigOpen(false); $('#marketSourceView').classList.remove('on');
   if (editMode) $('#apps-edit').click();
-  setPage(0, { instant: true });
+  setPage(1, { instant: true });
   results = [];
   loadTodos(); loadNotes(); loadClips(); loadRecent();
   send({ kind: 'cardrects', rects: [] }); // 动画期间关掉模糊
@@ -1635,6 +1740,7 @@ if (hasBridge) {
   window.chrome.webview.addEventListener('message', ev => {
     const m = ev.data;
     if (!m) return;
+    if (handleWidgetAiMessage(m)) return;
     if (m.kind === 'results') handleResults(m.id, m.results, m.error);
     else if (m.kind === 'rpc') { const f = rpcPending.get(m.id); if (f) { rpcPending.delete(m.id); f(m); } }
     else if (m.kind === 'weather') { if (m.ok) renderWeather(m.data); }
@@ -1681,6 +1787,7 @@ if (hasBridge) {
       send({ kind: 'selftest', detail: 'ai.error ' + (m.error || ''), ok: false });
     }
     else if (m.kind === 'toast') showToast(m.text);
+    else if (m.kind === 'desktop.refresh' && DESKTOP_MODE) syncDesktopWidgets(false);
     else if (m.kind === 'hide') hidePanel();
     else if (m.kind === 'show' || m.kind === 'reset') showPanel();
     else if (m.kind === 'go') {
@@ -1801,7 +1908,6 @@ window.addEventListener('keydown', ev => {
     else if ($('#cfgView').classList.contains('on')) setConfigOpen(false);
     else if ($('#marketSourceView').classList.contains('on')) $('#marketSourceView').classList.remove('on');
     else if (editMode) $('#apps-edit').click();
-    else if (curPage > 0) setPage(0);
     else if (aiMode) { q.value = ''; doQuery(); }
     else if (q.value) { q.value = ''; doQuery(); }
     else hidePanel();
@@ -1835,16 +1941,21 @@ const WIDGETS = [
   ['w-clock', '时钟'], ['w-weather', '天气'], ['w-cal', '日历'], ['w-world', '世界时钟'],
   ['w-media', '音乐'], ['w-sys', '系统状态'], ['w-pomo', '番茄钟'], ['w-calc', '计算器'],
   ['w-clip', '剪贴板'], ['w-todo', '待办'], ['w-note', '随手记'], ['w-quick', '快捷启动'],
-  ['w-recent', '最近文件'], ['w-cdown', '倒数日'], ['w-htk', '一言'],
+  ['w-recent', '最近文件'], ['w-cdown', '倒数日'], ['w-htk', '一言'], ['w-ai', 'AI'],
 ];
 const WCFG_KEY = 'wb.hiddenWidgets.v1';
 let hiddenWidgets = [];
+let desktopWidgets = [];
 try { hiddenWidgets = JSON.parse(localStorage.getItem(WCFG_KEY) || '[]'); } catch {}
 if (hiddenWidgets.includes('w-stop')) {
   hiddenWidgets = [...new Set(hiddenWidgets.map(id => id === 'w-stop' ? 'plugin-stopwatch' : id))];
   localStorage.setItem(WCFG_KEY, JSON.stringify(hiddenWidgets));
 }
 function applyWidgetVisibility() {
+  if (DESKTOP_MODE) {
+    applyDesktopWidgetVisibility();
+    return;
+  }
   WIDGETS.forEach(([id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('w-hidden', hiddenWidgets.includes(id));
@@ -1853,6 +1964,58 @@ function applyWidgetVisibility() {
 }
 function setMcpPolicy(policy) {
   $$('#cfg-mcp-policy button').forEach(button => button.classList.toggle('on', button.dataset.policy === policy));
+}
+function applyDesktopWidgetVisibility() {
+  document.querySelectorAll('#board .w').forEach(el => {
+    el.classList.remove('w-hidden');
+    el.classList.toggle('desktop-hidden', !desktopWidgets.includes(el.id));
+  });
+  clearTimeout(rectsTimer); rectsTimer = setTimeout(reportRects, 80);
+}
+function syncDesktopWidgets(initial) {
+  return rpc('settings.get', {}, 1200).then(m => {
+    const selected = m && m.result && Array.isArray(m.result.desktop_widgets)
+      ? m.result.desktop_widgets
+      : (hasBridge ? [] : ['w-clock', 'w-weather', 'w-cal', 'w-ai']);
+    desktopWidgets = [...new Set(selected.map(String))];
+    if (DESKTOP_FIXTURE) {
+      desktopWidgets = ['w-clock', 'w-weather', 'w-cal', 'w-ai'];
+      renderWeather({
+        icon: '☀', temp: 27, city: '上海', text: '晴朗', humidity: 58, wind: 12,
+        hourly: [
+          { time: '09:00', icon: '☀', temp: 27 }, { time: '10:00', icon: '☀', temp: 28 },
+          { time: '11:00', icon: '🌤', temp: 29 }, { time: '12:00', icon: '🌤', temp: 30 },
+          { time: '13:00', icon: '🌤', temp: 29 }, { time: '14:00', icon: '🌤', temp: 28 },
+        ],
+      });
+      widgetAiQuestion = '帮我整理今天的工作';
+      widgetAiAnswer = '已汇总待办，并按优先级整理成清晰的执行顺序。';
+      renderWidgetAi();
+    }
+    applyDesktopWidgetVisibility();
+    if (initial) requestAnimationFrame(() => requestAnimationFrame(() => {
+      reportRects();
+      send({ kind: 'ready' });
+    }));
+  });
+}
+function renderDesktopConfig(settings) {
+  desktopWidgets = Array.isArray(settings.desktop_widgets) ? settings.desktop_widgets.map(String) : [];
+  const list = $('#cfgDesktopList'); list.innerHTML = '';
+  WIDGETS.forEach(([id, name]) => {
+    const row = document.createElement('label'); row.className = 'cfgrow';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = desktopWidgets.includes(id);
+    cb.addEventListener('change', () => {
+      const next = cb.checked ? [...new Set([...desktopWidgets, id])] : desktopWidgets.filter(x => x !== id);
+      cb.disabled = true;
+      rpc('settings.set', { desktop_widgets: next }).then(m => {
+        if (!m || m.error || !m.result) { showToast('桌面组件保存失败'); renderDesktopConfig(settings); return; }
+        renderDesktopConfig(m.result);
+      });
+    });
+    row.appendChild(cb); row.insertAdjacentHTML('beforeend', esc(name)); list.appendChild(row);
+  });
+  $('#desktop-state').textContent = settings.desktop_running ? '运行中' : (desktopWidgets.length ? '启动中' : '未启用');
 }
 function setConfigOpen(open) {
   $('#cfgView').classList.toggle('on', open);
@@ -1878,6 +2041,7 @@ function openConfig() {
     $('#cfg-autostart').checked = !!s.autostart;
     setMcpPolicy(s.mcp_write_policy || 'client');
     $('#hook-state').textContent = s.hook_running ? '运行中' : '未运行';
+    renderDesktopConfig(s);
   });
   setConfigOpen(true);
 }
@@ -2280,7 +2444,11 @@ initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
 applyWidgetVisibility();
 loadTodos(); loadNotes(); loadClips(); loadRecent();
 if (!hasBridge && location.hash === '#test-search') setTimeout(showSearchFixture, 50);
-send({ kind: 'ready' });
+if (DESKTOP_MODE) {
+  syncDesktopWidgets(true);
+} else {
+  send({ kind: 'ready' });
+}
 })();
 </script>
 </body>

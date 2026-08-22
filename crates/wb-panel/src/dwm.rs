@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND};
 use windows::Win32::Graphics::Dwm::{DwmEnableBlurBehindWindow, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_HOSTBACKDROPBRUSH, DWMWA_WINDOW_CORNER_PREFERENCE, DWM_BB_ENABLE, DWM_BB_BLURREGION, DWM_BLURBEHIND};
-use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, RGN_OR};
+use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, SetWindowRgn, RGN_OR};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -18,22 +18,28 @@ const DWMSBT_MAINWINDOW: u32 = 2; // Mica
 const DWMSBT_TRANSIENTWINDOW: u32 = 3; // Acrylic
 const DWMSBT_TABBEDWINDOW: u32 = 4; // Mica Alt
 
-pub fn create_panel_window() -> windows::core::Result<HWND> {
+pub fn create_panel_window(desktop: bool) -> windows::core::Result<HWND> {
     unsafe {
         let hinst = HINSTANCE::from(GetModuleHandleW(None)?);
         let brush = CreateSolidBrush(COLORREF(0x0020_2020)); // fallback solid bg
+        let class_name: Vec<u16> = if desktop { "WBDesktopWidgets\0" } else { "WBPanelPoc\0" }
+            .encode_utf16()
+            .collect();
+        let title: Vec<u16> = if desktop { "WB Desktop Widgets\0" } else { "WB Panel\0" }
+            .encode_utf16()
+            .collect();
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(wnd_proc),
             hInstance: hinst,
-            lpszClassName: w!("WBPanelPoc"),
+            lpszClassName: windows::core::PCWSTR(class_name.as_ptr()),
             hbrBackground: brush,
             style: CS_HREDRAW | CS_VREDRAW,
             ..Default::default()
         };
         RegisterClassExW(&wc);
 
-        let ex = WS_EX_TOPMOST | WS_EX_TOOLWINDOW;
+        let ex = if desktop { WS_EX_TOOLWINDOW } else { WS_EX_TOPMOST | WS_EX_TOOLWINDOW };
         let style = WS_POPUP;
         // Full work-area overlay (Spotlight-style): the page paints a captured
         // wallpaper backdrop; the widget board docks on the right half and the
@@ -44,7 +50,62 @@ pub fn create_panel_window() -> windows::core::Result<HWND> {
         let h = rc.bottom - rc.top;
         let x = rc.left;
         let y = rc.top;
-        CreateWindowExW(ex, w!("WBPanelPoc"), w!("WB Panel PoC"), style, x, y, w, h, None, None, hinst, None)
+        CreateWindowExW(
+            ex,
+            windows::core::PCWSTR(class_name.as_ptr()),
+            windows::core::PCWSTR(title.as_ptr()),
+            style,
+            x,
+            y,
+            w,
+            h,
+            None,
+            None,
+            hinst,
+            None,
+        )
+    }
+}
+
+pub fn set_desktop_regions(hwnd: HWND, rects: &[(i32, i32, i32, i32)]) {
+    unsafe {
+        let region = if let Some(&(x, y, width, height)) = rects.first() {
+            let acc = CreateRoundRectRgn(x, y, x + width, y + height, 20, 20);
+            for &(x, y, width, height) in &rects[1..] {
+                let next = CreateRoundRectRgn(x, y, x + width, y + height, 20, 20);
+                if !next.is_invalid() {
+                    let _ = CombineRgn(acc, acc, next, RGN_OR);
+                    let _ = DeleteObject(next);
+                }
+            }
+            acc
+        } else {
+            CreateRoundRectRgn(0, 0, 1, 1, 1, 1)
+        };
+        if !region.is_invalid() {
+            if SetWindowRgn(hwnd, region, true) == 0 {
+                let _ = DeleteObject(region);
+            }
+        }
+    }
+}
+
+pub fn pin_to_desktop(hwnd: HWND) {
+    unsafe {
+        let progman = FindWindowW(w!("Progman"), None).unwrap_or_default();
+        if progman.0.is_null() {
+            return;
+        }
+        let insert_after = GetWindow(progman, GW_HWNDPREV).unwrap_or(HWND_TOP);
+        let _ = SetWindowPos(
+            hwnd,
+            insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
     }
 }
 

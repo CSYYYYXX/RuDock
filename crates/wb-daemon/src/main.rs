@@ -18,6 +18,12 @@ use wb_plugin_host::LoadedPlugin;
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
+use windows::core::w;
+#[cfg(windows)]
+use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+#[cfg(windows)]
+use windows::Win32::System::Threading::CreateMutexW;
 
 mod clipboard;
 mod everything;
@@ -1042,6 +1048,7 @@ fn default_settings() -> serde_json::Value {
         "takeover_win": false,
         "autostart": false,
         "mcp_write_policy": "client",
+        "desktop_widgets": [],
         "plugin_grants": {},
         "plugin_markets": [],
     })
@@ -1063,6 +1070,56 @@ fn read_settings() -> serde_json::Value {
         obj.entry(k.clone()).or_insert_with(|| v.clone());
     }
     value
+}
+
+fn desktop_widgets_from_settings(settings: &serde_json::Value) -> Vec<String> {
+    settings
+        .get("desktop_widgets")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str().map(String::from))
+        .collect()
+}
+
+fn normalize_desktop_widgets(value: &serde_json::Value) -> wb_core::Result<Vec<String>> {
+    let values = value.as_array().ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::InvalidParams,
+            "desktop_widgets must be a string array",
+        )
+    })?;
+    if values.len() > 32 {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            "desktop_widgets supports at most 32 entries",
+        ));
+    }
+    let mut widgets = Vec::with_capacity(values.len());
+    let mut seen = std::collections::HashSet::new();
+    for value in values {
+        let id = value.as_str().ok_or_else(|| {
+            CoreError::new(
+                ErrorCode::InvalidParams,
+                "desktop_widgets must contain strings",
+            )
+        })?;
+        if id.len() > 128
+            || (!id.starts_with("w-") && !id.starts_with("plugin-"))
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("invalid desktop widget id: {id}"),
+            ));
+        }
+        if seen.insert(id.to_string()) {
+            widgets.push(id.to_string());
+        }
+    }
+    Ok(widgets)
 }
 
 fn market_sources_from_settings(settings: &serde_json::Value) -> Vec<MarketSource> {
@@ -1189,13 +1246,22 @@ fn daemon_exe() -> Option<PathBuf> {
     std::env::current_exe().ok().filter(|p| p.is_file())
 }
 
+#[cfg(windows)]
 fn hook_running() -> bool {
-    std::process::Command::new("tasklist")
-        .args(["/FI", "IMAGENAME eq wb-hook-poc.exe", "/FO", "CSV", "/NH"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("wb-hook-poc.exe"))
-        .unwrap_or(false)
+    let Ok(handle) = (unsafe { CreateMutexW(None, false, w!("Local\\WBHookSingleInstance")) })
+    else {
+        return false;
+    };
+    let running = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+    running
+}
+
+#[cfg(not(windows))]
+fn hook_running() -> bool {
+    false
 }
 
 fn set_hook_running(enabled: bool) -> Result<(), String> {
@@ -1333,6 +1399,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = set_hook_running(true) {
             eprintln!("wb-daemon: Win 键接管启动失败: {e}");
         }
+    }
+    if !desktop_widgets_from_settings(&settings).is_empty() {
+        panelctl::sync_desktop(true);
     }
     ctx.storage.audit_event(
         "daemon",
@@ -1523,8 +1592,9 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         "daemon.stop" => {
             set_hook_running(false).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
             let panel = panelctl::close();
+            let desktop = panelctl::sync_desktop(false);
             tray::remove();
-            Ok(serde_json::json!({"status":"stopped","hook":"stopped","panel":panel["panel"]}))
+            Ok(serde_json::json!({"status":"stopped","hook":"stopped","panel":panel["panel"],"desktop":desktop["desktop"]}))
         }
 
         "schema" => Ok(wb_core::protocol::schema()),
@@ -1533,6 +1603,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             let mut settings = read_settings();
             if let Some(obj) = settings.as_object_mut() {
                 obj.insert("hook_running".into(), serde_json::json!(hook_running()));
+                obj.insert("desktop_running".into(), serde_json::json!(panelctl::desktop_running()));
             }
             Ok(settings)
         }
@@ -1572,9 +1643,15 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 }
                 obj.insert("mcp_write_policy".into(), serde_json::json!(value));
             }
+            if let Some(value) = params.get("desktop_widgets") {
+                let widgets = normalize_desktop_widgets(value)?;
+                obj.insert("desktop_widgets".into(), serde_json::json!(widgets));
+            }
             write_settings(&settings).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+            panelctl::sync_desktop(!desktop_widgets_from_settings(&settings).is_empty());
             if let Some(obj) = settings.as_object_mut() {
                 obj.insert("hook_running".into(), serde_json::json!(hook_running()));
+                obj.insert("desktop_running".into(), serde_json::json!(panelctl::desktop_running()));
             }
             Ok(settings)
         }
@@ -2568,6 +2645,27 @@ mod tests {
             .unwrap()
             .push(serde_json::json!({"unexpected": true}));
         assert_eq!(market_sources_from_settings(&settings).len(), 2);
+    }
+
+    #[test]
+    fn desktop_widget_ids_are_validated_and_deduplicated() {
+        let widgets = normalize_desktop_widgets(&serde_json::json!([
+            "w-clock",
+            "plugin-stopwatch",
+            "w-clock"
+        ]))
+        .unwrap();
+        assert_eq!(widgets, ["w-clock", "plugin-stopwatch"]);
+
+        for invalid in [
+            serde_json::json!("w-clock"),
+            serde_json::json!(["clock"]),
+            serde_json::json!(["w-clock/path"]),
+            serde_json::json!([1]),
+        ] {
+            assert!(normalize_desktop_widgets(&invalid).is_err());
+        }
+        assert!(normalize_desktop_widgets(&serde_json::json!(vec!["w-clock"; 33])).is_err());
     }
 
     #[test]
