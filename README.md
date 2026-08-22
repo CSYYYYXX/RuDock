@@ -27,9 +27,10 @@ RuDock 同时面向普通用户、自动化脚本和 AI Agent：人在面板里�
 | 统一搜索 | 搜索应用、文件和个人内容，查看来源与详情，并直接打开、定位或复制 |
 | AI 随手问 | 输入 `?` 开始流式问答，让 AI 查询信息或操作已授权的工具 |
 | 即时工具 | 输入 `=` 计算表达式，输入 `>` 执行命令 |
-| 个性看板 | 自由组合天气、日历、时钟、媒体、系统状态、待办、随手记等小组件，并选择常驻桌面的内容 |
+| 个性看板 | 自由组合天气、日历、时钟、媒体、系统状态、待办、随手记等小组件，独立调整宽高，并选择常驻桌面的内容 |
 | 插件扩展 | 安装命令、组件和 Skill，为面板、CLI 与 Agent 添加新能力 |
 | 快速呼出 | 应用索引随后台服务预先建立，打开面板后可以直接搜索 |
+| 多语言 | 跟随 Windows 语言，或手动切换简体中文、English、日本語、한국어 |
 
 ## 基本操作
 
@@ -51,7 +52,7 @@ Win 键接管可以随时在设置中关闭。关闭后仍可从托盘图标或 
 
 ![RuDock 桌面常驻组件](docs-assets/desktop-widgets.png)
 
-在设置的 **桌面常驻** 中勾选需要的组件即可。按 Win 键时，RuDock 默认进入应用页；切换到左侧一页可以查看完整组件页。CLI 也可以直接管理常驻组件：
+在设置的 **桌面常驻** 中勾选需要的组件即可。面板与桌面上的每张组件卡片都可以拖动右下角独立调整宽高，内容会随实际尺寸自动重排；双击调节手柄可恢复默认尺寸。按 Win 键时，RuDock 默认进入应用页；切换到左侧一页可以查看完整组件页。CLI 也可以直接管理常驻组件：
 
 ```powershell
 wb settings desktop w-clock w-weather w-cal w-ai
@@ -59,6 +60,16 @@ wb settings desktop
 ```
 
 第二条命令会关闭全部桌面常驻组件。
+
+界面语言可以在设置中即时切换，也可以用 CLI 配置：
+
+```powershell
+wb settings language auto
+wb settings language zh-CN
+wb settings language en
+wb settings language ja
+wb settings language ko
+```
 
 ## AI Spotlight
 

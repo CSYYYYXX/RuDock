@@ -16,6 +16,17 @@
     font-size: 12px; line-height: 1; cursor: pointer; }
   button:hover { background: rgba(76,194,255,.18); border-color: rgba(76,194,255,.28); }
   button:focus-visible { outline: 2px solid rgba(76,194,255,.65); outline-offset: 1px; }
+  @container (max-width: 170px) {
+    .stopwatch { padding-inline: 8px; gap: 7px; }
+    .time { font-size: 23px; }
+    button { width: 31px; height: 27px; }
+  }
+  @container (max-height: 90px) {
+    .stopwatch { flex-direction: row; padding: 3px 8px; gap: 8px; }
+    .time { font-size: 21px; }
+    .controls { gap: 4px; }
+    button { width: 28px; height: 25px; }
+  }
 </style>
 <script>
   (function () {
@@ -23,6 +34,20 @@
     var time = document.getElementById('time');
     var toggle = document.getElementById('toggle');
     var reset = document.getElementById('reset');
+    var running = false;
+    var TEXT = {
+      'zh-CN': { start:'开始', resume:'继续', pause:'暂停', reset:'重置' },
+      en: { start:'Start', resume:'Resume', pause:'Pause', reset:'Reset' },
+      ja: { start:'開始', resume:'再開', pause:'一時停止', reset:'リセット' },
+      ko: { start:'시작', resume:'계속', pause:'일시정지', reset:'초기화' }
+    };
+    function words() { return TEXT[document.documentElement.lang] || TEXT.en; }
+    function labels() {
+      var w = words();
+      var action = running ? w.pause : (elapsed ? w.resume : w.start);
+      toggle.title = action; toggle.setAttribute('aria-label', action);
+      reset.title = w.reset; reset.setAttribute('aria-label', w.reset);
+    }
     function format(ms) {
       var minutes = Math.floor(ms / 60000);
       var seconds = Math.floor(ms / 1000) % 60;
@@ -39,14 +64,13 @@
         startedAt = 0;
         cancelAnimationFrame(frame);
         toggle.textContent = '▶';
-        toggle.title = '继续';
-        toggle.setAttribute('aria-label', '继续');
+        running = false; labels();
       } else {
         startedAt = performance.now();
+        running = true;
         frame = requestAnimationFrame(draw);
         toggle.textContent = 'Ⅱ';
-        toggle.title = '暂停';
-        toggle.setAttribute('aria-label', '暂停');
+        labels();
       }
     });
     reset.addEventListener('click', function () {
@@ -54,9 +78,10 @@
       elapsed = 0;
       cancelAnimationFrame(frame);
       toggle.textContent = '▶';
-      toggle.title = '开始';
-      toggle.setAttribute('aria-label', '开始');
+      running = false; labels();
       time.textContent = '00:00.0';
     });
+    window.addEventListener('wbresize', labels);
+    labels();
   })();
 </script>

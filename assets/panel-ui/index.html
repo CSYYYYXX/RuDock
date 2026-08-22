@@ -160,14 +160,27 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   grid-template-columns: repeat(6, 1fr);
   grid-template-rows: minmax(150px, 1.25fr) minmax(100px, .9fr) minmax(120px, 1.25fr) minmax(100px, 1fr);
   grid-auto-rows: minmax(100px, auto); }
+.grid { height: auto; min-height: 100%; align-content: start; grid-template-rows: none;
+  grid-auto-rows: 72px; grid-auto-flow: dense; }
 .w.w-hidden { display: none; }
 .w { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke-soft); border-radius: var(--r-card);
   box-shadow: 0 10px 32px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.09);
-  min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+.grid > .w { grid-column: span var(--widget-cols, 1) !important; grid-row: span var(--widget-rows, 2) !important; }
+.resize-handle { position: absolute; right: 3px; bottom: 3px; z-index: 4; width: 18px; height: 18px;
+  display: grid; place-items: center; border: 0; border-radius: 5px; background: rgba(76,194,255,.12);
+  color: rgba(180,225,255,.78); opacity: 0; cursor: nwse-resize; font-size: 13px; line-height: 1;
+  transition: opacity .14s, background .14s; }
+.w:hover > .resize-handle, .w:focus-within > .resize-handle, .w.resizing > .resize-handle { opacity: 1; }
+.resize-handle:hover, .w.resizing > .resize-handle { background: rgba(76,194,255,.28); color: var(--fg); }
+.w.resizing { outline: 1px solid rgba(76,194,255,.65); outline-offset: 2px; z-index: 8; }
 .w.span2 { grid-column: span 2; }
 .w.span3 { grid-column: span 3; }
 .w.span4 { grid-column: span 4; }
+.w.span2 { --widget-cols: 2; }
+.w.span3 { --widget-cols: 3; }
+.w.span4 { --widget-cols: 4; }
 .w > .hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 15px 18px 8px;
   font-size: 12.5px; font-weight: 600; color: var(--fg-2); }
 .w > .hd .right { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--fg-3); }
@@ -175,6 +188,15 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .w > .hd .right.link:hover { color: var(--fg); }
 .w > .bd { flex: 1; min-height: 0; padding: 8px 18px 18px; overflow: hidden; }
 .hairline { flex: none; height: 1px; background: var(--stroke-soft); margin: 0 18px; }
+.w.widget-compact > .hd { min-height: 30px; padding: 8px 12px 5px; gap: 5px; font-size: 11px; }
+.w.widget-compact > .hairline { margin: 0 12px; }
+.w.widget-compact > .bd { padding: 5px 12px 10px; }
+.w.widget-tiny > .hd { min-height: 25px; padding: 5px 9px 3px; font-size: 10px; }
+.w.widget-tiny > .hairline { margin: 0 9px; }
+.w.widget-tiny > .bd { padding: 3px 9px 7px; }
+.w.widget-tiny .mini-row:nth-child(n+3), .w.widget-compact .mini-row:nth-child(n+4) { display: none; }
+.w.widget-narrow > .hd .right { display: none; }
+.w.widget-tiny .quick-add { display: none; }
 
 /* clock */
 #w-clock .bd { display: flex; flex-direction: column; justify-content: center; }
@@ -258,9 +280,7 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 @media (max-height: 760px) {
   .spot-wrap { height: 22%; }
   .pages { top: 22%; }
-  .grid { gap: 9px;
-    grid-template-rows: minmax(150px, 1.55fr) minmax(96px, .9fr) minmax(110px, 1.1fr) minmax(92px, .85fr);
-    grid-auto-rows: minmax(96px, auto); }
+  .grid { gap: 9px; grid-template-rows: none; grid-auto-rows: 64px; }
   .w > .bd { padding-top: 4px; padding-bottom: 6px; }
   .grid #w-pomo .t { font-size: 22px; }
   .grid #w-pomo .btns { gap: 3px; margin-top: 4px; }
@@ -274,7 +294,7 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   .spot-wrap { height: 20%; }
   .pages { top: 20%; }
   .board { overflow-y: auto; }
-  .grid { height: 520px; min-height: 520px; }
+  .grid { height: auto; min-height: 520px; }
 }
 @media (max-width: 420px) {
   .grid { height: auto; min-height: 100%; grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -614,6 +634,11 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   background: transparent; color: var(--fg-4); font-size: 11px; cursor: pointer; }
 #cfgView .policyseg button:hover { color: var(--fg-2); }
 #cfgView .policyseg button.on { color: var(--fg); background: rgba(255,255,255,.13); }
+#cfgView .language-row { display: flex; align-items: center; min-height: 38px; padding: 6px 4px; color: var(--fg-2); font-size: 13px; }
+#cfgView .language-row select { margin-left: auto; min-width: 118px; height: 28px; padding: 0 7px;
+  border: 1px solid var(--stroke-soft); border-radius: 6px; background: rgba(255,255,255,.07);
+  color: var(--fg-2); font: inherit; font-size: 11.5px; outline: none; }
+#cfgView .language-row select:focus { border-color: rgba(76,194,255,.5); }
 
 /* Spotlight 里的定制入口 */
 .spot-box .gear { flex: none; font-size: 15px; color: var(--fg-3); cursor: pointer; padding: 2px 4px;
@@ -637,7 +662,7 @@ body.desktop-mode #page-widgets { display: block; width: 100%; height: 100%; }
 body.desktop-mode .board { padding: 24px; overflow: visible; }
 body.desktop-mode .grid { width: min(760px, calc(100% - 48px)); height: auto; min-height: 0; margin-left: auto;
   grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: none;
-  grid-auto-rows: minmax(160px, auto); grid-auto-flow: dense; gap: 12px; }
+  grid-auto-rows: 72px; grid-auto-flow: dense; align-content: start; gap: 12px; }
 body.desktop-mode .w { animation: none !important; border-radius: 8px;
   border-color: rgba(255,255,255,.16);
   box-shadow: 0 4px 16px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.08); }
@@ -646,7 +671,7 @@ body.desktop-mode .w > .hairline { margin: 0 14px; }
 body.desktop-mode .w > .bd { padding: 8px 14px 14px; }
 body.desktop-mode .w.w-hidden { display: flex; }
 body.desktop-mode .w.desktop-hidden { display: none !important; }
-body.desktop-mode #w-ai { min-height: 200px; }
+body.desktop-mode .resize-handle { opacity: .65; }
 
 /* ---------- 呼出/消失动效（DeskBox：opacity+translation 交错） ---------- */
 @keyframes wbIn  { from { opacity: 0; transform: translateY(26px) scale(.97); } to { opacity: 1; transform: none; } }
@@ -858,19 +883,23 @@ body.desktop-mode #w-ai { min-height: 200px; }
   </div></div>
 
   <div id="cfgView"><div class="sheet">
-    <h3>WB 设置<span class="x" id="cfgClose">✕</span></h3>
-    <div class="cfgsection">通用</div>
-    <label class="sysrow">接管 Windows 键<span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
-    <label class="sysrow">开机自启<input type="checkbox" id="cfg-autostart"></label>
-    <div class="sysrow">MCP 写操作<div class="policyseg" id="cfg-mcp-policy" role="group" aria-label="MCP 写操作策略">
+    <h3><span id="cfg-title">WB 设置</span><span class="x" id="cfgClose">✕</span></h3>
+    <div class="cfgsection" id="cfg-general-title">通用</div>
+    <label class="language-row"><span id="cfg-language-label">语言</span><select id="cfg-language">
+      <option value="auto">自动</option><option value="zh-CN">简体中文</option><option value="en">English</option>
+      <option value="ja">日本語</option><option value="ko">한국어</option>
+    </select></label>
+    <label class="sysrow"><span id="cfg-win-label">接管 Windows 键</span><span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
+    <label class="sysrow"><span id="cfg-autostart-label">开机自启</span><input type="checkbox" id="cfg-autostart"></label>
+    <div class="sysrow"><span id="cfg-mcp-label">MCP 写操作</span><div class="policyseg" id="cfg-mcp-policy" role="group" aria-label="MCP 写操作策略">
       <button data-policy="client" title="沿用 MCP 客户端的调用确认">客户端</button>
       <button data-policy="ask" title="每次写操作使用 MCP elicitation 询问">询问</button>
       <button data-policy="read-only" title="阻止所有 MCP 写操作">只读</button>
     </div></div>
-    <div class="cfgsection">组件</div>
-    <div class="tip">勾选要显示在组件页的内容</div>
+    <div class="cfgsection" id="cfg-widgets-title">组件</div>
+    <div class="tip" id="cfg-widgets-tip">勾选要显示在组件页的内容；拖动卡片右下角可调整大小</div>
     <div id="cfgList"></div>
-    <div class="cfgsection">桌面常驻<span class="state" id="desktop-state"></span></div>
+    <div class="cfgsection"><span id="cfg-desktop-title">桌面常驻</span><span class="state" id="desktop-state"></span></div>
     <div id="cfgDesktopList"></div>
   </div></div>
 
@@ -895,11 +924,232 @@ const stage = $('#stage');
 let initialQuery = '';
 
 const hasBridge = !!(window.chrome && window.chrome.webview);
-const DESKTOP_MODE = new URLSearchParams(location.search).get('mode') === 'desktop';
+const URL_PARAMS = new URLSearchParams(location.search);
+const DESKTOP_MODE = URL_PARAMS.get('mode') === 'desktop';
+const LANG_OVERRIDE = I18N_LANG(URL_PARAMS.get('lang'));
 const DESKTOP_FIXTURE = DESKTOP_MODE && location.hash === '#test-desktop';
 if (DESKTOP_MODE) document.body.classList.add('desktop-mode');
 if (DESKTOP_FIXTURE) document.body.classList.add('desktop-fixture');
 function send(msg) { if (hasBridge) window.chrome.webview.postMessage(msg); }
+function I18N_LANG(value) { return ['auto','zh-CN','en','ja','ko'].includes(value) ? value : ''; }
+
+const I18N = {
+  'zh-CN': {
+    searchPlaceholder:'搜索应用、剪贴板、笔记…  = 计算 · ? AI · > 命令', customize:'定制组件',
+    time:'时间', weather:'天气', live:'实时', loading:'获取中…', calendar:'日历', worldClock:'世界时钟',
+    beijing:'北京', newYork:'纽约', london:'伦敦', nowPlaying:'正在播放', notPlaying:'未在播放', mediaHint:'打开音乐应用试试',
+    systemStatus:'系统状态', memory:'内存', battery:'电池', focusTimer:'专注计时', start:'开始', pause:'暂停', reset:'重置',
+    calculator:'计算器', clipboard:'剪贴板', todo:'待办', note:'随手记', quickLaunch:'快捷启动', recentFiles:'最近文件',
+    countdown:'倒数日', quote:'一言', ai:'AI', aiAsk:'问点什么…', send:'发送', apps:'应用', edit:'编辑', done:'完成',
+    mergeFolder:'合并为文件夹', clearSelection:'取消选择', plugins:'插件', installed:'已安装', market:'市场',
+    manageSources:'管理市场源', refresh:'刷新当前视图', noPlugins:'还没有已安装插件', openMarket:'打开市场',
+    notLoaded:'尚未加载', searchPlugins:'搜索插件', folder:'文件夹', settings:'WB 设置', general:'通用', language:'语言',
+    languageAuto:'自动', takeoverWin:'接管 Windows 键', autostart:'开机自启', mcpWrites:'MCP 写操作', client:'客户端', ask:'询问', readOnly:'只读',
+    widgets:'组件', widgetsTip:'勾选要显示在组件页的内容；拖动卡片右下角可调整大小', desktopPinned:'桌面常驻', marketSources:'市场源',
+    addSource:'添加市场源', running:'运行中', starting:'启动中', disabled:'未启用', stopped:'未运行', saved:'设置已保存', saveFailed:'设置保存失败',
+    resize:'调整组件大小', resizeSaved:'组件大小已保存', plugin:'插件', pluginSuffix:'（插件）', noPermission:'无需权限', boardWidget:'主看板组件',
+    humidityWind:'湿度 {humidity}% · 风速 {wind} km/h', unfinished:'{n} 未完成', noTodos:'暂无待办，下面加一条', noNotes:'还没有笔记',
+    noClips:'复制点内容就出现', noRecent:'暂无最近文件', addedNote:'已记入笔记', copied:'已复制', appCount:'{n} 个',
+    noResults:'没有匹配结果', local:'本机', openApp:'打开应用', openFile:'打开文件', revealFile:'在资源管理器中定位', copyPath:'复制路径',
+    copyContent:'复制内容', copyNote:'复制笔记', markDone:'标记完成', copyTodo:'复制待办', runCommand:'运行命令', copyResult:'复制结果',
+    command:'命令', app:'应用', file:'文件', localFile:'本地文件', windowsApp:'Windows 应用', completed:'已完成', incomplete:'未完成',
+    aiInputHint:'（在 ? 后输入问题）', aiSubmitHint:'回车发送 · Esc 退出', requestFailed:'请求失败', unknownError:'未知错误',
+    day:'天', daysAfter:'天后', daysBefore:'天前', setTargetDate:'点击设置目标日', dateNamePrompt:'这个日子叫什么？',
+    settingsApp:'设置', taskManager:'任务管理器', notepad:'记事本', terminal:'终端', screenshot:'截图',
+    todoPlaceholder:'加一条待办，回车保存', notePlaceholder:'记一笔，回车保存', desktopSaveFailed:'桌面组件保存失败', timerDone:'专注时间到',
+    dissolveFolder:'解散文件夹', hideApp:'不显示', hiddenApps:'已隐藏（点按恢复）：', folderNamePrompt:'文件夹名称', folderMerged:'已合并为文件夹',
+    startMenu:'开始菜单', systemApps:'系统应用', localIndex:'本地索引', recentUsed:'最近使用', selectedDetails:'所选结果详情',
+    fileType:'{ext} 文件', loadingCommands:'正在加载命令…', loadingCommandsHint:'首次使用拉取命令注册表', commandUnavailable:'命令服务不可用', daemonDisconnected:'WB 服务未连接',
+    noCommands:'没有匹配命令', noCommandsHint:'请换一个关键词', parameter:'参数：', needsParameter:'{title} 需要参数：{parameter}', updateTodoFailed:'无法更新待办',
+    serviceNoResponse:'服务未响应', operationFailed:'操作失败', connectFailed:'连接失败', refreshing:'刷新中…', pluginCount:'{n} 个插件', pendingCount:'{n} 个待批准',
+    pluginPermissionDesc:'此插件请求以下权限', pluginLoadedDesc:'插件能力已加载', approveVersion:'批准当前版本', revokePermission:'撤销权限', uninstall:'卸载',
+    uninstallConfirm:'卸载 {name}？', uninstalled:'已卸载 {name}', approveFailed:'插件授权失败', approved:'已批准 {name}', revokeFailed:'撤销插件权限失败', revoked:'已撤销 {name} 权限',
+    noMarketSources:'尚未配置市场源', addSourceShort:'添加源', marketUnavailable:'市场源暂不可用', manageSourceShort:'管理源', noMatchingPlugins:'没有匹配插件', emptyMarket:'市场中暂无插件',
+    installedVersion:'已装 {version}', notInstalled:'未安装', install:'安装', update:'更新', localNewer:'本机较新', invalidVersion:'版本异常', noDescription:'暂无简介', latestVersion:'最新 {version}', processing:'处理中',
+    installFailed:'安装失败', updateFailed:'更新失败', installedPlugin:'已安装 {name}', updatedPlugin:'已更新 {name}', awaitingApproval:'，等待批准', loadingMarket:'加载市场…', marketLoadFailed:'市场加载失败', invalidMarket:'市场数据无效',
+    marketSummary:'{sources} 个源 · {plugins} 个插件', updateCount:'{n} 个更新', sourceErrorCount:'{n} 个源异常', removeSource:'移除市场源', removeSourceConfirm:'移除市场源 {name}？', removeSourceFailed:'移除市场源失败', readSourcesFailed:'读取市场源失败', addSourceFailed:'添加市场源失败', sourceAdded:'已添加市场源', sourceExists:'市场源已存在',
+    quoteRefresh:'点击换一句', quoteSource:'网络',
+  },
+  en: {
+    searchPlaceholder:'Search apps, clipboard, notes…  = Calculate · ? AI · > Commands', customize:'Customize widgets',
+    time:'Time', weather:'Weather', live:'Live', loading:'Loading…', calendar:'Calendar', worldClock:'World clock',
+    beijing:'Beijing', newYork:'New York', london:'London', nowPlaying:'Now playing', notPlaying:'Nothing playing', mediaHint:'Open a music app to begin',
+    systemStatus:'System status', memory:'Memory', battery:'Battery', focusTimer:'Focus timer', start:'Start', pause:'Pause', reset:'Reset',
+    calculator:'Calculator', clipboard:'Clipboard', todo:'To-do', note:'Notes', quickLaunch:'Quick launch', recentFiles:'Recent files',
+    countdown:'Countdown', quote:'Quote', ai:'AI', aiAsk:'Ask anything…', send:'Send', apps:'Apps', edit:'Edit', done:'Done',
+    mergeFolder:'Merge into folder', clearSelection:'Clear selection', plugins:'Plugins', installed:'Installed', market:'Market',
+    manageSources:'Manage market sources', refresh:'Refresh current view', noPlugins:'No plugins installed', openMarket:'Open market',
+    notLoaded:'Not loaded', searchPlugins:'Search plugins', folder:'Folder', settings:'WB Settings', general:'General', language:'Language',
+    languageAuto:'Automatic', takeoverWin:'Use the Windows key', autostart:'Start with Windows', mcpWrites:'MCP writes', client:'Client', ask:'Ask', readOnly:'Read only',
+    widgets:'Widgets', widgetsTip:'Choose visible widgets; drag the lower-right handle to resize', desktopPinned:'Pinned to desktop', marketSources:'Market sources',
+    addSource:'Add market source', running:'Running', starting:'Starting', disabled:'Disabled', stopped:'Stopped', saved:'Settings saved', saveFailed:'Could not save settings',
+    resize:'Resize widget', resizeSaved:'Widget size saved', plugin:'Plugin', pluginSuffix:' (plugin)', noPermission:'No permissions', boardWidget:'Dashboard widget',
+    humidityWind:'Humidity {humidity}% · Wind {wind} km/h', unfinished:'{n} open', noTodos:'No to-dos yet', noNotes:'No notes yet',
+    noClips:'Copied items will appear here', noRecent:'No recent files', addedNote:'Added to notes', copied:'Copied', appCount:'{n}',
+    noResults:'No matching results', local:'Local', openApp:'Open app', openFile:'Open file', revealFile:'Show in File Explorer', copyPath:'Copy path',
+    copyContent:'Copy content', copyNote:'Copy note', markDone:'Mark complete', copyTodo:'Copy to-do', runCommand:'Run command', copyResult:'Copy result',
+    command:'Command', app:'App', file:'File', localFile:'Local file', windowsApp:'Windows app', completed:'Completed', incomplete:'Open',
+    aiInputHint:'(Type a question after ?)', aiSubmitHint:'Enter to send · Esc to close', requestFailed:'Request failed', unknownError:'Unknown error',
+    day:'days', daysAfter:'days left', daysBefore:'days ago', setTargetDate:'Click to choose a date', dateNamePrompt:'What is this date for?',
+    settingsApp:'Settings', taskManager:'Task Manager', notepad:'Notepad', terminal:'Terminal', screenshot:'Screenshot',
+    todoPlaceholder:'Add a to-do and press Enter', notePlaceholder:'Write a note and press Enter', desktopSaveFailed:'Could not save desktop widgets', timerDone:'Focus session complete',
+    dissolveFolder:'Dissolve folder', hideApp:'Hide', hiddenApps:'Hidden (click to restore):', folderNamePrompt:'Folder name', folderMerged:'Merged into a folder',
+    startMenu:'Start menu', systemApps:'System apps', localIndex:'Local index', recentUsed:'Recently used', selectedDetails:'Selected result details',
+    fileType:'{ext} file', loadingCommands:'Loading commands…', loadingCommandsHint:'Fetching the command registry', commandUnavailable:'Command service unavailable', daemonDisconnected:'WB service is not connected',
+    noCommands:'No matching commands', noCommandsHint:'Try another keyword', parameter:'Parameter:', needsParameter:'{title} needs: {parameter}', updateTodoFailed:'Could not update the to-do',
+    serviceNoResponse:'No response from service', operationFailed:'Operation failed', connectFailed:'Connection failed', refreshing:'Refreshing…', pluginCount:'{n} plugins', pendingCount:'{n} awaiting approval',
+    pluginPermissionDesc:'This plugin requests these permissions', pluginLoadedDesc:'Plugin capabilities loaded', approveVersion:'Approve this version', revokePermission:'Revoke permissions', uninstall:'Uninstall',
+    uninstallConfirm:'Uninstall {name}?', uninstalled:'Uninstalled {name}', approveFailed:'Could not approve plugin', approved:'Approved {name}', revokeFailed:'Could not revoke plugin permissions', revoked:'Revoked permissions for {name}',
+    noMarketSources:'No market sources configured', addSourceShort:'Add source', marketUnavailable:'Market sources are unavailable', manageSourceShort:'Manage sources', noMatchingPlugins:'No matching plugins', emptyMarket:'No plugins in this market',
+    installedVersion:'Installed {version}', notInstalled:'Not installed', install:'Install', update:'Update', localNewer:'Local version is newer', invalidVersion:'Invalid version', noDescription:'No description', latestVersion:'Latest {version}', processing:'Working…',
+    installFailed:'Installation failed', updateFailed:'Update failed', installedPlugin:'Installed {name}', updatedPlugin:'Updated {name}', awaitingApproval:', awaiting approval', loadingMarket:'Loading market…', marketLoadFailed:'Could not load market', invalidMarket:'Invalid market data',
+    marketSummary:'{sources} sources · {plugins} plugins', updateCount:'{n} updates', sourceErrorCount:'{n} source errors', removeSource:'Remove market source', removeSourceConfirm:'Remove market source {name}?', removeSourceFailed:'Could not remove market source', readSourcesFailed:'Could not read market sources', addSourceFailed:'Could not add market source', sourceAdded:'Market source added', sourceExists:'Market source already exists',
+    quoteRefresh:'Show another quote', quoteSource:'Community',
+  },
+  ja: {
+    searchPlaceholder:'アプリ、クリップボード、メモを検索…  = 計算 · ? AI · > コマンド', customize:'ウィジェットをカスタマイズ',
+    time:'時刻', weather:'天気', live:'リアルタイム', loading:'取得中…', calendar:'カレンダー', worldClock:'世界時計',
+    beijing:'北京', newYork:'ニューヨーク', london:'ロンドン', nowPlaying:'再生中', notPlaying:'再生していません', mediaHint:'音楽アプリを開いてください',
+    systemStatus:'システム状態', memory:'メモリ', battery:'バッテリー', focusTimer:'集中タイマー', start:'開始', pause:'一時停止', reset:'リセット',
+    calculator:'電卓', clipboard:'クリップボード', todo:'ToDo', note:'メモ', quickLaunch:'クイック起動', recentFiles:'最近のファイル',
+    countdown:'カウントダウン', quote:'一言', ai:'AI', aiAsk:'何でも質問…', send:'送信', apps:'アプリ', edit:'編集', done:'完了',
+    mergeFolder:'フォルダーにまとめる', clearSelection:'選択解除', plugins:'プラグイン', installed:'インストール済み', market:'マーケット',
+    manageSources:'マーケットソース管理', refresh:'現在の表示を更新', noPlugins:'プラグインはありません', openMarket:'マーケットを開く',
+    notLoaded:'未読み込み', searchPlugins:'プラグインを検索', folder:'フォルダー', settings:'WB 設定', general:'一般', language:'言語',
+    languageAuto:'自動', takeoverWin:'Windows キーを使用', autostart:'自動起動', mcpWrites:'MCP 書き込み', client:'クライアント', ask:'確認', readOnly:'読み取り専用',
+    widgets:'ウィジェット', widgetsTip:'表示項目を選択し、右下をドラッグしてサイズを変更', desktopPinned:'デスクトップ常駐', marketSources:'マーケットソース',
+    addSource:'ソースを追加', running:'実行中', starting:'起動中', disabled:'無効', stopped:'停止中', saved:'設定を保存しました', saveFailed:'設定を保存できません',
+    resize:'ウィジェットのサイズ変更', resizeSaved:'サイズを保存しました', plugin:'プラグイン', pluginSuffix:'（プラグイン）', noPermission:'権限不要', boardWidget:'ダッシュボード',
+    humidityWind:'湿度 {humidity}% · 風速 {wind} km/h', unfinished:'未完了 {n}', noTodos:'ToDo はありません', noNotes:'メモはありません',
+    noClips:'コピーした内容がここに表示されます', noRecent:'最近のファイルはありません', addedNote:'メモに追加しました', copied:'コピーしました', appCount:'{n} 個',
+    noResults:'一致する結果はありません', local:'ローカル', openApp:'アプリを開く', openFile:'ファイルを開く', revealFile:'エクスプローラーで表示', copyPath:'パスをコピー',
+    copyContent:'内容をコピー', copyNote:'メモをコピー', markDone:'完了にする', copyTodo:'ToDo をコピー', runCommand:'コマンド実行', copyResult:'結果をコピー',
+    command:'コマンド', app:'アプリ', file:'ファイル', localFile:'ローカルファイル', windowsApp:'Windows アプリ', completed:'完了', incomplete:'未完了',
+    aiInputHint:'（? の後に質問を入力）', aiSubmitHint:'Enter で送信 · Esc で閉じる', requestFailed:'リクエスト失敗', unknownError:'不明なエラー',
+    day:'日', daysAfter:'日後', daysBefore:'日前', setTargetDate:'クリックして日付を設定', dateNamePrompt:'この日の名前は？',
+    settingsApp:'設定', taskManager:'タスク マネージャー', notepad:'メモ帳', terminal:'ターミナル', screenshot:'スクリーンショット',
+    todoPlaceholder:'ToDoを入力して Enter', notePlaceholder:'メモを入力して Enter', desktopSaveFailed:'デスクトップウィジェットを保存できません', timerDone:'集中時間が終了しました',
+    dissolveFolder:'フォルダーを解除', hideApp:'非表示', hiddenApps:'非表示（クリックで復元）：', folderNamePrompt:'フォルダー名', folderMerged:'フォルダーにまとめました',
+    startMenu:'スタートメニュー', systemApps:'システムアプリ', localIndex:'ローカル索引', recentUsed:'最近使用', selectedDetails:'選択した結果の詳細',
+    fileType:'{ext} ファイル', loadingCommands:'コマンドを読み込み中…', loadingCommandsHint:'コマンド一覧を取得しています', commandUnavailable:'コマンドサービスを利用できません', daemonDisconnected:'WB サービスに接続されていません',
+    noCommands:'一致するコマンドはありません', noCommandsHint:'別のキーワードを試してください', parameter:'引数：', needsParameter:'{title} に引数が必要です：{parameter}', updateTodoFailed:'ToDoを更新できません',
+    serviceNoResponse:'サービスから応答がありません', operationFailed:'操作に失敗しました', connectFailed:'接続に失敗しました', refreshing:'更新中…', pluginCount:'{n} 個のプラグイン', pendingCount:'承認待ち {n} 件',
+    pluginPermissionDesc:'このプラグインは次の権限を要求します', pluginLoadedDesc:'プラグイン機能を読み込みました', approveVersion:'このバージョンを承認', revokePermission:'権限を取り消す', uninstall:'アンインストール',
+    uninstallConfirm:'{name} をアンインストールしますか？', uninstalled:'{name} をアンインストールしました', approveFailed:'プラグインを承認できません', approved:'{name} を承認しました', revokeFailed:'権限を取り消せません', revoked:'{name} の権限を取り消しました',
+    noMarketSources:'マーケットソースが未設定です', addSourceShort:'ソースを追加', marketUnavailable:'マーケットソースを利用できません', manageSourceShort:'ソース管理', noMatchingPlugins:'一致するプラグインはありません', emptyMarket:'マーケットにプラグインがありません',
+    installedVersion:'インストール済み {version}', notInstalled:'未インストール', install:'インストール', update:'更新', localNewer:'ローカル版が新しい', invalidVersion:'バージョン異常', noDescription:'説明はありません', latestVersion:'最新 {version}', processing:'処理中…',
+    installFailed:'インストール失敗', updateFailed:'更新失敗', installedPlugin:'{name} をインストールしました', updatedPlugin:'{name} を更新しました', awaitingApproval:'、承認待ち', loadingMarket:'マーケットを読み込み中…', marketLoadFailed:'マーケットを読み込めません', invalidMarket:'マーケットデータが無効です',
+    marketSummary:'{sources} ソース · {plugins} プラグイン', updateCount:'更新 {n} 件', sourceErrorCount:'ソースエラー {n} 件', removeSource:'マーケットソースを削除', removeSourceConfirm:'マーケットソース {name} を削除しますか？', removeSourceFailed:'ソースを削除できません', readSourcesFailed:'ソースを読み込めません', addSourceFailed:'ソースを追加できません', sourceAdded:'マーケットソースを追加しました', sourceExists:'マーケットソースは既にあります',
+    quoteRefresh:'別の一言を表示', quoteSource:'コミュニティ',
+  },
+  ko: {
+    searchPlaceholder:'앱, 클립보드, 메모 검색…  = 계산 · ? AI · > 명령', customize:'위젯 사용자 지정',
+    time:'시간', weather:'날씨', live:'실시간', loading:'불러오는 중…', calendar:'달력', worldClock:'세계 시계',
+    beijing:'베이징', newYork:'뉴욕', london:'런던', nowPlaying:'재생 중', notPlaying:'재생 중인 항목 없음', mediaHint:'음악 앱을 열어 보세요',
+    systemStatus:'시스템 상태', memory:'메모리', battery:'배터리', focusTimer:'집중 타이머', start:'시작', pause:'일시정지', reset:'초기화',
+    calculator:'계산기', clipboard:'클립보드', todo:'할 일', note:'메모', quickLaunch:'빠른 실행', recentFiles:'최근 파일',
+    countdown:'카운트다운', quote:'한마디', ai:'AI', aiAsk:'무엇이든 물어보세요…', send:'보내기', apps:'앱', edit:'편집', done:'완료',
+    mergeFolder:'폴더로 묶기', clearSelection:'선택 해제', plugins:'플러그인', installed:'설치됨', market:'마켓',
+    manageSources:'마켓 소스 관리', refresh:'현재 보기 새로고침', noPlugins:'설치된 플러그인이 없습니다', openMarket:'마켓 열기',
+    notLoaded:'불러오지 않음', searchPlugins:'플러그인 검색', folder:'폴더', settings:'WB 설정', general:'일반', language:'언어',
+    languageAuto:'자동', takeoverWin:'Windows 키 사용', autostart:'자동 시작', mcpWrites:'MCP 쓰기', client:'클라이언트', ask:'확인', readOnly:'읽기 전용',
+    widgets:'위젯', widgetsTip:'표시할 위젯을 고르고 오른쪽 아래를 끌어 크기를 조절하세요', desktopPinned:'데스크톱 고정', marketSources:'마켓 소스',
+    addSource:'소스 추가', running:'실행 중', starting:'시작 중', disabled:'사용 안 함', stopped:'중지됨', saved:'설정을 저장했습니다', saveFailed:'설정을 저장하지 못했습니다',
+    resize:'위젯 크기 조절', resizeSaved:'위젯 크기를 저장했습니다', plugin:'플러그인', pluginSuffix:'(플러그인)', noPermission:'권한 필요 없음', boardWidget:'대시보드 위젯',
+    humidityWind:'습도 {humidity}% · 풍속 {wind} km/h', unfinished:'미완료 {n}', noTodos:'할 일이 없습니다', noNotes:'메모가 없습니다',
+    noClips:'복사한 내용이 여기에 표시됩니다', noRecent:'최근 파일이 없습니다', addedNote:'메모에 추가했습니다', copied:'복사했습니다', appCount:'{n}개',
+    noResults:'일치하는 결과가 없습니다', local:'로컬', openApp:'앱 열기', openFile:'파일 열기', revealFile:'파일 탐색기에서 보기', copyPath:'경로 복사',
+    copyContent:'내용 복사', copyNote:'메모 복사', markDone:'완료 표시', copyTodo:'할 일 복사', runCommand:'명령 실행', copyResult:'결과 복사',
+    command:'명령', app:'앱', file:'파일', localFile:'로컬 파일', windowsApp:'Windows 앱', completed:'완료', incomplete:'미완료',
+    aiInputHint:'(? 뒤에 질문 입력)', aiSubmitHint:'Enter 전송 · Esc 닫기', requestFailed:'요청 실패', unknownError:'알 수 없는 오류',
+    day:'일', daysAfter:'일 후', daysBefore:'일 전', setTargetDate:'클릭하여 날짜 설정', dateNamePrompt:'이 날짜의 이름은?',
+    settingsApp:'설정', taskManager:'작업 관리자', notepad:'메모장', terminal:'터미널', screenshot:'스크린샷',
+    todoPlaceholder:'할 일을 입력하고 Enter', notePlaceholder:'메모를 입력하고 Enter', desktopSaveFailed:'데스크톱 위젯을 저장하지 못했습니다', timerDone:'집중 시간이 끝났습니다',
+    dissolveFolder:'폴더 해제', hideApp:'숨기기', hiddenApps:'숨김 (클릭하여 복원):', folderNamePrompt:'폴더 이름', folderMerged:'폴더로 묶었습니다',
+    startMenu:'시작 메뉴', systemApps:'시스템 앱', localIndex:'로컬 인덱스', recentUsed:'최근 사용', selectedDetails:'선택한 결과 세부 정보',
+    fileType:'{ext} 파일', loadingCommands:'명령 불러오는 중…', loadingCommandsHint:'명령 목록을 가져오는 중입니다', commandUnavailable:'명령 서비스를 사용할 수 없음', daemonDisconnected:'WB 서비스가 연결되지 않았습니다',
+    noCommands:'일치하는 명령이 없습니다', noCommandsHint:'다른 키워드를 사용해 보세요', parameter:'매개변수:', needsParameter:'{title}에 매개변수 필요: {parameter}', updateTodoFailed:'할 일을 업데이트하지 못했습니다',
+    serviceNoResponse:'서비스 응답 없음', operationFailed:'작업 실패', connectFailed:'연결 실패', refreshing:'새로고침 중…', pluginCount:'플러그인 {n}개', pendingCount:'승인 대기 {n}개',
+    pluginPermissionDesc:'이 플러그인은 다음 권한을 요청합니다', pluginLoadedDesc:'플러그인 기능을 불러왔습니다', approveVersion:'현재 버전 승인', revokePermission:'권한 취소', uninstall:'제거',
+    uninstallConfirm:'{name}을(를) 제거할까요?', uninstalled:'{name} 제거 완료', approveFailed:'플러그인을 승인하지 못했습니다', approved:'{name} 승인 완료', revokeFailed:'플러그인 권한을 취소하지 못했습니다', revoked:'{name} 권한 취소 완료',
+    noMarketSources:'마켓 소스가 설정되지 않았습니다', addSourceShort:'소스 추가', marketUnavailable:'마켓 소스를 사용할 수 없습니다', manageSourceShort:'소스 관리', noMatchingPlugins:'일치하는 플러그인이 없습니다', emptyMarket:'마켓에 플러그인이 없습니다',
+    installedVersion:'설치됨 {version}', notInstalled:'설치되지 않음', install:'설치', update:'업데이트', localNewer:'로컬 버전이 더 최신', invalidVersion:'버전 오류', noDescription:'설명 없음', latestVersion:'최신 {version}', processing:'처리 중…',
+    installFailed:'설치 실패', updateFailed:'업데이트 실패', installedPlugin:'{name} 설치 완료', updatedPlugin:'{name} 업데이트 완료', awaitingApproval:', 승인 대기', loadingMarket:'마켓 불러오는 중…', marketLoadFailed:'마켓을 불러오지 못했습니다', invalidMarket:'마켓 데이터가 잘못되었습니다',
+    marketSummary:'소스 {sources}개 · 플러그인 {plugins}개', updateCount:'업데이트 {n}개', sourceErrorCount:'소스 오류 {n}개', removeSource:'마켓 소스 제거', removeSourceConfirm:'마켓 소스 {name}을(를) 제거할까요?', removeSourceFailed:'소스를 제거하지 못했습니다', readSourcesFailed:'소스를 읽지 못했습니다', addSourceFailed:'소스를 추가하지 못했습니다', sourceAdded:'마켓 소스를 추가했습니다', sourceExists:'마켓 소스가 이미 있습니다',
+    quoteRefresh:'다른 문구 보기', quoteSource:'커뮤니티',
+  },
+};
+let languageSetting = 'auto', locale = 'zh-CN';
+function resolveLocale(value) {
+  if (value !== 'auto' && I18N[value]) return value;
+  const system = String(navigator.language || 'zh-CN').toLowerCase();
+  if (system.startsWith('ja')) return 'ja';
+  if (system.startsWith('ko')) return 'ko';
+  if (system.startsWith('en')) return 'en';
+  return 'zh-CN';
+}
+function t(key, vars) {
+  let text = (I18N[locale] && I18N[locale][key]) || I18N.en[key] || I18N['zh-CN'][key] || key;
+  Object.entries(vars || {}).forEach(([name, value]) => { text = text.replaceAll('{' + name + '}', String(value)); });
+  return text;
+}
+function setLead(selector, icon, key) {
+  const el = $(selector); if (!el) return;
+  const node = Array.from(el.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+  if (node) node.nodeValue = icon + ' ' + t(key);
+}
+function applyLanguage(value) {
+  languageSetting = I18N[value] || value === 'auto' ? value : 'auto';
+  locale = resolveLocale(languageSetting);
+  document.documentElement.lang = locale;
+  q.placeholder = t('searchPlaceholder');
+  $('#cfg-open').title = t('customize');
+  [
+    ['#w-clock .hd','◷','time'], ['#w-weather .hd','☀','weather'], ['#w-cal .hd','▦','calendar'],
+    ['#w-world .hd','◎','worldClock'], ['#w-media .hd','♫','nowPlaying'], ['#w-sys .hd','◫','systemStatus'],
+    ['#w-pomo .hd','◉','focusTimer'], ['#w-calc .hd','=','calculator'], ['#w-clip .hd','⧉','clipboard'],
+    ['#w-todo .hd','✓','todo'], ['#w-note .hd','✎','note'], ['#w-quick .hd','⚡','quickLaunch'],
+    ['#w-recent .hd','🕘','recentFiles'], ['#w-cdown .hd','📅','countdown'], ['#w-htk .hd','❝','quote'], ['#w-ai .hd','✦','ai'],
+  ].forEach(args => setLead(...args));
+  $('#w-weather .right').textContent = t('live'); $('#w-clip .right').textContent = t('live');
+  $$('#w-world .wcrow span').forEach((el, i) => { el.textContent = t(['beijing','newYork','london'][i]); });
+  $('#m-mem .lab span').textContent = t('memory'); $('#m-bat .lab span').textContent = t('battery');
+  $('#w-pomo [data-p="start"]').textContent = pomoRunning ? t('pause') : t('start');
+  $('#w-pomo [data-p="reset"]').textContent = t('reset');
+  $('#w-todo .quick-add input').placeholder = t('todoPlaceholder');
+  $('#w-note .quick-add input').placeholder = t('notePlaceholder');
+  $('#w-ai input').placeholder = t('aiAsk'); $('#w-ai input').setAttribute('aria-label', t('aiAsk'));
+  $('#w-ai button').title = t('send'); $('#w-ai button').setAttribute('aria-label', t('send'));
+  setLead('#page-apps .dock-head','⊞','apps'); $('#apps-edit').textContent = editMode ? t('done') : t('edit');
+  $('#mkfolder').textContent = t('mergeFolder'); $('#selnone').textContent = t('clearSelection');
+  setLead('#page-plugins .plugin-title','🧩','plugins'); $('#plugin-tab-installed').textContent = t('installed'); $('#plugin-tab-market').textContent = t('market');
+  $('#market-sources').title = t('manageSources'); $('#plugin-refresh').title = t('refresh');
+  $('#plugin-installed .ph-empty').firstChild.nodeValue = t('noPlugins') + ' '; $('#plugin-empty-market').textContent = t('openMarket');
+  $('#market-summary').textContent = marketLoaded ? $('#market-summary').textContent : t('notLoaded'); $('#market-search').placeholder = t('searchPlugins');
+  $('#folderName').textContent = t('folder'); $('#cfg-title').textContent = t('settings'); $('#cfg-general-title').textContent = t('general');
+  $('#cfg-language-label').textContent = t('language'); $('#cfg-language option[value="auto"]').textContent = t('languageAuto');
+  $('#cfg-win-label').textContent = t('takeoverWin'); $('#cfg-autostart-label').textContent = t('autostart'); $('#cfg-mcp-label').textContent = t('mcpWrites');
+  $('#cfg-mcp-policy [data-policy="client"]').textContent = t('client'); $('#cfg-mcp-policy [data-policy="ask"]').textContent = t('ask');
+  $('#cfg-mcp-policy [data-policy="read-only"]').textContent = t('readOnly'); $('#cfg-widgets-title').textContent = t('widgets');
+  $('#cfg-widgets-tip').textContent = t('widgetsTip'); $('#cfg-desktop-title').textContent = t('desktopPinned');
+  const sourceTitle = $('#marketSourceView h3').firstChild; if (sourceTitle) sourceTitle.nodeValue = t('marketSources');
+  $('#marketSourceAdd').title = t('addSource'); $('#marketSourceAdd').setAttribute('aria-label', t('addSource'));
+  $('#marketSourceInput').setAttribute('aria-label', t('marketSources'));
+  $('#htk-bd').title = t('quoteRefresh');
+  const quickKeys = ['settingsApp','taskManager','calculator','notepad','terminal','screenshot'];
+  $$('#w-quick .qbtn').forEach((el, i) => { const label=t(quickKeys[i]); el.title=label; el.setAttribute('aria-label',label); el.querySelector('.qlabel').textContent=label; });
+  $$('.resize-handle').forEach(el => { el.title=t('resize'); el.setAttribute('aria-label',t('resize')); });
+  $$('#board .w[id^="plugin-"] > .hd .right').forEach(el => { el.textContent=t('plugin'); });
+  $$('.cfgrow[data-widget]').forEach(row => {
+    const item = WIDGETS.find(([id]) => id === row.dataset.widget);
+    const label = row.querySelector('.cfg-name'); if (item && label) label.textContent = widgetLabel(item[1], item[2]);
+  });
+  tickClock(); renderCalendar(); renderWeather(lastWeatherState); renderMedia(lastMediaState);
+  loadTodos(); loadNotes(); loadClips(); loadRecent(); renderCountdown();
+  if (dockRendered) renderDock();
+  if (marketLoaded) renderMarket();
+  if (pluginListSignature) loadPluginWidgets(true);
+}
 window.addEventListener('error', ev => send({ kind: 'selftest', detail: 'js error ' + ev.message + ' @' + ev.lineno + ':' + ev.colno, ok: false }));
 window.addEventListener('unhandledrejection', ev => send({ kind: 'selftest', detail: 'promise error ' + ev.reason, ok: false }));
 
@@ -931,8 +1181,9 @@ function tickClock() {
   const d = new Date();
   const p = n => String(n).padStart(2, '0');
   $('#w-clock .time').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
-  const week = '日一二三四五六'[d.getDay()];
-  $('#w-clock .date').textContent = `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} · 周${week}`;
+  $('#w-clock .date').textContent = new Intl.DateTimeFormat(locale, {
+    year:'numeric', month:'2-digit', day:'2-digit', weekday:'short'
+  }).format(d);
   document.querySelectorAll('#w-world .wcrow b').forEach((el, i) => {
     el.textContent = d.toLocaleTimeString('zh-CN', { timeZone: WC[i][1], hour: '2-digit', minute: '2-digit', hour12: false });
   });
@@ -940,21 +1191,25 @@ function tickClock() {
 setInterval(tickClock, 1000); tickClock();
 
 /* calendar */
-(function () {
+function renderCalendar() {
   const d = new Date(), y = d.getFullYear(), m = d.getMonth();
-  $('#w-cal .cal-title').textContent = `${y} 年 ${m+1} 月`;
+  $('#w-cal .cal-title').textContent = new Intl.DateTimeFormat(locale, { year:'numeric', month:'long' }).format(d);
   const first = new Date(y, m, 1).getDay();
   const days = new Date(y, m + 1, 0).getDate();
-  let html = ['日','一','二','三','四','五','六'].map(w => `<div class="hd2">${w}</div>`).join('');
+  const baseSunday = new Date(2024, 0, 7);
+  let html = Array.from({length:7}, (_, i) => new Intl.DateTimeFormat(locale, {weekday:'narrow'})
+    .format(new Date(baseSunday.getTime() + i * 86400000))).map(w => `<div class="hd2">${w}</div>`).join('');
   for (let i = 0; i < first; i++) html += '<div class="d blank"></div>';
   for (let i = 1; i <= days; i++) html += `<div class="d${i === d.getDate() ? ' cur' : ''}">${i}</div>`;
   $('#w-cal .cal').innerHTML = html;
-})();
+}
+renderCalendar();
 
 function fitWeatherCalendar() {
   const clock = $('#w-clock'), weather = $('#w-weather'), calendar = $('#w-cal'), quick = $('#w-quick');
   const wh = weather.clientHeight, ww = weather.clientWidth, ch = calendar.clientHeight, cw = calendar.clientWidth;
-  clock.classList.toggle('widget-compact', clock.clientWidth > 0 && clock.clientWidth < 180);
+  clock.classList.toggle('widget-compact', clock.clientWidth > 0 && (clock.clientWidth < 180 || clock.clientHeight < 150));
+  clock.classList.toggle('widget-tiny', clock.clientHeight > 0 && clock.clientHeight < 98);
   clock.classList.toggle('widget-narrow', clock.clientWidth > 0 && clock.clientWidth < 125);
   weather.classList.toggle('widget-compact', wh > 0 && (wh < 190 || ww < 400));
   weather.classList.toggle('widget-tiny', wh > 0 && (wh < 112 || ww < 120));
@@ -963,31 +1218,55 @@ function fitWeatherCalendar() {
   quick.classList.toggle('widget-compact', quick.clientHeight > 0 && (quick.clientHeight < 145 || quick.clientWidth < 125));
   quick.classList.toggle('widget-narrow', quick.clientWidth > 0 && quick.clientWidth < 125);
 }
+function fitWidget(card) {
+  if (!card || card.classList.contains('desktop-hidden') || card.classList.contains('w-hidden')) return;
+  const width = card.clientWidth, height = card.clientHeight;
+  if (card.matches('#w-weather,#w-cal,#w-clock,#w-quick')) fitWeatherCalendar();
+  else {
+    card.classList.toggle('widget-compact', height > 0 && (height < 150 || width < 190));
+    card.classList.toggle('widget-tiny', height > 0 && (height < 98 || width < 118));
+    card.classList.toggle('widget-narrow', width > 0 && width < 145);
+  }
+  const frame = card.querySelector('iframe.pluginw');
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage({
+    wb:'resize', width:frame.clientWidth || width, height:frame.clientHeight || height, locale,
+  }, '*');
+}
 if ('ResizeObserver' in window) {
-  const dateWeatherObserver = new ResizeObserver(fitWeatherCalendar);
-  dateWeatherObserver.observe($('#w-clock'));
-  dateWeatherObserver.observe($('#w-weather'));
-  dateWeatherObserver.observe($('#w-cal'));
-  dateWeatherObserver.observe($('#w-quick'));
+  const widgetObserver = new ResizeObserver(entries => entries.forEach(entry => fitWidget(entry.target)));
+  window.observeWidget = card => { widgetObserver.observe(card); fitWidget(card); };
+  document.querySelectorAll('#board .w').forEach(window.observeWidget);
 } else {
-  window.addEventListener('resize', fitWeatherCalendar);
+  window.observeWidget = fitWidget;
+  window.addEventListener('resize', () => document.querySelectorAll('#board .w').forEach(fitWidget));
 }
 requestAnimationFrame(fitWeatherCalendar);
 
 /* pomodoro */
-(function () {
-  let left = 25 * 60, timer = 0;
-  const t = $('#w-pomo .t');
-  const draw = () => { t.textContent = String(Math.floor(left/60)).padStart(2,'0') + ':' + String(left%60).padStart(2,'0'); };
-  $('#w-pomo').addEventListener('click', ev => {
-    const a = ev.target.dataset.p;
-    if (a === 'start') {
-      if (timer) { clearInterval(timer); timer = 0; ev.target.textContent = '开始'; }
-      else { timer = setInterval(() => { if (--left <= 0) { clearInterval(timer); timer = 0; left = 25*60; showToast('番茄钟到点'); $('#w-pomo [data-p=start]').textContent = '开始'; } draw(); }, 1000); ev.target.textContent = '暂停'; }
-    } else if (a === 'reset') { clearInterval(timer); timer = 0; left = 25 * 60; $('#w-pomo [data-p=start]').textContent = '开始'; draw(); }
-  });
-  draw();
-})();
+let pomoLeft = 25 * 60, pomoTimer = 0, pomoRunning = false;
+function renderPomodoro() {
+  $('#w-pomo .t').textContent = String(Math.floor(pomoLeft/60)).padStart(2,'0') + ':' + String(pomoLeft%60).padStart(2,'0');
+  $('#w-pomo [data-p="start"]').textContent = pomoRunning ? t('pause') : t('start');
+}
+$('#w-pomo').addEventListener('click', ev => {
+  const action = ev.target.dataset.p;
+  if (action === 'start') {
+    if (pomoTimer) { clearInterval(pomoTimer); pomoTimer = 0; pomoRunning = false; }
+    else {
+      pomoRunning = true;
+      pomoTimer = setInterval(() => {
+        if (--pomoLeft <= 0) {
+          clearInterval(pomoTimer); pomoTimer = 0; pomoRunning = false; pomoLeft = 25 * 60; showToast(t('timerDone'));
+        }
+        renderPomodoro();
+      }, 1000);
+    }
+    renderPomodoro();
+  } else if (action === 'reset') {
+    clearInterval(pomoTimer); pomoTimer = 0; pomoRunning = false; pomoLeft = 25 * 60; renderPomodoro();
+  }
+});
+renderPomodoro();
 
 /* calc */
 $('#w-calc input').addEventListener('input', ev => {
@@ -1018,24 +1297,41 @@ function pollSys() { send({ kind: 'sysinfo', id: 's' + (++sysSeq) }); }
 setInterval(pollSys, 2000); pollSys();
 
 /* weather（open-meteo 实时） */
+let lastWeatherState = { icon:'·', temp:'--', city:'', text:'', code:-1, humidity:'--', wind:'--', hourly:[] };
+const WEATHER_TEXT = {
+  'zh-CN':['晴','大部晴','多云','阴','雾','毛毛雨','雨','雪','雷暴','未知'],
+  en:['Clear','Mostly clear','Partly cloudy','Overcast','Fog','Drizzle','Rain','Snow','Thunderstorm','Unknown'],
+  ja:['晴れ','ほぼ晴れ','くもり','曇天','霧','霧雨','雨','雪','雷雨','不明'],
+  ko:['맑음','대체로 맑음','구름 조금','흐림','안개','이슬비','비','눈','뇌우','알 수 없음'],
+};
+function weatherText(code, fallback) {
+  const index = code === 0 ? 0 : code === 1 ? 1 : code === 2 ? 2 : code === 3 ? 3
+    : [45,48].includes(code) ? 4 : [51,53,55,56,57].includes(code) ? 5
+    : [61,63,65,66,67,80,81,82].includes(code) ? 6 : [71,73,75,77,85,86].includes(code) ? 7
+    : [95,96,99].includes(code) ? 8 : 9;
+  return (WEATHER_TEXT[locale] || WEATHER_TEXT.en)[index] || fallback || '';
+}
 function renderWeather(d) {
+  d = d || lastWeatherState; lastWeatherState = d;
   const w = $('#w-weather');
   w.querySelector('.wicon').textContent = d.icon;
   w.querySelector('.big').textContent = d.temp + '°';
-  w.querySelector('.cond').textContent = d.city + ' · ' + d.text;
-  w.querySelector('.meta').textContent = `湿度 ${d.humidity}% · 风速 ${d.wind} km/h`;
+  w.querySelector('.cond').textContent = [d.city, weatherText(Number(d.code), d.text)].filter(Boolean).join(' · ');
+  w.querySelector('.meta').textContent = t('humidityWind', { humidity:d.humidity, wind:d.wind });
   w.querySelector('.hourly').innerHTML = (d.hourly || []).slice(0, 6).map(h =>
-    `<div class="h"><div>${String(h.time).slice(0, 2)}时</div><div class="i">${h.icon}</div><div class="t2">${h.temp}°</div></div>`).join('');
+    `<div class="h"><div>${String(h.time).slice(0, 2)}${locale === 'en' ? ':00' : locale === 'ko' ? '시' : locale === 'ja' ? '時' : '时'}</div><div class="i">${h.icon}</div><div class="t2">${h.temp}°</div></div>`).join('');
 }
 function loadWeather() { send({ kind: 'weather' }); }
 setInterval(loadWeather, 10 * 60 * 1000); loadWeather();
 
 /* media（GSMTC 系统媒体） */
+let lastMediaState = { active:false };
 function renderMedia(m) {
+  m = m || lastMediaState; lastMediaState = m;
   const w = $('#w-media');
   if (!m.active) {
-    w.querySelector('.tt').textContent = '未在播放';
-    w.querySelector('.ar').textContent = '打开网易云 / QQ 音乐试试';
+    w.querySelector('.tt').textContent = t('notPlaying');
+    w.querySelector('.ar').textContent = t('mediaHint');
     w.querySelector('.art').innerHTML = '♪';
     return;
   }
@@ -1057,9 +1353,9 @@ async function loadTodos() {
   const list = $('#w-todo .list');
   const items = (r && r.result) || [];
   const open = items.filter(t => !t.done);
-  $('#todo-count').textContent = open.length ? open.length + ' 未完成' : '';
+  $('#todo-count').textContent = open.length ? t('unfinished', { n:open.length }) : '';
   list.innerHTML = '';
-  if (!items.length) { list.innerHTML = '<div class="empty-dim">暂无待办，下面加一条</div>'; return; }
+  if (!items.length) { list.innerHTML = '<div class="empty-dim">' + esc(t('noTodos')) + '</div>'; return; }
   items.slice(0, 4).forEach(t => {
     const row = document.createElement('div');
     row.className = 'mini-row' + (t.done ? ' done' : '');
@@ -1081,7 +1377,7 @@ async function loadNotes() {
   const r = await rpc('note.list', { limit: 3 });
   const list = $('#w-note .list');
   const items = (r && r.result) || [];
-  list.innerHTML = items.length ? '' : '<div class="empty-dim">还没有笔记</div>';
+  list.innerHTML = items.length ? '' : '<div class="empty-dim">' + esc(t('noNotes')) + '</div>';
   items.forEach(n => {
     const row = document.createElement('div');
     row.className = 'mini-row';
@@ -1092,7 +1388,7 @@ async function loadNotes() {
 $('#w-note input').addEventListener('keydown', async ev => {
   if (ev.key === 'Enter' && ev.target.value.trim()) {
     await rpc('note.add', { content: ev.target.value.trim() });
-    ev.target.value = ''; loadNotes(); showToast('已记入笔记');
+    ev.target.value = ''; loadNotes(); showToast(t('addedNote'));
   }
   ev.stopPropagation();
 });
@@ -1102,12 +1398,12 @@ async function loadClips() {
   const r = await rpc('clip.get', { last: 3 });
   const list = $('#w-clip .list');
   const items = (r && r.result) || [];
-  list.innerHTML = items.length ? '' : '<div class="empty-dim">复制点内容就出现</div>';
+  list.innerHTML = items.length ? '' : '<div class="empty-dim">' + esc(t('noClips')) + '</div>';
   items.forEach(c => {
     const row = document.createElement('div');
     row.className = 'mini-row';
     row.innerHTML = `<span class="txt">${esc(c.content)}</span>`;
-    row.addEventListener('click', () => { send({ kind: 'action', action: 'copy', content: c.content }); showToast('已复制'); });
+    row.addEventListener('click', () => { send({ kind: 'action', action: 'copy', content: c.content }); showToast(t('copied')); });
     list.appendChild(row);
   });
 }
@@ -1118,7 +1414,7 @@ async function loadRecent() {
   const r = await rpc('recent.list', { limit: 6 });
   const items = (r && r.result) || [];
   const list = $('#w-recent .list');
-  list.innerHTML = items.length ? '' : '<div class="empty-dim">暂无最近文件</div>';
+  list.innerHTML = items.length ? '' : '<div class="empty-dim">' + esc(t('noRecent')) + '</div>';
   items.forEach(f => {
     const row = document.createElement('div');
     row.className = 'mini-row';
@@ -1148,7 +1444,7 @@ function appById(id) { return (appsCache || []).find(a => a.path === id); }
 async function renderDock() {
   dockRendered = true;
   const apps = await getApps();
-  $('#apps-n').textContent = apps.length + ' 个';
+  $('#apps-n').textContent = t('appCount', { n:apps.length });
   dockGrid.innerHTML = '';
   const hidden = new Set(appCfg.hidden);
   const inFolder = new Set(appCfg.folders.flatMap(f => f.items));
@@ -1162,12 +1458,12 @@ async function renderDock() {
     f.items.slice(0, 8).forEach(id => { const a = appById(id); if (a) mini.appendChild(iconImg(a.path, 14)); });
     if (f.items.length > 8) mini.insertAdjacentHTML('beforeend', `<div class="more">+${f.items.length - 8}</div>`);
     t.appendChild(mini);
-    t.insertAdjacentHTML('beforeend', `<div class="nm">${esc(f.name || '文件夹')}</div>`);
+    t.insertAdjacentHTML('beforeend', `<div class="nm">${esc(f.name || t('folder'))}</div>`);
     if (editMode) {
-      const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕'; x.title = '解散文件夹';
+      const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕'; x.title = t('dissolveFolder');
       x.addEventListener('click', ev => { ev.stopPropagation(); appCfg.folders = appCfg.folders.filter(g => g.id !== f.id); saveAppCfg(); renderDock(); });
       t.appendChild(x);
-      t.addEventListener('click', () => { const n = prompt('文件夹名称', f.name || '文件夹'); if (n !== null) { f.name = n; saveAppCfg(); renderDock(); } });
+      t.addEventListener('click', () => { const n = prompt(t('folderNamePrompt'), f.name || t('folder')); if (n !== null) { f.name = n; saveAppCfg(); renderDock(); } });
     } else {
       t.addEventListener('click', () => { if (!dragged) openFolder(f.id); });
     }
@@ -1180,7 +1476,7 @@ async function renderDock() {
     t.appendChild(iconImg(a.path, 48));
     t.insertAdjacentHTML('beforeend', `<div class="nm">${esc(a.title)}</div>`);
     if (editMode) {
-      const x = document.createElement('span'); x.className = 'x'; x.textContent = '−'; x.title = '不显示';
+      const x = document.createElement('span'); x.className = 'x'; x.textContent = '−'; x.title = t('hideApp');
       x.addEventListener('click', ev => { ev.stopPropagation(); appCfg.hidden.push(a.path); selSet.delete(a.path); saveAppCfg(); renderDock(); });
       t.appendChild(x);
       t.classList.toggle('sel', selSet.has(a.path));
@@ -1197,7 +1493,7 @@ async function renderDock() {
   const hr = $('#hiddenRow');
   if (editMode && appCfg.hidden.length) {
     hr.classList.add('on');
-    hr.innerHTML = '已隐藏（点按恢复）：';
+    hr.textContent = t('hiddenApps');
     appCfg.hidden.forEach(id => {
       const a = appById(id);
       const c = document.createElement('span'); c.className = 'hchip';
@@ -1215,7 +1511,7 @@ function syncToolbar() {
 }
 $('#apps-edit').addEventListener('click', () => {
   editMode = !editMode; selSet.clear();
-  $('#apps-edit').textContent = editMode ? '完成' : '编辑';
+  $('#apps-edit').textContent = editMode ? t('done') : t('edit');
   $('#apps-edit').classList.toggle('done', editMode);
   dockGrid.classList.toggle('editing', editMode);
   renderDock();
@@ -1223,17 +1519,17 @@ $('#apps-edit').addEventListener('click', () => {
 $('#selnone').addEventListener('click', () => { selSet.clear(); renderDock(); });
 $('#mkfolder').addEventListener('click', () => {
   if (selSet.size < 2) return;
-  const name = prompt('文件夹名称', '文件夹');
+  const name = prompt(t('folderNamePrompt'), t('folder'));
   if (name === null) return;
-  appCfg.folders.push({ id: 'f' + Date.now(), name: name || '文件夹', items: [...selSet] });
-  selSet.clear(); saveAppCfg(); renderDock(); showToast('已合并为文件夹');
+  appCfg.folders.push({ id: 'f' + Date.now(), name: name || t('folder'), items: [...selSet] });
+  selSet.clear(); saveAppCfg(); renderDock(); showToast(t('folderMerged'));
 });
 
 /* 文件夹展开层 */
 function openFolder(fid) {
   const f = appCfg.folders.find(g => g.id === fid);
   if (!f) return;
-  $('#folderName').textContent = f.name || '文件夹';
+  $('#folderName').textContent = f.name || t('folder');
   const grid = $('#folderGrid'); grid.innerHTML = '';
   f.items.forEach(id => {
     const a = appById(id); if (!a) return;
@@ -1307,15 +1603,15 @@ document.addEventListener('click', ev => { if (dragged) { ev.stopPropagation(); 
 
 /* search */
 const KIND_META = {
-  cmd: { icon: '⚡', label: '命令' },
-  app: { icon: '⊞', label: '应用' }, file: { icon: '📄', label: '文件' },
-  clip: { icon: '📋', label: '剪贴板' }, note: { icon: '📝', label: '笔记' },
-  todo: { icon: '☑', label: '待办' }, plugin: { icon: '🧩', label: '插件' },
+  cmd: { icon: '⚡', key: 'command' },
+  app: { icon: '⊞', key: 'app' }, file: { icon: '📄', key: 'file' },
+  clip: { icon: '📋', key: 'clipboard' }, note: { icon: '📝', key: 'note' },
+  todo: { icon: '☑', key: 'todo' }, plugin: { icon: '🧩', key: 'plugin' },
 };
 const KIND_ORDER = ['cmd', 'app', 'file', 'clip', 'note', 'todo', 'plugin'];
 const SOURCE_LABEL = {
-  'start-menu': '开始菜单', 'start-apps': '系统应用', everything: 'Everything', files: '本地索引',
-  recent: '最近使用', clips: '剪贴板', notes: '随手记', todos: '待办', plugin: '插件', cmd: '命令', calc: '计算器',
+  'start-menu': '@startMenu', 'start-apps': '@systemApps', everything: 'Everything', files: '@localIndex',
+  recent: '@recentUsed', clips: '@clipboard', notes: '@note', todos: '@todo', plugin: '@plugin', cmd: '@command', calc: '@calculator',
 };
 const SEARCH_USAGE_KEY = 'wb.searchUsage.v1';
 let searchUsage = {};
@@ -1340,7 +1636,11 @@ function rememberResult(r) {
   searchUsage = Object.fromEntries(Object.entries(searchUsage).sort((a, b) => b[1].last - a[1].last).slice(0, 200));
   try { localStorage.setItem(SEARCH_USAGE_KEY, JSON.stringify(searchUsage)); } catch {}
 }
-function resultSource(r) { return SOURCE_LABEL[r.source] || (r.source ? String(r.source) : '本机'); }
+function resultSource(r) {
+  const label = SOURCE_LABEL[r.source];
+  return label && label[0] === '@' ? t(label.slice(1)) : label || (r.source ? String(r.source) : t('local'));
+}
+function resultComplete(r) { return /已完成|completed|complete|完了|완료/i.test(String(r.subtitle || '')); }
 function nativeResultIcon(r) { return !r._noNativeIcon && (r.kind === 'app' || r.kind === 'file') && r.path && !String(r.path).startsWith('wb://'); }
 function wbResultId(r, type) {
   const prefix = 'wb://' + type + '/';
@@ -1350,10 +1650,10 @@ function previewText(r) {
   if (r.preview) return String(r.preview);
   if (r.kind === 'file') {
     const dot = String(r.title || '').lastIndexOf('.');
-    return dot > 0 ? String(r.title).slice(dot + 1).toUpperCase() + ' 文件' : '本地文件';
+    return dot > 0 ? t('fileType', { ext:String(r.title).slice(dot + 1).toUpperCase() }) : t('localFile');
   }
-  if (r.kind === 'app') return 'Windows 应用';
-  if (r.kind === 'todo') return String(r.subtitle || '').includes('已完成') ? '已完成' : '未完成';
+  if (r.kind === 'app') return t('windowsApp');
+  if (r.kind === 'todo') return resultComplete(r) ? t('completed') : t('incomplete');
   return r.subtitle || r.title || '';
 }
 function visibleResultPath(r) {
@@ -1361,20 +1661,20 @@ function visibleResultPath(r) {
   return String(r.path);
 }
 function resultActions(r) {
-  if (r._cmd || (r.path && String(r.path).startsWith('wb://cmd/'))) return [{ id: 'run', icon: '▶', label: '运行命令', primary: true }];
-  if (r._copy) return [{ id: 'copy-value', icon: '⧉', label: '复制结果', primary: true }];
-  if (r.kind === 'app') return [{ id: 'open', icon: '↗', label: '打开应用', primary: true }];
+  if (r._cmd || (r.path && String(r.path).startsWith('wb://cmd/'))) return [{ id: 'run', icon: '▶', label: t('runCommand'), primary: true }];
+  if (r._copy) return [{ id: 'copy-value', icon: '⧉', label: t('copyResult'), primary: true }];
+  if (r.kind === 'app') return [{ id: 'open', icon: '↗', label: t('openApp'), primary: true }];
   if (r.kind === 'file') return [
-    { id: 'open', icon: '↗', label: '打开文件', primary: true },
-    { id: 'reveal', icon: '⌖', label: '在资源管理器中定位' },
-    { id: 'copy-path', icon: '⧉', label: '复制路径' },
+    { id: 'open', icon: '↗', label: t('openFile'), primary: true },
+    { id: 'reveal', icon: '⌖', label: t('revealFile') },
+    { id: 'copy-path', icon: '⧉', label: t('copyPath') },
   ];
-  if (r.kind === 'clip') return [{ id: 'copy-content', icon: '⧉', label: '复制内容', primary: true }];
-  if (r.kind === 'note') return [{ id: 'copy-content', icon: '⧉', label: '复制笔记', primary: true }];
+  if (r.kind === 'clip') return [{ id: 'copy-content', icon: '⧉', label: t('copyContent'), primary: true }];
+  if (r.kind === 'note') return [{ id: 'copy-content', icon: '⧉', label: t('copyNote'), primary: true }];
   if (r.kind === 'todo') {
     const actions = [];
-    if (!String(r.subtitle || '').includes('已完成')) actions.push({ id: 'todo-done', icon: '✓', label: '标记完成', primary: true });
-    actions.push({ id: 'copy-content', icon: '⧉', label: '复制待办' });
+    if (!resultComplete(r)) actions.push({ id: 'todo-done', icon: '✓', label: t('markDone'), primary: true });
+    actions.push({ id: 'copy-content', icon: '⧉', label: t('copyTodo') });
     return actions;
   }
   return [];
@@ -1383,10 +1683,10 @@ function resultActions(r) {
 function previewHtml(r) {
   const meta = KIND_META[r.kind] || KIND_META.file;
   const body = previewText(r), path = visibleResultPath(r), actions = resultActions(r);
-  return `<aside class="result-preview" aria-label="所选结果详情">
+  return `<aside class="result-preview" aria-label="${esc(t('selectedDetails'))}">
     <div class="preview-head"><div class="preview-icon">${nativeResultIcon(r) ? '' : meta.icon}</div>
       <div class="preview-heading"><div class="preview-title">${esc(r.title)}</div>
-      <div class="preview-kind">${esc(meta.label)} · ${esc(resultSource(r))}</div></div></div>
+      <div class="preview-kind">${esc(t(meta.key))} · ${esc(resultSource(r))}</div></div></div>
     ${body ? `<div class="preview-body">${esc(body)}</div>` : ''}
     ${path ? `<div class="preview-path">${esc(path)}</div>` : ''}
     <div class="preview-actions">${actions.map(a => `<button class="preview-action${a.primary ? ' primary' : ''}" data-action="${a.id}" title="${esc(a.label)}"><span class="action-icon">${a.icon}</span><span>${esc(a.label)}</span></button>`).join('')}</div>
@@ -1395,12 +1695,12 @@ function previewHtml(r) {
 
 function renderResults() {
   const spot = $('.spot');
-  if (!results.length) { spot.classList.remove('has-results'); listEl.innerHTML = '<div class="empty">没有匹配结果</div>'; return; }
+  if (!results.length) { spot.classList.remove('has-results'); listEl.innerHTML = '<div class="empty">' + esc(t('noResults')) + '</div>'; return; }
   spot.classList.add('has-results');
   let html = '', lastGroup = '';
   results.forEach((r, i) => {
     const meta = KIND_META[r.kind] || KIND_META.file;
-    if (r.kind !== lastGroup) { html += `<div class="group-label">${meta.label}</div>`; lastGroup = r.kind; }
+    if (r.kind !== lastGroup) { html += `<div class="group-label">${esc(t(meta.key))}</div>`; lastGroup = r.kind; }
     html += `<div class="row${i === active ? ' active' : ''}" data-i="${i}" role="option" aria-selected="${i === active}">
       <div class="icon">${nativeResultIcon(r) ? '' : meta.icon}</div>
       <div class="text"><div class="title">${esc(r.title)}</div>
@@ -1457,8 +1757,8 @@ function runResultAction(i, action) {
     const id = wbResultId(r, 'todo');
     if (!id) return;
     rpc('todo.done', { id }).then(m => {
-      if (m && m.error) showToast('无法更新待办');
-      else { showToast('已完成'); doQuery(); }
+      if (m && m.error) showToast(t('updateTodoFailed'));
+      else { showToast(t('completed')); doQuery(); }
     });
   }
 }
@@ -1482,8 +1782,8 @@ function mdLite(s) {
 function aiRender(preview) {
   $('.spot').classList.remove('has-results');
   let html = `<div class="group-label">AI · gpt-5.6-luna</div>
-    <div class="ai-q">${esc(aiQuestion) || '（在 ? 后输入问题）'}</div>`;
-  if (preview) html += `<div class="ai-hint">回车发送 · Esc 退出</div>`;
+    <div class="ai-q">${esc(aiQuestion) || esc(t('aiInputHint'))}</div>`;
+  if (preview) html += `<div class="ai-hint">${esc(t('aiSubmitHint'))}</div>`;
   else html += `<div class="ai-a">${mdLite(aiAnswer)}${aiStreaming ? '<span class="ai-cursor">▋</span>' : ''}</div>`;
   listEl.innerHTML = html;
   listEl.scrollTop = listEl.scrollHeight;
@@ -1526,7 +1826,7 @@ function handleWidgetAiMessage(m) {
   else if (m.kind === 'ai.done') widgetAiStreaming = false;
   else if (m.kind === 'ai.error') {
     widgetAiStreaming = false;
-    widgetAiAnswer += (widgetAiAnswer ? '\n\n' : '') + '请求失败：' + (m.error || '未知错误');
+    widgetAiAnswer += (widgetAiAnswer ? '\n\n' : '') + t('requestFailed') + ': ' + (m.error || t('unknownError'));
   } else return false;
   renderWidgetAi();
   return true;
@@ -1534,6 +1834,36 @@ function handleWidgetAiMessage(m) {
 
 /* ---------- 命令模式（> 前缀，与 AI 工具/CLI 共用 wb-core 命令注册表） ---------- */
 let cmdCache = null; // null=未拉取；[]=daemon 不可用
+const COMMAND_TEXT = {
+  en: {
+    'todo.add':['Add to-do','Quickly add a to-do','What needs doing?'], 'note.add':['Add note','Quickly save a note','What should I note?'],
+    search:['Global search','Search apps, files, clipboard, and notes','What should I search for?'], 'clip.get':['Recent clipboard','View recent clipboard history',''],
+    'clip.clear':['Clear clipboard history','Delete all clipboard history',''], 'panel.hide':['Hide panel','Hide the WB panel',''],
+    'panel.show':['Show panel','Show or start the WB panel',''], 'panel.toggle':['Toggle panel','Show or hide the panel',''],
+    'system.lock':['Lock computer','Lock the Windows session now',''], 'agent.ask':['Ask AI','Ask AI synchronously','What would you like to ask?'],
+  },
+  ja: {
+    'todo.add':['ToDoを追加','ToDoをすばやく追加','何をしますか？'], 'note.add':['メモを追加','メモをすばやく保存','何をメモしますか？'],
+    search:['グローバル検索','アプリ、ファイル、クリップボード、メモを検索','何を検索しますか？'], 'clip.get':['最近のクリップボード','最近の履歴を表示',''],
+    'clip.clear':['履歴を消去','クリップボード履歴をすべて削除',''], 'panel.hide':['パネルを閉じる','WBパネルを非表示',''],
+    'panel.show':['パネルを表示','WBパネルを表示または起動',''], 'panel.toggle':['パネル切替','表示と非表示を切り替え',''],
+    'system.lock':['PCをロック','Windowsセッションをロック',''], 'agent.ask':['AIに質問','AIへ同期で質問','何を質問しますか？'],
+  },
+  ko: {
+    'todo.add':['할 일 추가','할 일을 빠르게 추가','무엇을 할까요?'], 'note.add':['메모 추가','메모를 빠르게 저장','무엇을 메모할까요?'],
+    search:['전체 검색','앱, 파일, 클립보드, 메모 검색','무엇을 검색할까요?'], 'clip.get':['최근 클립보드','최근 클립보드 기록 보기',''],
+    'clip.clear':['기록 지우기','모든 클립보드 기록 삭제',''], 'panel.hide':['패널 숨기기','WB 패널 숨기기',''],
+    'panel.show':['패널 표시','WB 패널 표시 또는 시작',''], 'panel.toggle':['패널 전환','패널 표시 또는 숨기기',''],
+    'system.lock':['컴퓨터 잠금','Windows 세션 즉시 잠금',''], 'agent.ask':['AI에게 질문','AI에게 동기식으로 질문','무엇을 물어볼까요?'],
+  },
+};
+function localizedCommand(command) {
+  const text = COMMAND_TEXT[locale] && COMMAND_TEXT[locale][command.id];
+  if (!text) return command;
+  return Object.assign({}, command, {
+    title:text[0], hint:text[1], arg:command.arg ? Object.assign({}, command.arg, { prompt:text[2] || command.arg.prompt }) : command.arg,
+  });
+}
 function ensureCmds() {
   if (cmdCache) return Promise.resolve(cmdCache);
   return rpc('cmd.list', {}).then(m => {
@@ -1548,28 +1878,28 @@ function cmdMode(text) {
   const key = (sp < 0 ? body : body.slice(0, sp)).toLowerCase();
   const argText = sp < 0 ? '' : body.slice(sp + 1).trim();
   if (!cmdCache) {
-    results = [{ kind: 'cmd', title: '正在加载命令…', subtitle: '首次使用拉取命令注册表', score: 1, source: 'cmd' }];
+    results = [{ kind: 'cmd', title: t('loadingCommands'), subtitle: t('loadingCommandsHint'), score: 1, source: 'cmd' }];
     renderResults();
     ensureCmds().then(() => { if (q.value.trim().startsWith('>')) tryPrefix(q.value.trim()); });
     return true;
   }
   if (!cmdCache.length) {
-    results = [{ kind: 'cmd', title: '命令服务不可用', subtitle: 'wb daemon 未连接', score: 1, source: 'cmd' }];
+    results = [{ kind: 'cmd', title: t('commandUnavailable'), subtitle: t('daemonDisconnected'), score: 1, source: 'cmd' }];
     renderResults(); return true;
   }
   const rank = c => {
     const id = c.id.toLowerCase(), t = c.title.toLowerCase();
     return (id.startsWith(key) || t.startsWith(key)) ? 0 : 1;
   };
-  const hits = cmdCache
+  const hits = cmdCache.map(localizedCommand)
     .filter(c => !key || c.id.toLowerCase().includes(key) || c.title.toLowerCase().includes(key) || (c.hint || '').toLowerCase().includes(key))
     .sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
   results = hits.map(c => ({
     kind: 'cmd', title: c.title,
-    subtitle: c.id + (c.hint ? ' · ' + c.hint : '') + (c.arg ? ' · 参数：' + c.arg.prompt : ''),
+    subtitle: c.id + (c.hint ? ' · ' + c.hint : '') + (c.arg ? ' · ' + t('parameter') + c.arg.prompt : ''),
     score: 1, source: 'cmd', _cmd: c, _arg: argText,
   }));
-  if (!results.length) results = [{ kind: 'cmd', title: '没有匹配命令', subtitle: '试试 >todo / >笔记 / >搜索 / >锁屏', score: 1, source: 'cmd' }];
+  if (!results.length) results = [{ kind: 'cmd', title: t('noCommands'), subtitle: t('noCommandsHint'), score: 1, source: 'cmd' }];
   renderResults();
   return true;
 }
@@ -1577,7 +1907,7 @@ function cmdMode(text) {
 function runCmd(spec, argText) {
   argText = (argText || '').trim();
   if (spec.arg && spec.arg.name && !argText) {
-    showToast(spec.title + ' 需要参数：' + (spec.arg.prompt || spec.arg.name));
+    showToast(t('needsParameter', { title:spec.title, parameter:spec.arg.prompt || spec.arg.name }));
     q.value = '>' + spec.title + ' ';
     doQuery(); q.focus();
     return;
@@ -1782,7 +2112,7 @@ if (hasBridge) {
     else if (m.kind === 'ai.error') {
       if (m.id !== aiId) return;
       aiStreaming = false;
-      aiAnswer += (aiAnswer ? '\n\n' : '') + '⚠ ' + (m.error || '请求失败');
+      aiAnswer += (aiAnswer ? '\n\n' : '') + '⚠ ' + (m.error || t('requestFailed'));
       aiRender(false);
       send({ kind: 'selftest', detail: 'ai.error ' + (m.error || ''), ok: false });
     }
@@ -1818,6 +2148,8 @@ if (hasBridge) {
       }
       // 测试钩子：#view=apps 在 show 流程结束后切到应用页
       if (location.hash === '#view=apps') setTimeout(() => setPage(1), 350);
+      // 测试钩子：#view=widgets 切到组件页
+      if (location.hash === '#view=widgets') setTimeout(() => setPage(0), 350);
       // 测试钩子：#view=plugins 切到插件页
       if (location.hash === '#view=plugins') setTimeout(() => setPage(2), 350);
       // 测试钩子：#view=market 切到插件市场
@@ -1938,14 +2270,102 @@ stage.addEventListener('click', ev => {
 
 /* ---------- 组件定制（插件化可见性） ---------- */
 const WIDGETS = [
-  ['w-clock', '时钟'], ['w-weather', '天气'], ['w-cal', '日历'], ['w-world', '世界时钟'],
-  ['w-media', '音乐'], ['w-sys', '系统状态'], ['w-pomo', '番茄钟'], ['w-calc', '计算器'],
-  ['w-clip', '剪贴板'], ['w-todo', '待办'], ['w-note', '随手记'], ['w-quick', '快捷启动'],
-  ['w-recent', '最近文件'], ['w-cdown', '倒数日'], ['w-htk', '一言'], ['w-ai', 'AI'],
+  ['w-clock', '@time'], ['w-weather', '@weather'], ['w-cal', '@calendar'], ['w-world', '@worldClock'],
+  ['w-media', '@nowPlaying'], ['w-sys', '@systemStatus'], ['w-pomo', '@focusTimer'], ['w-calc', '@calculator'],
+  ['w-clip', '@clipboard'], ['w-todo', '@todo'], ['w-note', '@note'], ['w-quick', '@quickLaunch'],
+  ['w-recent', '@recentFiles'], ['w-cdown', '@countdown'], ['w-htk', '@quote'], ['w-ai', '@ai'],
 ];
+const DEFAULT_WIDGET_LAYOUT = {
+  'w-clock':[2,2], 'w-weather':[2,2], 'w-cal':[2,2], 'w-world':[2,2], 'w-media':[2,2],
+  'w-sys':[1,2], 'w-pomo':[1,2], 'w-calc':[1,2], 'w-clip':[1,2], 'w-todo':[2,2],
+  'w-note':[2,2], 'w-quick':[2,2], 'w-recent':[2,2], 'w-cdown':[1,2], 'w-htk':[1,2], 'w-ai':[4,3],
+};
 const WCFG_KEY = 'wb.hiddenWidgets.v1';
 let hiddenWidgets = [];
 let desktopWidgets = [];
+let widgetLayouts = { panel:{}, desktop:{} };
+function widgetLabel(name, plugin) {
+  const label = name && name[0] === '@' ? t(name.slice(1)) : name;
+  return plugin ? label + t('pluginSuffix') : label;
+}
+function widgetSurface() { return DESKTOP_MODE ? 'desktop' : 'panel'; }
+function setWidgetGridSize(card, cols, rows) {
+  const maxCols = DESKTOP_MODE ? 4 : 6;
+  cols = Math.max(1, Math.min(maxCols, Number(cols) || 1));
+  rows = Math.max(1, Math.min(8, Number(rows) || 2));
+  card.dataset.widgetCols = String(cols); card.dataset.widgetRows = String(rows);
+  card.style.setProperty('--widget-cols', cols); card.style.setProperty('--widget-rows', rows);
+  fitWidget(card); clearTimeout(rectsTimer); rectsTimer = setTimeout(reportRects, 60);
+}
+function widgetDefault(card) {
+  const explicit = DEFAULT_WIDGET_LAYOUT[card.id];
+  if (explicit) return explicit;
+  const match = Array.from(card.classList).map(x => x.match(/^span(\d)$/)).find(Boolean);
+  return [match ? Number(match[1]) : 2, 2];
+}
+function applyWidgetLayout(card) {
+  const [defaultCols, defaultRows] = widgetDefault(card);
+  card.dataset.defaultCols = defaultCols; card.dataset.defaultRows = defaultRows;
+  const saved = widgetLayouts[widgetSurface()] && widgetLayouts[widgetSurface()][card.id];
+  setWidgetGridSize(card, saved && saved.cols || defaultCols, saved && saved.rows || defaultRows);
+}
+function persistWidgetLayout(card, reset) {
+  const surface = widgetSurface();
+  const params = { surface, id:card.id };
+  if (reset) params.reset = true;
+  else { params.cols = Number(card.dataset.widgetCols); params.rows = Number(card.dataset.widgetRows); }
+  return rpc('settings.set', { widget_layout:params }).then(m => {
+    if (!m || m.error || !m.result) { showToast(t('saveFailed')); return; }
+    widgetLayouts = m.result.widget_layouts || widgetLayouts;
+  });
+}
+function installWidgetResize(card) {
+  if (!card || card.querySelector(':scope > .resize-handle')) { if (card) applyWidgetLayout(card); return; }
+  const handle = document.createElement('button');
+  handle.type = 'button'; handle.className = 'resize-handle'; handle.textContent = '◢';
+  handle.title = t('resize'); handle.setAttribute('aria-label', t('resize'));
+  handle.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const grid = card.parentElement, style = getComputedStyle(grid);
+    const columns = DESKTOP_MODE ? 4 : 6;
+    const colGap = parseFloat(style.columnGap) || 0, rowGap = parseFloat(style.rowGap) || 0;
+    const colStep = (grid.clientWidth - colGap * (columns - 1)) / columns + colGap;
+    const rowSize = parseFloat(style.gridAutoRows) || (innerHeight <= 760 && !DESKTOP_MODE ? 64 : 72);
+    const rowStep = rowSize + rowGap;
+    const start = { x:ev.clientX, y:ev.clientY, cols:Number(card.dataset.widgetCols), rows:Number(card.dataset.widgetRows) };
+    card.classList.add('resizing'); send({ kind:'interaction', active:true });
+    try { handle.setPointerCapture(ev.pointerId); } catch {}
+    const move = e => {
+      const cols = start.cols + Math.round((e.clientX - start.x) / colStep);
+      const rows = start.rows + Math.round((e.clientY - start.y) / rowStep);
+      setWidgetGridSize(card, cols, rows);
+    };
+    const end = e => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
+      card.classList.remove('resizing'); send({ kind:'interaction', active:false }); persistWidgetLayout(card, false);
+      try { handle.releasePointerCapture(e.pointerId); } catch {}
+    };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  });
+  handle.addEventListener('dblclick', ev => {
+    ev.preventDefault(); ev.stopPropagation();
+    setWidgetGridSize(card, Number(card.dataset.defaultCols), Number(card.dataset.defaultRows));
+    persistWidgetLayout(card, true);
+  });
+  card.appendChild(handle); applyWidgetLayout(card);
+}
+function installAllWidgetResize() { document.querySelectorAll('#board .w').forEach(installWidgetResize); }
+function ingestSettings(settings) {
+  settings = settings && typeof settings === 'object' ? settings : {};
+  const layouts = settings.widget_layouts;
+  widgetLayouts = layouts && typeof layouts === 'object'
+    ? { panel:layouts.panel || {}, desktop:layouts.desktop || {} }
+    : { panel:{}, desktop:{} };
+  applyLanguage(LANG_OVERRIDE || I18N_LANG(settings.language) || 'auto');
+  installAllWidgetResize();
+  document.querySelectorAll('#board .w').forEach(applyWidgetLayout);
+}
 try { hiddenWidgets = JSON.parse(localStorage.getItem(WCFG_KEY) || '[]'); } catch {}
 if (hiddenWidgets.includes('w-stop')) {
   hiddenWidgets = [...new Set(hiddenWidgets.map(id => id === 'w-stop' ? 'plugin-stopwatch' : id))];
@@ -1974,8 +2394,10 @@ function applyDesktopWidgetVisibility() {
 }
 function syncDesktopWidgets(initial) {
   return rpc('settings.get', {}, 1200).then(m => {
-    const selected = m && m.result && Array.isArray(m.result.desktop_widgets)
-      ? m.result.desktop_widgets
+    const settings = m && m.result ? m.result : {};
+    ingestSettings(settings);
+    const selected = Array.isArray(settings.desktop_widgets)
+      ? settings.desktop_widgets
       : (hasBridge ? [] : ['w-clock', 'w-weather', 'w-cal', 'w-ai']);
     desktopWidgets = [...new Set(selected.map(String))];
     if (DESKTOP_FIXTURE) {
@@ -2002,20 +2424,20 @@ function syncDesktopWidgets(initial) {
 function renderDesktopConfig(settings) {
   desktopWidgets = Array.isArray(settings.desktop_widgets) ? settings.desktop_widgets.map(String) : [];
   const list = $('#cfgDesktopList'); list.innerHTML = '';
-  WIDGETS.forEach(([id, name]) => {
-    const row = document.createElement('label'); row.className = 'cfgrow';
+  WIDGETS.forEach(([id, name, plugin]) => {
+    const row = document.createElement('label'); row.className = 'cfgrow'; row.dataset.widget = id;
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = desktopWidgets.includes(id);
     cb.addEventListener('change', () => {
       const next = cb.checked ? [...new Set([...desktopWidgets, id])] : desktopWidgets.filter(x => x !== id);
       cb.disabled = true;
       rpc('settings.set', { desktop_widgets: next }).then(m => {
-        if (!m || m.error || !m.result) { showToast('桌面组件保存失败'); renderDesktopConfig(settings); return; }
+        if (!m || m.error || !m.result) { showToast(t('desktopSaveFailed')); renderDesktopConfig(settings); return; }
         renderDesktopConfig(m.result);
       });
     });
-    row.appendChild(cb); row.insertAdjacentHTML('beforeend', esc(name)); list.appendChild(row);
+    row.appendChild(cb); row.insertAdjacentHTML('beforeend', `<span class="cfg-name">${esc(widgetLabel(name, plugin))}</span>`); list.appendChild(row);
   });
-  $('#desktop-state').textContent = settings.desktop_running ? '运行中' : (desktopWidgets.length ? '启动中' : '未启用');
+  $('#desktop-state').textContent = settings.desktop_running ? t('running') : (desktopWidgets.length ? t('starting') : t('disabled'));
 }
 function setConfigOpen(open) {
   $('#cfgView').classList.toggle('on', open);
@@ -2023,8 +2445,8 @@ function setConfigOpen(open) {
 }
 function openConfig() {
   const list = $('#cfgList'); list.innerHTML = '';
-  WIDGETS.forEach(([id, name]) => {
-    const row = document.createElement('label'); row.className = 'cfgrow';
+  WIDGETS.forEach(([id, name, plugin]) => {
+    const row = document.createElement('label'); row.className = 'cfgrow'; row.dataset.widget = id;
     const cb = document.createElement('input'); cb.type = 'checkbox';
     cb.checked = !hiddenWidgets.includes(id);
     cb.addEventListener('change', () => {
@@ -2032,15 +2454,17 @@ function openConfig() {
       localStorage.setItem(WCFG_KEY, JSON.stringify(hiddenWidgets));
       applyWidgetVisibility();
     });
-    row.appendChild(cb); row.insertAdjacentHTML('beforeend', esc(name));
+    row.appendChild(cb); row.insertAdjacentHTML('beforeend', `<span class="cfg-name">${esc(widgetLabel(name, plugin))}</span>`);
     list.appendChild(row);
   });
   rpc('settings.get', {}).then(m => {
     const s = m && m.result; if (!s) return;
+    ingestSettings(s);
     $('#cfg-win').checked = !!s.takeover_win;
     $('#cfg-autostart').checked = !!s.autostart;
     setMcpPolicy(s.mcp_write_policy || 'client');
-    $('#hook-state').textContent = s.hook_running ? '运行中' : '未运行';
+    $('#cfg-language').value = s.language || 'auto';
+    $('#hook-state').textContent = s.hook_running ? t('running') : t('stopped');
     renderDesktopConfig(s);
   });
   setConfigOpen(true);
@@ -2049,13 +2473,17 @@ $('#cfg-open').addEventListener('click', ev => { ev.stopPropagation(); openConfi
 async function saveSystemSetting(key, value) {
   const params = {}; params[key] = value;
   const m = await rpc('settings.set', params);
-  if (!m || m.error || !m.result) { showToast('设置保存失败'); return; }
+  if (!m || m.error || !m.result) { showToast(t('saveFailed')); return; }
+  if (key === 'language') applyLanguage(m.result.language || 'auto');
   $('#cfg-win').checked = !!m.result.takeover_win;
   $('#cfg-autostart').checked = !!m.result.autostart;
+  $('#cfg-language').value = m.result.language || 'auto';
   setMcpPolicy(m.result.mcp_write_policy || 'client');
-  $('#hook-state').textContent = m.result.hook_running ? '运行中' : '未运行';
-  showToast('设置已保存');
+  $('#hook-state').textContent = m.result.hook_running ? t('running') : t('stopped');
+  renderDesktopConfig(m.result);
+  showToast(t('saved'));
 }
+$('#cfg-language').addEventListener('change', ev => saveSystemSetting('language', ev.target.value));
 $('#cfg-win').addEventListener('change', ev => saveSystemSetting('takeover_win', ev.target.checked));
 $('#cfg-autostart').addEventListener('change', ev => saveSystemSetting('autostart', ev.target.checked));
 $$('#cfg-mcp-policy button').forEach(button => button.addEventListener('click', () => {
@@ -2072,9 +2500,13 @@ const PLUGIN_SHIM = '<' + 'script>(function(){var seq=0;var pend=new Map();'
   + 'pend.set(id,res);parent.postMessage({wb:"rpc",id:id,method:method,params:params||{}},"*");'
   + 'setTimeout(function(){if(pend.delete(id))res(null);},8000);});};'
   + 'window.addEventListener("message",function(e){var d=e.data||{};'
-  + 'if(d.wb==="rpc-res"&&pend.has(d.id)){var f=pend.get(d.id);pend.delete(d.id);f(d);}});})();<' + '/script>'
+  + 'if(d.wb==="rpc-res"&&pend.has(d.id)){var f=pend.get(d.id);pend.delete(d.id);f(d);}'
+  + 'if(d.wb==="resize"){document.documentElement.style.setProperty("--wb-widget-width",d.width+"px");'
+  + 'document.documentElement.style.setProperty("--wb-widget-height",d.height+"px");'
+  + 'if(d.locale)document.documentElement.lang=d.locale;'
+  + 'window.dispatchEvent(new CustomEvent("wbresize",{detail:{width:d.width,height:d.height,locale:d.locale}}));}});})();<' + '/script>'
   + '<' + 'style>html,body{margin:0;padding:0;height:100%;background:transparent;color:#eaf0ff;'
-  + 'font:13px "Segoe UI Variable Text","Segoe UI",sans-serif;overflow:hidden;}'
+  + 'font:13px "Segoe UI Variable Text","Segoe UI",sans-serif;overflow:hidden;container-type:size;}'
   + '*{box-sizing:border-box;}::-webkit-scrollbar{width:0;height:0;}<' + '/style>';
 
 /* 父页中继：插件 iframe 的 wbRpc → daemon 权限网关 */
@@ -2095,10 +2527,13 @@ let pluginListSignature = '', pluginLoadSeq = 0, pluginRefreshing = false;
 let pluginView = 'installed', marketItems = [], marketMeta = null, marketLoaded = false, marketLoading = false;
 const pluginStatuses = { installed: '', market: '' };
 function rpcError(m, fallback) {
-  if (!m) return fallback || '服务未响应';
+  if (!m) return fallback || t('serviceNoResponse');
   if (!m.error) return '';
   if (typeof m.error === 'string') return m.error;
-  return m.error.message || fallback || '操作失败';
+  return m.error.message || fallback || t('operationFailed');
+}
+function installedPluginSummary(count, pending) {
+  return t('pluginCount', { n:count }) + (pending ? ' · ' + t('pendingCount', { n:pending }) : '');
 }
 function pluginStatus(text, view) {
   view = view || pluginView;
@@ -2128,12 +2563,12 @@ function clearPluginWidgets() {
   $('#pgrid').innerHTML = '';
 }
 function uninstallPlugin(p, button) {
-  if (!p.user_installed || !confirm('卸载 ' + p.name + '？')) return;
+  if (!p.user_installed || !confirm(t('uninstallConfirm', { name:p.name }))) return;
   button.disabled = true;
   rpc('plugin.remove', { id: p.id }, 30000).then(m => {
-    const error = rpcError(m, '卸载失败');
+    const error = rpcError(m, t('operationFailed'));
     if (error) { showToast(error); button.disabled = false; return; }
-    showToast('已卸载 ' + p.name);
+    showToast(t('uninstalled', { name:p.name }));
     cmdCache = null; pluginListSignature = '';
     loadPluginWidgets(true); loadMarket(true);
   });
@@ -2141,11 +2576,11 @@ function uninstallPlugin(p, button) {
 function loadPluginWidgets(force) {
   if (pluginRefreshing && !force) return;
   const seq = ++pluginLoadSeq;
-  if (force) { pluginRefreshing = true; pluginStatus('刷新中…', 'installed'); }
+  if (force) { pluginRefreshing = true; pluginStatus(t('refreshing'), 'installed'); }
   return rpc('plugin.list', {}).then(m => {
     if (seq !== pluginLoadSeq) return;
     if (!m || m.error || !Array.isArray(m.result)) {
-      pluginRefreshing = false; pluginStatus(rpcError(m, '连接失败'), 'installed'); return;
+      pluginRefreshing = false; pluginStatus(rpcError(m, t('connectFailed')), 'installed'); return;
     }
     const list = m.result;
     const withW = list.filter(p => p.widget);
@@ -2160,15 +2595,15 @@ function loadPluginWidgets(force) {
       const card = document.createElement('div');
       card.className = 'approval';
       card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
-        + `<div class="desc">${esc(p.description || '此插件请求以下权限')}</div>`
+        + `<div class="desc">${esc(p.description || t('pluginPermissionDesc'))}</div>`
         + `<div class="perms">${(p.permissions || []).map(x => `<span class="perm">${esc(x)}</span>`).join('')}</div>`
-        + `<div class="plugin-actions"><button class="approve-btn">批准当前版本</button>${p.user_installed ? '<button class="remove-btn">卸载</button>' : ''}</div>`;
+        + `<div class="plugin-actions"><button class="approve-btn">${esc(t('approveVersion'))}</button>${p.user_installed ? '<button class="remove-btn">' + esc(t('uninstall')) + '</button>' : ''}</div>`;
       card.querySelector('.approve-btn').addEventListener('click', ev => {
         ev.currentTarget.disabled = true;
         rpc('plugin.approve', { id: p.id }).then(m => {
-          const error = rpcError(m, '插件授权失败');
+          const error = rpcError(m, t('approveFailed'));
           if (error) { showToast(error); ev.currentTarget.disabled = false; return; }
-          showToast('已批准 ' + p.name); loadPluginWidgets(true);
+          showToast(t('approved', { name:p.name })); loadPluginWidgets(true);
         });
       });
       const remove = card.querySelector('.remove-btn');
@@ -2181,16 +2616,16 @@ function loadPluginWidgets(force) {
       card.className = 'approval';
       const permissions = p.permissions || [];
       card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
-        + `<div class="desc">${esc(p.description || '插件能力已加载')}</div>`
-        + `<div class="perms">${p.widget ? '<span class="perm">主看板组件</span>' : ''}${permissions.length ? permissions.map(x => `<span class="perm">${esc(x)}</span>`).join('') : '<span class="perm">无需权限</span>'}</div>`
-        + `<div class="plugin-actions">${permissions.length ? '<button class="revoke-btn">撤销权限</button>' : ''}${p.user_installed ? '<button class="remove-btn">卸载</button>' : ''}</div>`;
+        + `<div class="desc">${esc(p.description || t('pluginLoadedDesc'))}</div>`
+        + `<div class="perms">${p.widget ? '<span class="perm">' + esc(t('boardWidget')) + '</span>' : ''}${permissions.length ? permissions.map(x => `<span class="perm">${esc(x)}</span>`).join('') : '<span class="perm">' + esc(t('noPermission')) + '</span>'}</div>`
+        + `<div class="plugin-actions">${permissions.length ? '<button class="revoke-btn">' + esc(t('revokePermission')) + '</button>' : ''}${p.user_installed ? '<button class="remove-btn">' + esc(t('uninstall')) + '</button>' : ''}</div>`;
       const revoke = card.querySelector('.revoke-btn');
       if (revoke) revoke.addEventListener('click', ev => {
         ev.currentTarget.disabled = true;
         rpc('plugin.revoke', { id: p.id }).then(m => {
-          const error = rpcError(m, '撤销插件权限失败');
+          const error = rpcError(m, t('revokeFailed'));
           if (error) { showToast(error); ev.currentTarget.disabled = false; return; }
-          showToast('已撤销 ' + p.name + ' 权限'); loadPluginWidgets(true);
+          showToast(t('revoked', { name:p.name })); loadPluginWidgets(true);
         });
       });
       const remove = card.querySelector('.remove-btn');
@@ -2199,7 +2634,7 @@ function loadPluginWidgets(force) {
     });
     const approvedWidgets = withW.filter(p => p.approved);
     if (!approvedWidgets.length) {
-      pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''), 'installed');
+      pluginStatus(installedPluginSummary(list.length, pendingApproval.length), 'installed');
       pluginRefreshing = false;
       return;
     }
@@ -2215,7 +2650,7 @@ function loadPluginWidgets(force) {
         card.className = 'w span' + (w.span || 2);
         card.id = 'plugin-' + p.id;
         card.style.setProperty('--i', Math.min(idx++, 20));
-        card.innerHTML = `<div class="hd"><span>🧩 ${esc(w.title || p.name)}</span><span class="right">插件</span></div>`
+        card.innerHTML = `<div class="hd"><span>🧩 ${esc(w.title || p.name)}</span><span class="right">${esc(t('plugin'))}</span></div>`
           + `<div class="hairline"></div><div class="bd pluginbd"></div>`;
         const f = document.createElement('iframe');
         f.className = 'pluginw';
@@ -2229,16 +2664,19 @@ function loadPluginWidgets(force) {
         const anchor = $('#w-cdown');
         anchor.parentElement.insertBefore(card, anchor);
         pluginWidgetIds.add(card.id);
-        WIDGETS.push([card.id, (w.title || p.name) + '（插件）']);
+        WIDGETS.push([card.id, w.title || p.name, true]);
+        window.observeWidget(card);
+        installWidgetResize(card);
+        f.addEventListener('load', () => fitWidget(card));
         applyWidgetVisibility();
       }).finally(() => {
         if (--pending === 0 && seq === pluginLoadSeq) {
           pluginRefreshing = false;
-          pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''), 'installed');
+          pluginStatus(installedPluginSummary(list.length, pendingApproval.length), 'installed');
         }
       });
     });
-  }).catch(() => { if (seq === pluginLoadSeq) { pluginRefreshing = false; pluginStatus('连接失败', 'installed'); } });
+  }).catch(() => { if (seq === pluginLoadSeq) { pluginRefreshing = false; pluginStatus(t('connectFailed'), 'installed'); } });
 }
 
 function renderMarket() {
@@ -2248,42 +2686,42 @@ function renderMarket() {
     .some(value => String(value || '').toLowerCase().includes(term)));
   grid.innerHTML = '';
   if (!marketMeta || !marketMeta.source_count) {
-    grid.innerHTML = '<div class="market-empty"><span>尚未配置市场源</span><button id="market-empty-source">添加源</button></div>';
+    grid.innerHTML = '<div class="market-empty"><span>' + esc(t('noMarketSources')) + '</span><button id="market-empty-source">' + esc(t('addSourceShort')) + '</button></div>';
     $('#market-empty-source').addEventListener('click', openMarketSources);
     return;
   }
   if (!items.length && Number(marketMeta.errors || 0) >= Number(marketMeta.source_count || 0)) {
-    grid.innerHTML = '<div class="market-empty"><span>市场源暂不可用</span><button id="market-error-source">管理源</button></div>';
+    grid.innerHTML = '<div class="market-empty"><span>' + esc(t('marketUnavailable')) + '</span><button id="market-error-source">' + esc(t('manageSourceShort')) + '</button></div>';
     $('#market-error-source').addEventListener('click', openMarketSources);
     return;
   }
   if (!items.length) {
-    grid.innerHTML = `<div class="market-empty"><span>${term ? '没有匹配插件' : '市场中暂无插件'}</span></div>`;
+    grid.innerHTML = `<div class="market-empty"><span>${esc(t(term ? 'noMatchingPlugins' : 'emptyMarket'))}</span></div>`;
     return;
   }
   items.forEach(p => {
     const card = document.createElement('article'); card.className = 'market-card';
     const initial = esc(Array.from(p.name || p.id || '?')[0] || '?');
-    const installed = p.installed_version ? `已装 ${esc(p.installed_version)}` : '未安装';
-    let label = '安装', action = 'plugin.market.install', disabled = false, actionClass = '';
-    if (p.status === 'update_available') { label = '更新'; action = 'plugin.market.update'; actionClass = ' update'; }
-    else if (p.status === 'installed') { label = '已安装'; disabled = true; }
-    else if (p.status === 'ahead') { label = '本机较新'; disabled = true; }
-    else if (p.status === 'invalid_installed_version') { label = '版本异常'; disabled = true; }
+    const installed = p.installed_version ? t('installedVersion', { version:p.installed_version }) : t('notInstalled');
+    let label = t('install'), action = 'plugin.market.install', disabled = false, actionClass = '';
+    if (p.status === 'update_available') { label = t('update'); action = 'plugin.market.update'; actionClass = ' update'; }
+    else if (p.status === 'installed') { label = t('installed'); disabled = true; }
+    else if (p.status === 'ahead') { label = t('localNewer'); disabled = true; }
+    else if (p.status === 'invalid_installed_version') { label = t('invalidVersion'); disabled = true; }
     card.innerHTML = `<div class="market-top"><div class="market-icon">${initial}</div>`
       + `<div class="market-ident"><div class="market-name">${esc(p.name)}</div>`
       + `<div class="market-origin">${esc(p.market || '')} · ${esc(p.author || p.id)}</div></div></div>`
-      + `<div class="market-desc">${esc(p.description || '暂无简介')}</div>`
-      + `<div class="market-foot"><span class="market-ver">${installed} · 最新 ${esc(p.version)}</span>`
+      + `<div class="market-desc">${esc(p.description || t('noDescription'))}</div>`
+      + `<div class="market-foot"><span class="market-ver">${esc(installed)} · ${esc(t('latestVersion', { version:p.version }))}</span>`
       + `<button class="market-action${actionClass}"${disabled ? ' disabled' : ''}>${label}</button></div>`;
     const button = card.querySelector('.market-action');
     if (!disabled) button.addEventListener('click', () => {
-      button.disabled = true; button.textContent = '处理中';
+      button.disabled = true; button.textContent = t('processing');
       rpc(action, { id: p.id, index: p.index }, 90000).then(m => {
-        const error = rpcError(m, action.endsWith('update') ? '更新失败' : '安装失败');
+        const error = rpcError(m, t(action.endsWith('update') ? 'updateFailed' : 'installFailed'));
         if (error) { showToast(error); button.disabled = false; button.textContent = label; return; }
         const needsApproval = !!(m.result && m.result.approval_required);
-        showToast((action.endsWith('update') ? '已更新 ' : '已安装 ') + p.name + (needsApproval ? '，等待批准' : ''));
+        showToast(t(action.endsWith('update') ? 'updatedPlugin' : 'installedPlugin', { name:p.name }) + (needsApproval ? t('awaitingApproval') : ''));
         cmdCache = null; pluginListSignature = '';
         loadPluginWidgets(true); loadMarket(true);
         if (needsApproval) setPluginView('installed');
@@ -2296,41 +2734,41 @@ function renderMarket() {
 function loadMarket(force) {
   if (marketLoading) return;
   marketLoading = true;
-  if (force || !marketLoaded) pluginStatus('加载市场…', 'market');
+  if (force || !marketLoaded) pluginStatus(t('loadingMarket'), 'market');
   return rpc('plugin.market.list', {}, 90000).then(m => {
-    const error = rpcError(m, '市场加载失败');
+    const error = rpcError(m, t('marketLoadFailed'));
     if (error || !m.result || !Array.isArray(m.result.plugins)) {
-      pluginStatus(error || '市场数据无效', 'market');
-      $('#market-summary').textContent = error || '市场数据无效';
+      pluginStatus(error || t('invalidMarket'), 'market');
+      $('#market-summary').textContent = error || t('invalidMarket');
       return;
     }
     marketMeta = m.result; marketItems = m.result.plugins; marketLoaded = true;
     const sourceCount = Number(m.result.source_count || 0), errors = Number(m.result.errors || 0);
-    const summary = sourceCount + ' 个源 · ' + marketItems.length + ' 个插件'
-      + (m.result.updates ? ' · ' + m.result.updates + ' 个可更新' : '')
-      + (errors ? ' · ' + errors + ' 个源异常' : '');
+    const summary = t('marketSummary', { sources:sourceCount, plugins:marketItems.length })
+      + (m.result.updates ? ' · ' + t('updateCount', { n:m.result.updates }) : '')
+      + (errors ? ' · ' + t('sourceErrorCount', { n:errors }) : '');
     $('#market-summary').textContent = summary;
-    pluginStatus(m.result.updates ? m.result.updates + ' 个更新' : '', 'market');
+    pluginStatus(m.result.updates ? t('updateCount', { n:m.result.updates }) : '', 'market');
     renderMarket();
   }).catch(() => {
-    pluginStatus('市场加载失败', 'market'); $('#market-summary').textContent = '市场加载失败';
+    pluginStatus(t('marketLoadFailed'), 'market'); $('#market-summary').textContent = t('marketLoadFailed');
   }).finally(() => { marketLoading = false; });
 }
 
 function renderMarketSources(sources) {
   const list = $('#marketSourceList'); list.innerHTML = '';
-  if (!sources.length) { list.innerHTML = '<div class="source-none">尚未配置市场源</div>'; return; }
+  if (!sources.length) { list.innerHTML = '<div class="source-none">' + esc(t('noMarketSources')) + '</div>'; return; }
   sources.forEach(source => {
     const row = document.createElement('div'); row.className = 'source-row';
     row.innerHTML = `<div class="source-meta"><div class="source-name">${esc(source.name)}</div>`
       + `<div class="source-url">${esc(source.index)}</div></div>`
-      + '<button class="source-remove" title="移除市场源" aria-label="移除市场源">×</button>';
+      + '<button class="source-remove" title="' + esc(t('removeSource')) + '" aria-label="' + esc(t('removeSource')) + '">×</button>';
     const remove = row.querySelector('.source-remove');
     remove.addEventListener('click', () => {
-      if (!confirm('移除市场源 ' + source.name + '？')) return;
+      if (!confirm(t('removeSourceConfirm', { name:source.name }))) return;
       remove.disabled = true;
       rpc('plugin.market.source.remove', { index: source.index }, 30000).then(m => {
-        const error = rpcError(m, '移除市场源失败');
+        const error = rpcError(m, t('removeSourceFailed'));
         if (error) { showToast(error); remove.disabled = false; return; }
         renderMarketSources((m.result && m.result.sources) || []);
         marketLoaded = false; loadMarket(true);
@@ -2341,7 +2779,7 @@ function renderMarketSources(sources) {
 }
 function loadMarketSources() {
   return rpc('plugin.market.sources', {}, 15000).then(m => {
-    const error = rpcError(m, '读取市场源失败');
+    const error = rpcError(m, t('readSourcesFailed'));
     if (error) { showToast(error); return; }
     renderMarketSources((m.result && m.result.sources) || []);
   });
@@ -2356,11 +2794,11 @@ function addMarketSource() {
   if (!source) { input.focus(); return; }
   button.disabled = true;
   rpc('plugin.market.source.add', { index: source }, 30000).then(m => {
-    const error = rpcError(m, '添加市场源失败');
+    const error = rpcError(m, t('addSourceFailed'));
     if (error) { showToast(error); return; }
     input.value = '';
     renderMarketSources((m.result && m.result.sources) || []);
-    showToast(m.result && m.result.added ? '已添加市场源' : '市场源已存在');
+    showToast(t(m.result && m.result.added ? 'sourceAdded' : 'sourceExists'));
     marketLoaded = false; loadMarket(true);
   }).finally(() => { button.disabled = false; });
 }
@@ -2385,51 +2823,57 @@ loadPluginWidgets(false);
 setInterval(() => loadPluginWidgets(false), 3000);
 
 /* ---------- 倒数日 ---------- */
-(function () {
-  const KEY = 'wb.countdown.v1';
-  let cfg = null; try { cfg = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch {}
-  const daysEl = $('#w-cdown .days'), tgt = $('#cd-target');
-  function draw() {
-    if (!cfg || !cfg.date) { daysEl.innerHTML = '--<small>天</small>'; tgt.textContent = '点击设置目标日'; return; }
-    const diff = Math.ceil((new Date(cfg.date + 'T00:00:00') - new Date()) / 86400000);
-    daysEl.innerHTML = Math.abs(diff) + '<small>' + (diff >= 0 ? ' 天后' : ' 天前') + '</small>';
-    tgt.textContent = (cfg.name ? cfg.name + ' · ' : '') + cfg.date;
+const COUNTDOWN_KEY = 'wb.countdown.v1';
+let countdownConfig = null;
+try { countdownConfig = JSON.parse(localStorage.getItem(COUNTDOWN_KEY) || 'null'); } catch {}
+function renderCountdown() {
+  const daysEl = $('#w-cdown .days'), target = $('#cd-target');
+  if (!countdownConfig || !countdownConfig.date) {
+    daysEl.innerHTML = '--<small>' + esc(t('day')) + '</small>';
+    target.textContent = t('setTargetDate');
+    return;
   }
-  tgt.addEventListener('click', () => {
-    const inp = document.createElement('input');
-    inp.type = 'date'; inp.value = cfg && cfg.date ? cfg.date : '';
-    inp.style.cssText = 'position:fixed;left:-200px;top:0;width:1px;height:1px;opacity:0';
-    document.body.appendChild(inp);
-    const cleanup = setTimeout(() => inp.remove(), 60000);
-    inp.addEventListener('change', () => {
-      if (!inp.value) return;
-      const name = prompt('这个日子叫什么？', cfg && cfg.name ? cfg.name : '');
-      cfg = { date: inp.value, name: name || '' };
-      localStorage.setItem(KEY, JSON.stringify(cfg));
-      clearTimeout(cleanup); inp.remove(); draw();
-    });
-    if (inp.showPicker) inp.showPicker(); else inp.click();
+  const diff = Math.ceil((new Date(countdownConfig.date + 'T00:00:00') - new Date()) / 86400000);
+  daysEl.innerHTML = Math.abs(diff) + '<small>' + esc(t(diff >= 0 ? 'daysAfter' : 'daysBefore')) + '</small>';
+  target.textContent = (countdownConfig.name ? countdownConfig.name + ' · ' : '') + countdownConfig.date;
+}
+$('#cd-target').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'date'; input.value = countdownConfig && countdownConfig.date ? countdownConfig.date : '';
+  input.style.cssText = 'position:fixed;left:-200px;top:0;width:1px;height:1px;opacity:0';
+  document.body.appendChild(input);
+  const cleanup = setTimeout(() => input.remove(), 60000);
+  input.addEventListener('change', () => {
+    if (!input.value) return;
+    const name = prompt(t('dateNamePrompt'), countdownConfig && countdownConfig.name ? countdownConfig.name : '');
+    countdownConfig = { date:input.value, name:name || '' };
+    localStorage.setItem(COUNTDOWN_KEY, JSON.stringify(countdownConfig));
+    clearTimeout(cleanup); input.remove(); renderCountdown();
   });
-  draw(); setInterval(draw, 60000);
-})();
+  if (input.showPicker) input.showPicker(); else input.click();
+});
+renderCountdown(); setInterval(renderCountdown, 60000);
 
 /* ---------- 一言 ---------- */
 (function () {
-  const FALLBACK = [
-    ['愿你出走半生，归来仍是少年。', '网络'],
-    ['种一棵树最好的时间是十年前，其次是现在。', '网络'],
-    ['生活原本沉闷，但跑起来就有风。', '网络'],
-  ];
+  const FALLBACK = {
+    'zh-CN': [['愿你出走半生，归来仍是少年。','网络'],['种一棵树最好的时间是十年前，其次是现在。','网络'],['生活原本沉闷，但跑起来就有风。','网络']],
+    en: [['The best time to begin was yesterday. The next best time is now.','Community'],['Small steps still move you forward.','Community'],['Clarity comes from action.','Community']],
+    ja: [['始めるのに遅すぎることはない。','コミュニティ'],['小さな一歩も、前進です。','コミュニティ'],['行動すれば、道は見えてくる。','コミュニティ']],
+    ko: [['시작하기에 늦은 때는 없습니다.','커뮤니티'],['작은 걸음도 앞으로 나아갑니다.','커뮤니티'],['행동하면 길이 보입니다.','커뮤니티']],
+  };
   async function load() {
     const s = $('#w-htk .sentence'), f = $('#w-htk .from');
     try {
+      if (locale !== 'zh-CN') throw new Error('localized fallback');
       const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 5000);
       const r = await fetch('https://v1.hitokoto.cn/', { signal: ctrl.signal });
       clearTimeout(to);
       const j = await r.json();
       s.textContent = j.hitokoto; f.textContent = '—— ' + (j.from_who || j.from || '');
     } catch {
-      const [txt, fr] = FALLBACK[Math.floor(Math.random() * FALLBACK.length)];
+      const choices = FALLBACK[locale] || FALLBACK.en;
+      const [txt, fr] = choices[Math.floor(Math.random() * choices.length)];
       s.textContent = txt; f.textContent = '—— ' + fr;
     }
   }
@@ -2438,17 +2882,21 @@ setInterval(() => loadPluginWidgets(false), 3000);
 })();
 
 /* boot */
-document.querySelectorAll('.board .w').forEach((el, i) => el.style.setProperty('--i', i));
-const m0 = location.hash.match(/^#q=(.*)$/);
-initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
-applyWidgetVisibility();
-loadTodos(); loadNotes(); loadClips(); loadRecent();
-if (!hasBridge && location.hash === '#test-search') setTimeout(showSearchFixture, 50);
-if (DESKTOP_MODE) {
-  syncDesktopWidgets(true);
-} else {
-  send({ kind: 'ready' });
+async function boot() {
+  document.querySelectorAll('.board .w').forEach((el, i) => el.style.setProperty('--i', i));
+  const m0 = location.hash.match(/^#q=(.*)$/);
+  initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
+  if (DESKTOP_MODE) await syncDesktopWidgets(true);
+  else {
+    const response = hasBridge ? await rpc('settings.get', {}, 1800) : null;
+    ingestSettings(response && response.result ? response.result : { language:'auto' });
+    applyWidgetVisibility();
+    send({ kind: 'ready' });
+  }
+  loadTodos(); loadNotes(); loadClips(); loadRecent();
+  if (!hasBridge && location.hash === '#test-search') setTimeout(showSearchFixture, 50);
 }
+boot();
 })();
 </script>
 </body>

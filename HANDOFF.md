@@ -62,7 +62,7 @@ E:\cctest\wb\
 - **单一事实源 = wb-daemon**（JSON-RPC over 命名管道）。面板/CLI/MCP 都是平等客户端。方法表见 `wb-core/src/protocol.rs` schema()。
 - **命令注册表**（`wb-core/src/commands.rs`）：10 条内建命令。同一份数据三处用：`list_json()`（页面 `>` 模式 + CLI）、`tools_json()`（AI function calling）、方法名直映射（cmd.run 转发）。破坏性命令（clip.clear/system.lock）不暴露给 AI。
 - **插件**（M4/M5）：daemon 启动时发现 `%LOCALAPPDATA%/WB/plugins` + 仓库 `plugins/`。带权限插件默认不可见、不可执行，`plugin.approve/revoke` 的授权绑定版本、权限集合和 SHA-256 内容指纹。命令 handler 进程从启动起并发排空 stdout/stderr（每路 1MB、10s 超时），所有插件文件 canonical path 必须留在根目录。工具执行统一走 `cmd.tool.run` 的真实注册表。挂件的 `wbRpc` 经 `plugin.rpc` 身份、批准、权限、白名单四层检查，iframe 默认 CSP 禁止外联。
-- **面板视觉**：v11 整屏 veil 磨砂（dwm.rs）：24 张亚克力窗的池，只用第 1 张拉满工作区钉在面板下，显隐各一次定位+淡入淡出，动画期零窗口操作（165Hz 下逐卡跟踪会卡，别回去；WB_CARD_FROST=1 可 A/B）。显隐动画协议：页面先冻结在第 0 帧（hold）→ 宿主亮窗发 "go" → 动画起点即亮窗帧（消灭"先闪一下"）。主看板内置组件统一标题、图标和正文留白；天气/日历按卡片实际尺寸经 ResizeObserver 切换密度，月份位于标题栏、日期严格七行等分，720p 加大首行保留小时预报，极矮窗口改为看板滚动而不裁内容。AI 输入框有低亮度光路与 `?` 模式增强呼吸光效。
+- **面板视觉**：v11 整屏 veil 磨砂（dwm.rs）：24 张亚克力窗的池，只用第 1 张拉满工作区钉在面板下，显隐各一次定位+淡入淡出，动画期零窗口操作（165Hz 下逐卡跟踪会卡，别回去；WB_CARD_FROST=1 可 A/B）。显隐动画协议：页面先冻结在第 0 帧（hold）→ 宿主亮窗发 "go" → 动画起点即亮窗帧（消灭"先闪一下"）。主看板与桌面常驻组件均可拖动右下角按网格独立调整宽高，panel/desktop 尺寸分别持久化，双击手柄恢复默认；所有内置组件按实际宽高切换 compact/tiny/narrow，插件 iframe 收到 `wbresize {width,height,locale}` 并支持 container query。天气/日历按卡片实际尺寸切换密度，月份位于标题栏、日期严格七行等分，极矮窗口改为看板滚动而不裁内容。AI 输入框有低亮度光路与 `?` 模式增强呼吸光效。
 - **AI 链路**：面板 `?` → ai.rs 起线程 curl SSE 流式（系统 curl.exe 零依赖，body 走 stdin）；function calling 回合制最多 3 轮、末轮不带 tools 强制纯文本收尾；daemon 侧 `agent.ask` 走 `wb-core::ai::ask_sync`（非流式）。
 
 ## 5. 当前状态：M5 主链路已接通
@@ -75,6 +75,7 @@ E:\cctest\wb\
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
 - 桌面常驻组件：设置页可选择内置或插件组件常驻桌面，AI 问答也已成为独立组件；独立 `wb-panel.exe --desktop` 使用窗口类 `WBDesktopWidgets` 和单实例 mutex，窗口区域裁剪为实际卡片并保持普通桌面层级。Win 面板默认打开应用页，左侧仍保留完整组件页。CLI 支持 `wb settings desktop <ids...>`，空列表关闭宿主。设置变更通过 `WM_WB_DESKTOP_REFRESH` 事件推送，不再轮询；hook 状态改读 `Local\WBHookSingleInstance`，完全移除会闪控制台的 `tasklist` 查询。
+- 多语言：设置页支持 `auto / zh-CN / en / ja / ko`，切换后静态标题、动态搜索/命令/AI/插件市场文案、日期、天气和桌面宿主即时刷新并持久化；CLI 支持 `wb settings language auto|zh-CN|en|ja|ko`。四套翻译表均为 192 个键且无缺项，天气按 WMO code 前端翻译。官方插件示例也会根据宿主传入的 locale 更新文案。
 - Spotlight 搜索：应用索引在 daemon 启动阶段同步建立，开始处理命名管道请求前已完成，之后每 5 分钟后台刷新；`apps.list` 和统一搜索只读内存快照，首次打开面板/搜索不会现场扫描或启动 `Get-StartApps`。`wb daemon status` 暴露 `apps_indexed` / `apps_index_ready`。文件类请求优先通过 Everything 1.4/1.5 Unicode v1 IPC 做全盘查询，单次最多 200 条，发送/回包各 1.5 秒超时并严格校验回包；Everything 不可用、数据库未就绪或 IPC 失败时自动降级到 Desktop/Documents/Downloads/OneDrive 的后台有界索引（最多 50,000 项）。结果继续与应用、剪贴板、笔记、待办、插件命令合并排序；状态接口同时暴露 Everything 进程/数据库两个状态。结果 UI 现显示人类可读的来源徽标、选中项详情和真实文件图标；文件支持打开、资源管理器定位、复制路径，笔记/剪贴板支持复制正文，待办可直接完成，`Ctrl+K` / `→` 进入动作区。选择频率与最近使用时间只写本机 `localStorage` 并参与同类结果排序。搜索协议的可选 `preview` 最多 4000 字符，临时隔离配置 E2E 已验证笔记预览和 `wb://todo/<id>` 动作标识。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费。视觉回归可用完全脱敏的 `#test-search` 固定数据入口。
 - 面板单实例：正常启动使用 `Local\WBPanelSingleInstance` mutex，次实例向 `WBPanelPoc` 发送 `WM_WB_SHOW` 后退出；8 路并发启动实测最终仅 1 个进程，稳定态重复启动日志为 `{"event":"already_running","awakened":true}`。`--bench` 和显式 `--allow-multiple` 绕过该限制供自动化诊断。
 - 托盘与退出：daemon 创建 `WBTrayWindow` 通知区入口，左键打开面板，右键菜单提供“打开 WB / 退出 WB”；`wb daemon start|status|stop` 已闭环。status/stop 离线时不隐式启动，stop 在 RPC 响应 flush 后退出，并停止 hook、向 panel 发 `WM_CLOSE`、显式移除托盘图标。CLI stop、重复 stop、托盘退出均真实验证三进程归零。
@@ -82,7 +83,7 @@ E:\cctest\wb\
 - 开放插件市场：`plugins/market-index.schema.json` 固化 v1 静态索引契约，官方与社区使用同一格式；设置可持久化最多 8 个市场源，CLI/RPC 不传 `index` 时聚合来源并自动解析插件，重复 id 会要求显式选源。面板插件页是“已安装 / 市场”双视图，支持搜索、来源管理、安装、更新与用户插件卸载。市场版本强制 SemVer，远程索引下载限 2MB，远程条目只接受绝对 HTTP(S) 包地址；安装提交前同时核对 SHA-256、插件 id 和版本。真实 HTTP E2E 已验证持久化源、多源聚合和无 `--index` 安装；截图为 `m5-market-page.png`、`m5-market-sources.png`、`m5-plugins-installed-uninstall.png`。
 - MCP 服务端策略：设置页和 `wb settings mcp client|ask|read-only` 提供客户端确认、逐次 elicitation、强制只读三档。ask 仅接受 MCP 2025-06-18 且声明 elicitation 的客户端，并要求 `accept + confirm=true`；拒绝、无能力和业务错误统一为 `isError:true`，成功结果带 `structuredContent`。
 - 审计与事件：RPC 审计只保留 actor、方法、状态、错误码、耗时和参数形状，旧明文记录启动时一次性脱敏，最多保留 5000 条。`events.tail`、CLI `wb events`、MCP `events_tail` 支持 id 游标和最长 30 秒长轮询。真实 E2E 已验证游标跨连接唤醒，测试 secret 不进入 `wb audit`。
-- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 15 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 7 + wb-mcp 14，共 66 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。桌面组件另经 headless Chromium 在 1920×1080 与 1366×768 完成无隐私视觉回归，正式截图为 `docs-assets/desktop-widgets.png`。
+- 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 16 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 8 + wb-mcp 14，共 68 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。组件调整大小的 pointer→RPC→settings 持久化链路已在真实 WebView2 宿主冒烟，测试布局随后恢复；日语组件页与英文应用页实机检查无 JS 错误。浏览器本地地址权限阻止本轮 headless 页面检查，未绕过该设置。桌面组件既有无隐私视觉回归截图为 `docs-assets/desktop-widgets.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -104,4 +105,4 @@ E:\cctest\wb\
 
 ## 8. 上次会话最后在做的事
 
-继续深化 Agent / MCP 框架：增加 `wb://events/recent` 脱敏事件资源和标准 `resources/subscribe` / `unsubscribe`，仅对订阅会话发送 `notifications/resources/updated`；插件 Skills 同时暴露为 MCP prompts，并随 Skill 目录变化发送 `notifications/prompts/list_changed`。保留原 Skill resources 与只读工具兼容。当前所有 RuDock 进程保持关闭；未经用户明确同意不要做实机启动测试。
+完成主看板/桌面组件独立宽高调整、内容自适应和中英日韩四语支持；插件 shim、官方示例与 scaffold 已接入 `wbresize` 和 container query。下一阶段继续 Agent/MCP 一键安装层：`wb mcp install/status/uninstall`，对 Codex TOML、Claude/Cursor JSON 做结构化合并、原子写入、同名保护、`--force` 和 `--file` 隔离测试。用户允许必要的前台验收，但明确要求尽量减少频率，优先后台测试。

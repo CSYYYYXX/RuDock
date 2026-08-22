@@ -13,16 +13,41 @@
     border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 4px 14px;
     font-size: 12px; cursor: pointer; transition: background .15s; }
   button:hover { background: rgba(255,255,255,.16); }
+  @container (max-width: 180px) {
+    .wrap { padding: 7px 9px 9px; gap: 5px; }
+    .big b { font-size: 24px; }
+    button { padding-inline: 9px; }
+  }
+  @container (max-height: 100px) {
+    .wrap { display: grid; grid-template-columns: auto 1fr auto; align-items: center; padding: 5px 8px; }
+    .latest { -webkit-line-clamp: 1; }
+    button { align-self: center; }
+  }
 </style>
 <script>
+  var TEXT = {
+    'zh-CN': { count:'条历史', loading:'读取中…', empty:'（空）', latest:'最近：', refresh:'刷新' },
+    en: { count:'items', loading:'Loading…', empty:'(empty)', latest:'Latest: ', refresh:'Refresh' },
+    ja: { count:'件の履歴', loading:'読み込み中…', empty:'（空）', latest:'最近：', refresh:'更新' },
+    ko: { count:'개 기록', loading:'불러오는 중…', empty:'(비어 있음)', latest:'최근: ', refresh:'새로고침' }
+  };
+  function localize() {
+    var w = TEXT[document.documentElement.lang] || TEXT.en;
+    document.querySelector('.big span').textContent = w.count;
+    document.getElementById('btn').textContent = w.refresh;
+    return w;
+  }
   function load() {
+    var w = localize();
+    document.getElementById('latest').textContent = w.loading;
     wbRpc('clip.get', { last: 8 }).then(function (d) {
       var arr = (d && d.result) || [];
       document.getElementById('n').textContent = arr.length;
-      var latest = (arr[0] && arr[0].content) ? String(arr[0].content) : '（空）';
-      document.getElementById('latest').textContent = '最近：' + latest.slice(0, 120);
+      var latest = (arr[0] && arr[0].content) ? String(arr[0].content) : w.empty;
+      document.getElementById('latest').textContent = w.latest + latest.slice(0, 120);
     });
   }
   document.getElementById('btn').addEventListener('click', load);
+  window.addEventListener('wbresize', localize);
   load();
 </script>

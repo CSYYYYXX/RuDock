@@ -126,6 +126,12 @@ PowerShell 最小示例见 `hello-assistant/main.ps1`。
 - 单文件 HTML（内联 `<style>`/`<script>`），以 sandboxed iframe 装进主看板；插件页只展示安装、批准、撤销和卸载状态
 - 内置桥：页面里可调用 `await wbRpc('clip.get', { last: 5 })`；父页会把真实插件身份交给 daemon 权限网关
 - 背景必须透明（卡片玻璃底由面板提供）；字体/颜色参考 `clip-insight/widget.html`
+- 面板和桌面里的卡片都可独立调整宽高。插件页面会收到 `wbresize` 事件：
+  `event.detail = { width, height, locale }`，同时宿主维护 `--wb-widget-width`、
+  `--wb-widget-height` 和 `<html lang>`。优先用 `@container` 根据实际容器尺寸重排，
+  不要按屏幕或视口宽度猜测卡片大小。
+- 至少准备窄卡片（约 180px）和矮卡片（约 90px）两档布局；正文应省略、换行或
+  减少次要信息，不能溢出卡片。`wb plugin create` 生成的 widget 已包含基础示例。
 - 大小上限 256KB；默认 CSP 禁止外联，只有声明并获批 `network` 后才开放 HTTP(S) connect/image
 
 `widget.span` 使用主看板的 6 列网格（1-4 列）。widget 获批后会和内置组件一起参与显隐定制；撤销批准或插件内容指纹变化后，组件立即从主看板移除，重新批准当前版本才会恢复。

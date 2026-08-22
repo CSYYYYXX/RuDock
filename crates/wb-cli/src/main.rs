@@ -228,10 +228,34 @@ enum SettingsOp {
     Get,
     Win { #[arg(action = clap::ArgAction::Set)] enabled: bool },
     Autostart { #[arg(action = clap::ArgAction::Set)] enabled: bool },
+    /// Interface language; auto follows the Windows display language
+    Language { #[arg(value_enum)] language: InterfaceLanguage },
     /// Widgets pinned to the desktop; pass no ids to disable the desktop host
     Desktop { widgets: Vec<String> },
     /// MCP write handling: trust client prompts, require elicitation, or block writes
     Mcp { #[arg(value_enum)] policy: McpWritePolicy },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum InterfaceLanguage {
+    Auto,
+    #[value(name = "zh-CN", alias = "zh-cn", alias = "zh")]
+    ZhCn,
+    En,
+    Ja,
+    Ko,
+}
+
+impl InterfaceLanguage {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::ZhCn => "zh-CN",
+            Self::En => "en",
+            Self::Ja => "ja",
+            Self::Ko => "ko",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -465,6 +489,8 @@ $name = if ($request.args.name) { [string]$request.args.name } else { "World" }
             r#"<!doctype html><meta charset="utf-8"><style>
 html,body{{margin:0;height:100%;background:transparent;color:#eaf0ff;font:13px "Segoe UI",sans-serif}}
 .root{{height:100%;display:grid;place-content:center;text-align:center}}.time{{font-size:32px;font-weight:300}}.name{{opacity:.65;margin-top:6px}}
+@container (max-width:180px){{.time{{font-size:24px}}.name{{font-size:11px}}}}
+@container (max-height:90px){{.root>div{{display:flex;align-items:center;gap:9px}}.time{{font-size:22px}}.name{{margin-top:0}}}}
 </style><div class="root"><div><div class="time" id="time"></div><div class="name">{}</div></div></div>
 <script>const time=document.getElementById('time');function tick(){{time.textContent=new Date().toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit'}})}}tick();setInterval(tick,1000)</script>
 "#,
@@ -849,6 +875,7 @@ fn main() {
             SettingsOp::Get => ("settings.get", serde_json::json!({})),
             SettingsOp::Win { enabled } => ("settings.set", serde_json::json!({"takeover_win":enabled})),
             SettingsOp::Autostart { enabled } => ("settings.set", serde_json::json!({"autostart":enabled})),
+            SettingsOp::Language { language } => ("settings.set", serde_json::json!({"language":language.as_str()})),
             SettingsOp::Desktop { widgets } => ("settings.set", serde_json::json!({"desktop_widgets":widgets})),
             SettingsOp::Mcp { policy } => (
                 "settings.set",
@@ -1019,6 +1046,17 @@ mod tests {
                 op: SettingsOp::Mcp { policy },
             } => assert_eq!(policy.as_str(), "read-only"),
             _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parses_supported_interface_languages() {
+        for (input, expected) in [("auto", "auto"), ("zh-CN", "zh-CN"), ("en", "en"), ("ja", "ja"), ("ko", "ko")] {
+            let cli = Cli::try_parse_from(["wb", "settings", "language", input]).unwrap();
+            match cli.cmd {
+                Cmd::Settings { op: SettingsOp::Language { language } } => assert_eq!(language.as_str(), expected),
+                _ => panic!("unexpected command"),
+            }
         }
     }
 

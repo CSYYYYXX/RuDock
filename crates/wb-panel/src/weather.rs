@@ -87,7 +87,7 @@ pub fn current() -> Result<serde_json::Value, String> {
     }
 
     let data = serde_json::json!({
-        "city": city, "temp": temp.round(), "icon": icon, "text": text,
+        "city": city, "temp": temp.round(), "icon": icon, "text": text, "code": code,
         "humidity": hum, "wind": (wind * 10.0).round() / 10.0,
         "hourly": hourly,
     });

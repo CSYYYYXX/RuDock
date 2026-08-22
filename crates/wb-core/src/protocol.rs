@@ -43,7 +43,7 @@ pub fn schema() -> Value {
             {"name": "daemon.ping", "params": {}, "returns": {"type": "object"}},
             {"name": "daemon.stop", "params": {}, "returns": {"type": "object"}},
             {"name": "settings.get", "params": {}, "returns": {"type": "object"}, "status": "M5"},
-            {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?", "mcp_write_policy": "client|ask|read-only?", "desktop_widgets": "string[]?"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?", "mcp_write_policy": "client|ask|read-only?", "language": "auto|zh-CN|en|ja|ko?", "desktop_widgets": "string[]?", "widget_layout": "{surface,id,cols?,rows?,reset?}?"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "hook.status", "params": {}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "search", "params": {"query": "string", "limit": "number?", "type": "file|app|clip|note|todo|plugin?"}, "returns": {"type": "array"}},
             {"name": "note.add", "params": {"content": "string", "tags": "string[]?"}, "returns": {"type": "object"}},

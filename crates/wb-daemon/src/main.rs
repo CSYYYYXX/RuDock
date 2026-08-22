@@ -1048,7 +1048,9 @@ fn default_settings() -> serde_json::Value {
         "takeover_win": false,
         "autostart": false,
         "mcp_write_policy": "client",
+        "language": "auto",
         "desktop_widgets": [],
+        "widget_layouts": {"panel": {}, "desktop": {}},
         "plugin_grants": {},
         "plugin_markets": [],
     })
@@ -1068,6 +1070,12 @@ fn read_settings() -> serde_json::Value {
     let defaults = default_settings();
     for (k, v) in defaults.as_object().unwrap() {
         obj.entry(k.clone()).or_insert_with(|| v.clone());
+    }
+    if !matches!(obj.get("language").and_then(|v| v.as_str()), Some("auto" | "zh-CN" | "en" | "ja" | "ko")) {
+        obj.insert("language".into(), serde_json::json!("auto"));
+    }
+    if !obj.get("widget_layouts").is_some_and(|v| v.is_object()) {
+        obj.insert("widget_layouts".into(), serde_json::json!({"panel": {}, "desktop": {}}));
     }
     value
 }
@@ -1120,6 +1128,65 @@ fn normalize_desktop_widgets(value: &serde_json::Value) -> wb_core::Result<Vec<S
         }
     }
     Ok(widgets)
+}
+
+fn valid_widget_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && (id.starts_with("w-") || id.starts_with("plugin-"))
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+fn apply_widget_layout_update(
+    settings: &mut serde_json::Value,
+    value: &serde_json::Value,
+) -> wb_core::Result<&'static str> {
+    let surface = value
+        .get("surface")
+        .and_then(|v| v.as_str())
+        .filter(|v| matches!(*v, "panel" | "desktop"))
+        .ok_or_else(|| CoreError::new(ErrorCode::InvalidParams, "widget_layout.surface must be panel or desktop"))?;
+    let id = value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|id| valid_widget_id(id))
+        .ok_or_else(|| CoreError::new(ErrorCode::InvalidParams, "widget_layout.id is invalid"))?;
+    let reset = value.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
+    let root = settings.as_object_mut().unwrap();
+    let layouts = root
+        .entry("widget_layouts")
+        .or_insert_with(|| serde_json::json!({"panel": {}, "desktop": {}}));
+    if !layouts.is_object() {
+        *layouts = serde_json::json!({"panel": {}, "desktop": {}});
+    }
+    let surface_layouts = layouts
+        .as_object_mut()
+        .unwrap()
+        .entry(surface)
+        .or_insert_with(|| serde_json::json!({}));
+    if !surface_layouts.is_object() {
+        *surface_layouts = serde_json::json!({});
+    }
+    let surface_layouts = surface_layouts.as_object_mut().unwrap();
+    if reset {
+        surface_layouts.remove(id);
+        return Ok(if surface == "desktop" { "desktop" } else { "panel" });
+    }
+    let max_cols = if surface == "desktop" { 4 } else { 6 };
+    let cols = value
+        .get("cols")
+        .and_then(|v| v.as_u64())
+        .filter(|v| (1..=max_cols).contains(v))
+        .ok_or_else(|| CoreError::new(ErrorCode::InvalidParams, format!("widget_layout.cols must be 1-{max_cols}")))?;
+    let rows = value
+        .get("rows")
+        .and_then(|v| v.as_u64())
+        .filter(|v| (1..=8).contains(v))
+        .ok_or_else(|| CoreError::new(ErrorCode::InvalidParams, "widget_layout.rows must be 1-8"))?;
+    surface_layouts.insert(id.to_string(), serde_json::json!({"cols":cols,"rows":rows}));
+    Ok(if surface == "desktop" { "desktop" } else { "panel" })
 }
 
 fn market_sources_from_settings(settings: &serde_json::Value) -> Vec<MarketSource> {
@@ -1612,6 +1679,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             let _settings = ctx.settings_tx.lock().unwrap();
             let mut settings = read_settings();
             let obj = settings.as_object_mut().unwrap();
+            let mut refresh_desktop = false;
             if let Some(value) = params.get("takeover_win").and_then(|v| v.as_bool()) {
                 set_hook_running(value).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
                 obj.insert("takeover_win".into(), serde_json::json!(value));
@@ -1643,12 +1711,25 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 }
                 obj.insert("mcp_write_policy".into(), serde_json::json!(value));
             }
+            if let Some(value) = params.get("language") {
+                let value = value.as_str().filter(|v| matches!(*v, "auto" | "zh-CN" | "en" | "ja" | "ko")).ok_or_else(|| {
+                    CoreError::new(ErrorCode::InvalidParams, "language must be auto, zh-CN, en, ja, or ko")
+                })?;
+                obj.insert("language".into(), serde_json::json!(value));
+                refresh_desktop = true;
+            }
             if let Some(value) = params.get("desktop_widgets") {
                 let widgets = normalize_desktop_widgets(value)?;
                 obj.insert("desktop_widgets".into(), serde_json::json!(widgets));
+                refresh_desktop = true;
+            }
+            if let Some(value) = params.get("widget_layout") {
+                refresh_desktop |= apply_widget_layout_update(&mut settings, value)? == "desktop";
             }
             write_settings(&settings).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
-            panelctl::sync_desktop(!desktop_widgets_from_settings(&settings).is_empty());
+            if refresh_desktop {
+                panelctl::sync_desktop(!desktop_widgets_from_settings(&settings).is_empty());
+            }
             if let Some(obj) = settings.as_object_mut() {
                 obj.insert("hook_running".into(), serde_json::json!(hook_running()));
                 obj.insert("desktop_running".into(), serde_json::json!(panelctl::desktop_running()));
@@ -2666,6 +2747,31 @@ mod tests {
             assert!(normalize_desktop_widgets(&invalid).is_err());
         }
         assert!(normalize_desktop_widgets(&serde_json::json!(vec!["w-clock"; 33])).is_err());
+    }
+
+    #[test]
+    fn widget_layout_updates_are_bounded_and_surface_scoped() {
+        let mut settings = default_settings();
+        assert_eq!(
+            apply_widget_layout_update(&mut settings, &serde_json::json!({
+                "surface":"panel", "id":"w-weather", "cols":3, "rows":4
+            })).unwrap(),
+            "panel"
+        );
+        assert_eq!(settings["widget_layouts"]["panel"]["w-weather"]["cols"], 3);
+        assert!(settings["widget_layouts"]["desktop"].as_object().unwrap().is_empty());
+
+        assert!(apply_widget_layout_update(&mut settings, &serde_json::json!({
+            "surface":"desktop", "id":"w-weather", "cols":5, "rows":2
+        })).is_err());
+        assert!(apply_widget_layout_update(&mut settings, &serde_json::json!({
+            "surface":"panel", "id":"bad/path", "cols":2, "rows":2
+        })).is_err());
+
+        apply_widget_layout_update(&mut settings, &serde_json::json!({
+            "surface":"panel", "id":"w-weather", "reset":true
+        })).unwrap();
+        assert!(settings["widget_layouts"]["panel"].get("w-weather").is_none());
     }
 
     #[test]
