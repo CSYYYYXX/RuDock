@@ -1084,11 +1084,10 @@ fn read_settings() -> serde_json::Value {
     if !matches!(obj.get("language").and_then(|v| v.as_str()), Some("auto" | "zh-CN" | "en" | "ja" | "ko")) {
         obj.insert("language".into(), serde_json::json!("auto"));
     }
-    if !had_onboarding_flag {
-        obj.insert("onboarding_complete".into(), serde_json::json!(true));
-    } else if !obj
-        .get("onboarding_complete")
-        .is_some_and(serde_json::Value::is_boolean)
+    if !had_onboarding_flag
+        || !obj
+            .get("onboarding_complete")
+            .is_some_and(serde_json::Value::is_boolean)
     {
         obj.insert("onboarding_complete".into(), serde_json::json!(true));
     }

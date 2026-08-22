@@ -114,4 +114,4 @@ E:\cctest\wb\
 
 ## 8. 上次会话最后在做的事
 
-完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证、GitHub Release workflow、用户级安装器、`wb backup create/restore` 数据备份恢复和 `wb diagnostics create` 脱敏诊断导出。面向用户的 README 已改为下载、启动、校验、升级、备份、恢复、诊断和卸载说明；首次启动引导支持中文、英文、日文、韩文，并对旧设置文件默认视为已完成。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`a1a0bcc`、`b72773b`、`320beaf`、`6622c03`、`7cdd39c`。最终便携包已重建，ZIP SHA-256 为 `c3f4fb01dedc3a69c0154f018b04e64c66ac81a6cdbc8e87b848e7f5bd7af190`。下一步做升级检查，再把便携目录启动、多语言、组件响应式、首次引导和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。
+完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证、GitHub Release workflow、用户级安装器、`wb backup create/restore` 数据备份恢复和 `wb diagnostics create` 脱敏诊断导出。面向用户的 README 已改为下载、启动、校验、升级、备份、恢复、诊断和卸载说明；首次启动引导支持中文、英文、日文、韩文，并对旧设置文件默认视为已完成。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`a1a0bcc`、`b72773b`、`320beaf`、`6622c03`、`7cdd39c`。最终便携包已重建，ZIP SHA-256 为 `37393d3b9d2b33156f34b580ccbdf5a1d8857586b6a48ad56bae8c4bf9d90726`。下一步做升级检查，再把便携目录启动、多语言、组件响应式、首次引导和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。
