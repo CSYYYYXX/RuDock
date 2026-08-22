@@ -1,4 +1,4 @@
-# WB 项目交接文档（2026-08-22 早）
+# WB 项目交接文档（2026-08-22）
 
 > 新 session 开场直接说：「读 E:\cctest\wb\HANDOFF.md，继续 WB 开发」即可。
 > 本文档 = 项目现状 + 操作纪律 + 下一步。改代码前先把「操作纪律」读完，全是血泪。
@@ -18,7 +18,8 @@ WB（Windows Bar / WorkBench）：**Agent-Native 的 Windows 桌面入口**，�
 E:\cctest\wb\
   Cargo.toml            # workspace
   build.sh              # 工具链环境（Git Bash 下 source）
-  README.md             # 里程碑流水账（v1→v11、M1→M4），继续往里写
+  README.md             # 里程碑流水账（v1→v11、M1→M5），继续往里写
+  AGENT_INTEGRATION.md  # CLI / Claude / Cursor / Codex MCP 接入
   assets\panel-ui\index.html   # 面板全部前端（单文件，~1500 行）
   crates\
     wb-core\            # 模型/存储(sqlite)/搜索/协议/命令注册表commands.rs/ai.rs(ask_sync)
@@ -26,9 +27,9 @@ E:\cctest\wb\
     wb-cli\             # wb.exe（注意：bin 名是 wb，不是 wb-cli）
     wb-hook\            # Win 键低级钩子（wb-hook-poc.exe）
     wb-panel\           # 面板宿主：host.rs/ipc.rs/ai.rs(流式+function calling)/dwm.rs(磨砂)/webview2.rs
-    wb-plugin-sdk\      # 插件 manifest 类型+校验（5 单测）
-    wb-plugin-host\     # 插件发现/进程执行/挂件读取（2 单测）
-    wb-mcp\             # stub，未做
+    wb-plugin-sdk\      # 插件 manifest 类型+权限校验
+    wb-plugin-host\     # 插件发现/路径约束/有界进程执行/挂件读取
+    wb-mcp\             # stdio MCP server（tools + Skill resources）
   plugins\              # 开发态插件目录（daemon 自动发现）：hello-assistant、clip-insight
   docs-assets\          # 验证截图
   target\debug\         # 产物：wb.exe / wb-daemon.exe / wb-panel.exe / wb-hook-poc.exe
@@ -57,9 +58,9 @@ E:\cctest\wb\
 
 ## 4. 架构要点（新人 5 分钟版）
 
-- **单一事实源 = wb-daemon**（JSON-RPC over 命名管道）。面板/CLI/将来的 MCP 都是平等客户端。方法表见 `wb-core/src/protocol.rs` schema()。
+- **单一事实源 = wb-daemon**（JSON-RPC over 命名管道）。面板/CLI/MCP 都是平等客户端。方法表见 `wb-core/src/protocol.rs` schema()。
 - **命令注册表**（`wb-core/src/commands.rs`）：10 条内建命令。同一份数据三处用：`list_json()`（页面 `>` 模式 + CLI）、`tools_json()`（AI function calling）、方法名直映射（cmd.run 转发）。破坏性命令（clip.clear/system.lock）不暴露给 AI。
-- **插件**（M4）：daemon 启动时发现 `%LOCALAPPDATA%/WB/plugins` + 仓库 `plugins/`；`cmd.list`/`cmd.tools` 自动合并插件命令（source:"plugin"）；执行 = 进程式（stdin JSON → stdout JSON，10s 超时）。AI 工具名规则：点换下划线互逆（`util.hello` ⇔ `util_hello`），面板 ai.rs 的 exec_tool 一律走 `cmd.run` 不分辨内建/插件。挂件 = sandboxed iframe + srcdoc + `wbRpc` 桥（iframe postMessage → 父页中继 → daemon）。
+- **插件**（M4/M5）：daemon 启动时发现 `%LOCALAPPDATA%/WB/plugins` + 仓库 `plugins/`。带权限插件默认不可见、不可执行，`plugin.approve/revoke` 的授权绑定版本、权限集合和 SHA-256 内容指纹。命令 handler 进程从启动起并发排空 stdout/stderr（每路 1MB、10s 超时），所有插件文件 canonical path 必须留在根目录。工具执行统一走 `cmd.tool.run` 的真实注册表。挂件的 `wbRpc` 经 `plugin.rpc` 身份、批准、权限、白名单四层检查，iframe 默认 CSP 禁止外联。
 - **面板视觉**：v11 整屏 veil 磨砂（dwm.rs）：24 张亚克力窗的池，只用第 1 张拉满工作区钉在面板下，显隐各一次定位+淡入淡出，动画期零窗口操作（165Hz 下逐卡跟踪会卡，别回去；WB_CARD_FROST=1 可 A/B）。显隐动画协议：页面先冻结在第 0 帧（hold）→ 宿主亮窗发 "go" → 动画起点即亮窗帧（消灭"先闪一下"）。
 - **AI 链路**：面板 `?` → ai.rs 起线程 curl SSE 流式（系统 curl.exe 零依赖，body 走 stdin）；function calling 回合制最多 3 轮、末轮不带 tools 强制纯文本收尾；daemon 侧 `agent.ask` 走 `wb-core::ai::ask_sync`（非流式）。
 
@@ -69,28 +70,29 @@ E:\cctest\wb\
 - M4 实测：`wb cmd run util.hello --arg name=WB` 中文无乱码；`?跟 Luna 打个招呼` → 模型自动调插件 `util_hello` → 确认；插件页挂件渲染 + wbRpc 桥读剪贴板统计正常。
 - M5 第一阶段：插件 manifest 支持 `skills` 文档；daemon 暴露 `skill.list` / `skill.get`、`plugin.install` / `plugin.remove`，CLI 提供 `wb skill ...`、`wb plugin pack/install/remove`；ZIP/目录安装会校验、复制到用户目录并立即刷新 daemon 插件池；面板 AI 增加 `skill_list` / `skill_get` 工具。插件页现在每 3 秒检查清单 revision，新增/删除/替换挂件会自动重建 iframe，另有手动刷新按钮。`hello-assistant` 已带 `SKILL.md` 示例。真实 CLI 安装/执行/卸载冒烟、插件页新增挂件截图验证通过，workspace 测试全绿。
 - M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。协议级冒烟已验证能看到 `util_hello`、`skill_list` 并读取 Skill；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
+- M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；daemon 按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
 - Spotlight 搜索：daemon 启动后在后台广度优先索引 Desktop/Documents/Downloads/OneDrive，最多 50,000 项，与应用、剪贴板、笔记、待办、插件命令合并排序；`wb search ... --type file|plugin` 已真实验证。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费，视觉验收截图 `docs-assets/m5-spotlight-plugin-search-fixed.png`。
-- 2026-08-22 全量测试：wb-core 7 + wb-plugin-sdk 6 + wb-plugin-host 3 全绿；workspace 构建通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,928 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
+- 2026-08-22 全量测试：wb-core 7 + wb-daemon 2 + wb-plugin-sdk 9 + wb-plugin-host 5，共 23 个单测全绿；workspace build/check 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,928 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
 
 ## 6. 已知瑕疵 / 未验证声明
 
 - 面板无单例保护（测试时记得杀干净，否则会起多个）。
 - Start-Process 不带重定向会出控制台黑窗——生产路径（daemon panelctl 拉起）已用 CREATE_NO_WINDOW，无此问题。
 - 插件挂件支持面板内自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
-- 插件权限仅声明不强制（v1 信任模型 = 用户自装本地代码）。
+- `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
 - `events.tail` 未实现；`daemon stop` 未实现（用 taskkill）。MCP 当前为单进程 stdio 会话，每个 MCP server 连接独立复用一个 daemon pipe。
 - Everything（voidtools）IPC 未接入；当前是用户常用目录的有界、启动时后台索引，不是全盘实时索引。
 - 托盘尚未做；开机自启已通过设置页和 HKCU Run 完成。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **M5 插件生态深化**：插件设置页、把内置 16 个组件逐步迁移成插件格式自证、插件市场/版本升级。Skill 读取、AI 上下文选择和挂件热加载已接入。
-2. **Agent 生态深化**：MCP 已接通，下一步补外部 Agent 配置样例、事件订阅和更细的权限/确认策略。
+1. **M5 插件生态深化**：把 1-2 个内置组件迁移成插件格式自证、插件市场/版本升级。Skill、权限管理页和挂件热加载已接入。
+2. **Agent 生态深化**：MCP 与外部配置样例已接通，下一步补事件订阅、写操作确认策略和安装级接入体验。
 3. **Everything 搜索接入**（WM_COPYDATA 客户端）——文件搜索从"本地存储"升级"全盘毫秒级"。
 4. 托盘常驻 + `daemon stop`。
 5. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。
 
 ## 8. 上次会话最后在做的事
 
-已完成 Spotlight 统一搜索降级方案和 MCP 冷启动：用户文件后台索引、插件命令进入普通搜索并可执行、`type` 过滤、`#q=` 深链修复均已验证。下一步优先做外部 Agent 的 MCP 配置样例与插件权限/确认策略，或继续接 Everything IPC 把文件层升级为全盘实时搜索。
+已完成插件权限生命周期、widget RPC 网关、插件文件/handler 输出加固和外部 MCP 配置生成。下一步先跑全量测试并提交；随后优先从内置组件迁移、Agent 写操作确认或 Everything IPC 中选择一条继续推进。

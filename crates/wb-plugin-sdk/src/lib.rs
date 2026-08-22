@@ -41,7 +41,7 @@ pub struct Manifest {
     /// Agent 可读取的 Skill 文档（相对插件目录）。
     #[serde(default)]
     pub skills: Vec<SkillSpec>,
-    /// 声明式权限（v1 仅记录不强制）：network / fs / clipboard …
+    /// 安装后需由用户批准的能力。版本或权限集合变化会使授权失效。
     #[serde(default)]
     pub permissions: Vec<String>,
 }
@@ -102,6 +102,18 @@ pub struct SkillSpec {
 }
 
 impl Manifest {
+    pub const PERMISSIONS: &'static [&'static str] = &[
+        "clipboard.read",
+        "clipboard.write",
+        "data.read",
+        "data.write",
+        "panel.control",
+        "network",
+        "filesystem",
+        "process",
+        "system",
+    ];
+
     pub fn validate(&self) -> Result<(), String> {
         let id_ok = !self.id.is_empty()
             && self
@@ -139,9 +151,13 @@ impl Manifest {
                     .chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-' || c == '_')
         };
+        let mut skill_ids = std::collections::HashSet::new();
         for s in &self.skills {
             if !cmd_id_ok(&s.id) {
                 return Err(format!("bad skill id: {:?}", s.id));
+            }
+            if !skill_ids.insert(&s.id) {
+                return Err(format!("重复 skill id: {:?}", s.id));
             }
             if s.name.is_empty() {
                 return Err(format!("skill {} 缺 name", s.id));
@@ -150,16 +166,36 @@ impl Manifest {
                 return Err(format!("skill.file 路径非法: {:?}", s.file));
             }
         }
+        let mut command_ids = std::collections::HashSet::new();
+        let mut tool_names = std::collections::HashSet::new();
         for c in &self.commands {
             if !cmd_id_ok(&c.id) {
                 return Err(format!("bad command id: {:?}", c.id));
+            }
+            if !command_ids.insert(&c.id) {
+                return Err(format!("重复 command id: {:?}", c.id));
+            }
+            if c.ai.is_some() && !tool_names.insert(Self::tool_name(&c.id)) {
+                return Err(format!("AI 工具名冲突: {:?}", Self::tool_name(&c.id)));
             }
             if c.title.is_empty() {
                 return Err(format!("命令 {} 缺 title", c.id));
             }
         }
+        let mut permissions = std::collections::HashSet::new();
+        for permission in &self.permissions {
+            if !Self::PERMISSIONS.contains(&permission.as_str()) {
+                return Err(format!("未知权限: {permission:?}"));
+            }
+            if !permissions.insert(permission) {
+                return Err(format!("重复权限: {permission:?}"));
+            }
+        }
         if !self.commands.is_empty() && self.handler.is_none() {
             return Err("声明了 commands 但缺 handler".into());
+        }
+        if !self.commands.is_empty() && !self.permissions.iter().any(|p| p == "process") {
+            return Err("命令插件必须声明 process 权限".into());
         }
         if self.commands.is_empty() && self.widget.is_none() && self.skills.is_empty() {
             return Err("插件既没有 commands、widget 也没有 skills".into());
@@ -172,9 +208,10 @@ impl Manifest {
         cmd_id.replace('.', "_")
     }
 
-    /// AI 工具名还原成命令 id。
-    pub fn cmd_id(tool_name: &str) -> String {
-        tool_name.replace('_', ".")
+    pub fn sorted_permissions(&self) -> Vec<String> {
+        let mut permissions = self.permissions.clone();
+        permissions.sort();
+        permissions
     }
 }
 
@@ -186,7 +223,8 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "id": "hello", "name": "Hello", "version": "0.1.0",
             "handler": "main.ps1",
-            "commands": [{"id": "util.hello", "title": "打招呼"}]
+            "commands": [{"id": "util.hello", "title": "打招呼"}],
+            "permissions": ["process"]
         }))
         .unwrap()
     }
@@ -241,12 +279,47 @@ mod tests {
         let mut m = base();
         m.handler = None;
         m.commands.clear();
+        m.permissions.clear();
         assert!(m.validate().is_err());
     }
 
     #[test]
-    fn tool_name_roundtrip() {
+    fn validates_permission_names_and_duplicates() {
+        let mut m = base();
+        m.permissions = vec!["process".into(), "clipboard.read".into(), "network".into()];
+        m.validate().unwrap();
+
+        m.permissions.push("network".into());
+        assert!(m.validate().unwrap_err().contains("重复权限"));
+
+        m.permissions = vec!["everything".into()];
+        assert!(m.validate().unwrap_err().contains("未知权限"));
+    }
+
+    #[test]
+    fn command_plugin_requires_process_permission() {
+        let mut m = base();
+        m.permissions.clear();
+        assert!(m.validate().unwrap_err().contains("process"));
+    }
+
+    #[test]
+    fn tool_name_is_openai_safe() {
         assert_eq!(Manifest::tool_name("util.hello"), "util_hello");
-        assert_eq!(Manifest::cmd_id("util_hello"), "util.hello");
+        assert_eq!(Manifest::tool_name("util.say_hi"), "util_say_hi");
+    }
+
+    #[test]
+    fn rejects_duplicate_registry_names() {
+        let mut m = base();
+        m.commands.push(m.commands[0].clone());
+        assert!(m.validate().unwrap_err().contains("重复 command id"));
+
+        let mut m = base();
+        m.commands[0].ai = Some(AiSpec { description: "x".into(), properties: serde_json::json!({}), required: vec![] });
+        let mut other = m.commands[0].clone();
+        other.id = "util_hello".into();
+        m.commands.push(other);
+        assert!(m.validate().unwrap_err().contains("AI 工具名冲突"));
     }
 }

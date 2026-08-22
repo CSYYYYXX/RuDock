@@ -47,9 +47,34 @@
       "tags": ["workflow"]
     }
   ],
-  "permissions": []               // v1 仅声明不强制：network / fs / clipboard
+  "permissions": ["process"]      // commands 必须声明 process；安装后由用户批准
 }
 ```
+
+## 权限与批准
+
+manifest 只接受以下权限；未知项和重复项都会使插件加载失败：
+
+| 权限 | 能力 |
+| --- | --- |
+| `clipboard.read` | 读取剪贴板历史 |
+| `clipboard.write` | 写入或清空剪贴板历史 |
+| `data.read` | 读取笔记、待办 |
+| `data.write` | 新增、修改或删除笔记和待办 |
+| `panel.control` | 显示、隐藏或切换 WB 面板 |
+| `network` | 允许 widget 连接 HTTP(S) 或加载网络图片 |
+| `filesystem` | 读取应用列表和最近文件；供未来文件能力扩展 |
+| `process` | 启动插件 handler；所有命令插件必须声明 |
+| `system` | 预留给高风险系统操作；当前 widget RPC 不开放 |
+
+带权限的插件安装后默认处于待批准状态，不会进入普通搜索、命令列表、AI/MCP 工具、Skill 或插件页挂件，也不能执行命令。可在面板插件页批准，或使用 CLI：
+
+```text
+wb plugin approve hello-assistant
+wb plugin revoke hello-assistant
+```
+
+授权写入 `%APPDATA%\WB\settings.json`，并绑定插件版本、排序后的权限集合和 manifest/handler/widget/Skill 文件的 SHA-256 内容指纹。任一文件、版本或权限发生变化，旧授权会自动失效，必须重新审阅并批准当前版本。
 
 ## 命令一旦声明，三处自动可用
 
@@ -63,24 +88,39 @@
 
 - daemon 拉起 handler 子进程，**stdin** 喂一行 JSON：`{"command": "util.hello", "args": {...}}`
 - **stdout** 吐一个 JSON 值作为结果（非 JSON 输出会被包成 `{"text": "…"}` 容错）
-- 10 秒超时强杀；stderr 内容在失败时作为错误信息
+- stdout/stderr 从启动起并发排空，每路最多保留 1MB；10 秒超时强杀，stderr 内容在失败时作为错误信息
 - 解释器按扩展名映射：`.ps1` → Windows PowerShell，`.js` → node，`.py` → python，其余直接执行
+- handler/widget/Skill 的 canonical path 必须仍位于插件根目录，目录联接或符号链接也不能越界
 
 PowerShell 最小示例见 `hello-assistant/main.ps1`。
 
 ## widget 契约（面板挂件）
 
 - 单文件 HTML（内联 `<style>`/`<script>`），以 sandboxed iframe 装进面板第三页「插件」页
-- 内置桥：页面里直接 `await wbRpc('clip.get', { last: 5 })` 即可调 daemon 的任意方法
+- 内置桥：页面里可调用 `await wbRpc('clip.get', { last: 5 })`；父页会把真实插件身份交给 daemon 权限网关
 - 背景必须透明（卡片玻璃底由面板提供）；字体/颜色参考 `clip-insight/widget.html`
-- 大小上限 256KB；别访问外网图片（离线优先）
+- 大小上限 256KB；默认 CSP 禁止外联，只有声明并获批 `network` 后才开放 HTTP(S) connect/image
+
+widget RPC 是显式白名单，不是 daemon 任意方法透传：
+
+| 方法 | 所需权限 |
+| --- | --- |
+| `clip.get` | `clipboard.read` |
+| `clip.add`, `clip.clear` | `clipboard.write` |
+| `note.list`, `note.get`, `todo.list` | `data.read` |
+| `note.add`, `note.rm`, `todo.add`, `todo.done`, `todo.rm` | `data.write` |
+| `apps.list`, `recent.list` | `filesystem` |
+| `panel.show`, `panel.hide`, `panel.toggle` | `panel.control` |
+
+未列出的调用会被拒绝，即使插件声明了其他权限也不会放行。
 
 ## 安全边界
 
-插件是你自己安装的本地代码，与安装普通软件同权——请只装你信任的插件。
-AI 侧只能调用你在 manifest 里显式写了 `ai` 的命令；破坏性命令不要写 `ai` 段。
+权限网关限制插件何时可见、widget 能调用哪些 WB 能力，但 `process` **不是操作系统沙箱**。获批的 handler 是当前 Windows 用户权限下的本地代码，可以直接访问该用户本来能访问的文件、网络和进程；请只批准你信任并审阅过的插件。
 
-改动插件后：`wb plugin reload`（命令立刻生效；面板挂件在面板下次启动时加载）。
+AI 侧只能调用 manifest 里显式带 `ai` 的命令；高风险命令不要写 `ai` 段。命令/工具 id 还必须在全局注册表中唯一，插件不能覆盖内建命令、内建 AI 工具、`skill_list` / `skill_get` 或其他插件。
+
+改动插件后：`wb plugin reload`。命令池会立即刷新，面板每 3 秒检查 revision，也可在插件页手动刷新；内容指纹变化后需重新批准。
 
 ## 打包与安装
 

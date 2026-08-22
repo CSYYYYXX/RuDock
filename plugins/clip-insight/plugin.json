@@ -4,5 +4,6 @@
   "version": "0.1.0",
   "description": "WB 挂件插件示例：剪贴板历史统计与最近一条预览（演示 wbRpc 桥）",
   "author": "WB 社区",
-  "widget": { "file": "widget.html", "title": "剪贴板洞察", "span": 2 }
+  "widget": { "file": "widget.html", "title": "剪贴板洞察", "span": 2 },
+  "permissions": ["clipboard.read"]
 }

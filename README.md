@@ -1,6 +1,6 @@
 # WB — Agent-Native Windows 桌面入口
 
-> 设计文档：[`../docs/技术方案-v0.1.md`](../docs/技术方案-v0.1.md)
+> 设计文档：[`../docs/技术方案-v0.1.md`](../docs/技术方案-v0.1.md)；外部 Agent 接入：[`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md)
 > 人按 Win 键用面板，Agent 走 CLI/MCP 用能力，插件一次开发服务两者。
 
 ## 当前状态（M5：插件/Skill/MCP + Spotlight 统一搜索）
@@ -14,7 +14,7 @@
 | wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由） | ✅ 可用 |
 | wb-mcp（M5 Agent 适配层） | ✅ stdio MCP（tools + Skill resources，可冷启动 daemon） |
 | wb-plugin-sdk / wb-plugin-host（M4 插件系统） | ✅ 可用（发现/校验/进程执行/挂件桥） |
-| 插件生态（M5 第一阶段） | ✅ 可用（Skill / pack / install / remove / daemon 热重载 / 面板挂件热加载 / AI Skill 工具） |
+| 插件生态（M5） | ✅ 可用（权限批准 / Skill / pack / install / remove / 热加载 / AI 与 MCP 工具） |
 
 ### PoC 结果（验证于本机 Win11 26200，WebView2 Runtime 151）
 
@@ -117,14 +117,14 @@
 
 ### M4：插件系统——小组件与 Agent 能力统一开放（当前）
 
-- **格式**：一个文件夹 + `plugin.json`（`wb-plugin-sdk` 定义 manifest 与校验，5 个单测）。两个示例在 `plugins/`：`hello-assistant`（命令插件，PowerShell handler）与 `clip-insight`（挂件插件）。完整格式文档：`plugins/README.md`。
-- **命令插件**：manifest 声明 `commands`（id/title/hint/arg/ai 描述），handler 子进程契约——stdin 收 `{"command", "args"}`、stdout 吐 JSON、10s 超时强杀；`.ps1/.js/.py/.exe` 按扩展名映射解释器（ps1 强制控制台 UTF-8 + 脚本需带 BOM）。**声明一次三处可用**：面板 `>` 模式、`wb cmd run`、AI function calling（daemon `cmd.tools` 合并注册表内建 + 插件 ai 命令；工具名点换下划线，执行时还原，面板 AI 一律走 `cmd.run` 不再分辨内建/插件）。
-- **挂件插件**：manifest 声明 `widget`（单文件 HTML）→ 面板新增**第三页「插件」页**（三页拖动/圆点/滑动动画全套），挂件以 sandboxed iframe（`allow-scripts` + srcdoc）装进玻璃卡；内置 `wbRpc(method, params)` 桥——iframe postMessage → 父页中继 → daemon JSON-RPC，插件组件可直接调 daemon 能力（clip-insight 演示读剪贴板统计）。插件卡自动注册进组件定制（⚙ 可隐藏）。
-- **daemon 新方法**：`plugin.list` / `plugin.run` / `plugin.reload` / `plugin.install` / `plugin.remove` / `plugin.widget` / `cmd.tools` / `skill.list` / `skill.get`；插件目录 = `%LOCALAPPDATA%/WB/plugins`（用户）+ 仓库 `plugins/`（开发，exe 上三级自动发现）；安装会校验并复制目录或 ZIP，随后立即刷新插件池。插件列表带 widget revision，面板插件页据此自动热加载。
+- **格式**：一个文件夹 + `plugin.json`（`wb-plugin-sdk` 定义 manifest 与校验，9 个单测）。两个示例在 `plugins/`：`hello-assistant`（命令插件，PowerShell handler）与 `clip-insight`（挂件插件）。完整格式文档：`plugins/README.md`。
+- **命令插件**：manifest 声明 `commands`（id/title/hint/arg/ai 描述），handler 子进程契约——stdin 收 `{"command", "args"}`、stdout 吐 JSON、10s 超时强杀、每路输出限 1MB；`.ps1/.js/.py/.exe` 按扩展名映射解释器。**声明一次三处可用**：面板 `>` 模式、`wb cmd run`、AI/MCP function calling；工具执行统一经 `cmd.tool.run` 查询真实注册表，command id 含下划线也不会被有损还原。
+- **挂件插件**：manifest 声明 `widget`（单文件 HTML）→ 面板第三页「插件」页；挂件以 sandboxed iframe 装进玻璃卡。`wbRpc` 由父页绑定真实插件身份后转给 `plugin.rpc`，daemon 按批准状态、权限和显式方法白名单检查。默认 CSP 禁止外联，只有获批 `network` 才开放 HTTP(S)。
+- **daemon 新方法**：`plugin.list` / `plugin.run` / `plugin.reload` / `plugin.install` / `plugin.remove` / `plugin.approve` / `plugin.revoke` / `plugin.widget` / `plugin.rpc` / `cmd.tools` / `cmd.tool.run` / `skill.list` / `skill.get`；插件目录 = `%LOCALAPPDATA%/WB/plugins`（用户）+ 仓库 `plugins/`（开发）。
 - **实测**（2026-08-22）：`wb cmd run util.hello --arg name=WB` 中文往返无乱码；AI 实测 `?跟 Luna 打个招呼` → 模型自主调 `util_hello` → PS1 插件执行 → 自然语言确认；插件页挂件正常渲染。截图：`docs-assets/m4-ai-plugin.png`、`docs-assets/m4-plugins-page.png`。
-- **边界**：插件是用户自装的本地代码，v1 权限仅声明不强制；破坏性命令不暴露 `ai` 段即可避开模型。
+- **权限边界**：带权限插件默认不可见、不可执行；批准绑定版本、权限集合和插件文件 SHA-256 指纹，任一变化都会使授权失效。handler/widget/Skill canonical path 必须留在插件根目录。`process` 仍是当前用户权限的本地代码执行，不是 OS 沙箱。
 - **Skill**：插件可以随附 Markdown Skill 文档；面板 AI 通过 `skill_list` / `skill_get` 读取工作流说明，再调用插件命令完成任务。Skill 不拥有额外执行权限。
-- **MCP**：`wb-mcp.exe` 通过 stdio 提供 MCP `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read`；工具转发 daemon `cmd.run`，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。daemon 离线时 MCP 会从同一产物目录静默拉起它并等待就绪，Claude/Cursor 等 Agent 不需要了解 Windows Named Pipe 或预先管理进程。
+- **MCP**：`wb-mcp.exe` 通过 stdio 提供 tools + Skill resources，daemon 离线时会从同一产物目录静默拉起。`wb mcp config claude|cursor|codex|generic` 可生成外部客户端配置，详见 `AGENT_INTEGRATION.md`。
 
 ## 构建环境（Windows，已固化在本仓库）
 
@@ -153,6 +153,7 @@ wb search "周报" --json          # 命中 → exit 0
 wb search "不存在xyz"            # 无结果 → exit 2
 wb panel show                    # 跨进程显示正式 WebView2 面板
 wb schema --json                 # Agent 自省命令面
+wb mcp config codex              # 生成外部 MCP 客户端配置
 ```
 
 ## CLI 输出契约（§5.2）

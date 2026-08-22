@@ -100,7 +100,7 @@ fn call_tool(client: &mut DaemonClient, name: &str, args: serde_json::Value) -> 
     let result = match name {
         "skill_list" => client.call("skill.list", args)?,
         "skill_get" => client.call("skill.get", args)?,
-        other => client.call("cmd.run", serde_json::json!({"id": other.replace('_', "."), "args": args}))?,
+        other => client.call("cmd.tool.run", serde_json::json!({"name": other, "args": args}))?,
     };
     Ok(text_content(&result))
 }

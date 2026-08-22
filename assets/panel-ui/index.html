@@ -246,6 +246,20 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #page-plugins .plugin-head button:disabled { opacity: .45; cursor: default; }
 #page-plugins .pgrid { position: absolute; inset: 34px 0 0; padding: 6px 18px 18px; display: grid; gap: 12px;
   grid-template-columns: repeat(6, 1fr); grid-auto-rows: 1fr; }
+#page-plugins .approval { grid-column: span 2; align-self: start; min-height: 154px; padding: 15px 17px;
+  border: 1px solid var(--stroke); border-radius: var(--r-card); background: rgba(22,24,38,.82);
+  display: flex; flex-direction: column; gap: 8px; color: var(--fg-2); }
+#page-plugins .approval .name { font-size: 13.5px; font-weight: 650; color: var(--fg); }
+#page-plugins .approval .desc { color: var(--fg-3); font-size: 11.5px; line-height: 1.45; }
+#page-plugins .approval .perms { display: flex; flex-wrap: wrap; gap: 5px; }
+#page-plugins .approval .perm { padding: 3px 7px; border: 1px solid var(--stroke-soft); border-radius: 6px;
+  background: rgba(255,255,255,.06); color: var(--fg-3); font-size: 10.5px; }
+#page-plugins .approval button, #page-plugins .grant-btn { align-self: flex-start; margin-top: auto; padding: 5px 12px;
+  border: 1px solid var(--stroke-soft); border-radius: 7px; background: rgba(76,194,255,.16);
+  color: var(--accent); font-size: 11.5px; cursor: pointer; }
+#page-plugins .approval button:hover, #page-plugins .grant-btn:hover { background: rgba(76,194,255,.25); }
+#page-plugins .grant-btn { margin: -2px 0 0 auto; padding: 3px 8px; background: rgba(255,255,255,.06);
+  color: var(--fg-3); }
 #page-plugins .ph-empty { position: absolute; inset: 34px 0 0; display: none; flex-direction: column; gap: 8px;
   align-items: center; justify-content: center; color: var(--fg-3); font-size: 14px; }
 #page-plugins .ph-empty .sub { font-size: 12px; opacity: .8; }
@@ -1433,11 +1447,14 @@ const PLUGIN_SHIM = '<' + 'script>(function(){var seq=0;var pend=new Map();'
   + 'font:13px "Segoe UI Variable Text","Segoe UI",sans-serif;overflow:hidden;}'
   + '*{box-sizing:border-box;}::-webkit-scrollbar{width:0;height:0;}<' + '/style>';
 
-/* 父页中继：插件 iframe 的 wbRpc → daemon */
+/* 父页中继：插件 iframe 的 wbRpc → daemon 权限网关 */
 window.addEventListener('message', ev => {
   const d = ev.data;
   if (!d || d.wb !== 'rpc') return;
-  rpc(d.method, d.params).then(m => {
+  const frame = Array.from(document.querySelectorAll('iframe.pluginw')).find(f => f.contentWindow === ev.source);
+  const plugin = frame && frame.dataset.plugin;
+  if (!plugin) return;
+  rpc('plugin.rpc', { plugin, method: d.method, params: d.params || {} }).then(m => {
     const res = { wb: 'rpc-res', id: d.id, result: m && m.result, error: m && m.error };
     if (ev.source && ev.source.postMessage) ev.source.postMessage(res, '*');
   });
@@ -1452,6 +1469,7 @@ function clearPluginWidgets() {
     const i = WIDGETS.findIndex(x => x[0] === id); if (i >= 0) WIDGETS.splice(i, 1);
   });
   pluginWidgetIds.clear();
+  $('#pgrid').innerHTML = '';
 }
 function loadPluginWidgets(force) {
   if (pluginRefreshing && !force) return;
@@ -1461,16 +1479,57 @@ function loadPluginWidgets(force) {
     if (seq !== pluginLoadSeq) return;
     const list = (m && Array.isArray(m.result)) ? m.result : [];
     const withW = list.filter(p => p.widget);
-    const signature = JSON.stringify(withW.map(p => [p.id, p.version, p.revision, p.widget.title, p.widget.span]));
+    const pendingApproval = list.filter(p => p.approval_required);
+    const signature = JSON.stringify(list.map(p => [p.id, p.version, p.revision, p.approved, p.permissions, p.widget && p.widget.title]));
     if (!force && signature === pluginListSignature) return;
     pluginListSignature = signature;
     clearPluginWidgets();
     const page = $('#page-plugins');
-    page.classList.toggle('empty', !withW.length);
-    if (!withW.length) { pluginStatus(''); pluginRefreshing = false; return; }
+    page.classList.toggle('empty', !list.length);
+    pendingApproval.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'approval';
+      card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
+        + `<div class="desc">${esc(p.description || '此插件请求以下权限')}</div>`
+        + `<div class="perms">${(p.permissions || []).map(x => `<span class="perm">${esc(x)}</span>`).join('')}</div>`
+        + '<button>批准当前版本</button>';
+      card.querySelector('button').addEventListener('click', ev => {
+        ev.currentTarget.disabled = true;
+        rpc('plugin.approve', { id: p.id }).then(m => {
+          if (!m || m.error) { showToast('插件授权失败'); ev.currentTarget.disabled = false; return; }
+          showToast('已批准 ' + p.name); loadPluginWidgets(true);
+        });
+      });
+      $('#pgrid').appendChild(card);
+    });
+    const managedOnly = list.filter(p => p.approved && !p.widget);
+    managedOnly.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'approval';
+      const permissions = p.permissions || [];
+      card.innerHTML = `<div class="name">${esc(p.name)} <span class="right">${esc(p.version)}</span></div>`
+        + `<div class="desc">${esc(p.description || '插件能力已加载')}</div>`
+        + `<div class="perms">${permissions.length ? permissions.map(x => `<span class="perm">${esc(x)}</span>`).join('') : '<span class="perm">无需权限</span>'}</div>`
+        + (permissions.length ? '<button>撤销权限</button>' : '');
+      const button = card.querySelector('button');
+      if (button) button.addEventListener('click', ev => {
+        ev.currentTarget.disabled = true;
+        rpc('plugin.revoke', { id: p.id }).then(m => {
+          if (!m || m.error) { showToast('撤销插件权限失败'); ev.currentTarget.disabled = false; return; }
+          showToast('已撤销 ' + p.name + ' 权限'); loadPluginWidgets(true);
+        });
+      });
+      $('#pgrid').appendChild(card);
+    });
+    const approvedWidgets = withW.filter(p => p.approved);
+    if (!approvedWidgets.length) {
+      pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''));
+      pluginRefreshing = false;
+      return;
+    }
     let idx = 16; // 入场动画序号接在内置组件后面
-    let pending = withW.length;
-    withW.forEach(p => {
+    let pending = approvedWidgets.length;
+    approvedWidgets.forEach(p => {
       rpc('plugin.widget', { id: p.id }).then(wm => {
         if (seq !== pluginLoadSeq || !wm || !wm.result || wm.error) return;
         const w = wm.result;
@@ -1482,16 +1541,33 @@ function loadPluginWidgets(force) {
           + `<div class="hairline"></div><div class="bd pluginbd"></div>`;
         const f = document.createElement('iframe');
         f.className = 'pluginw';
+        f.dataset.plugin = p.id;
         f.setAttribute('sandbox', 'allow-scripts');
-        f.srcdoc = PLUGIN_SHIM + w.html;
+        const csp = w.network
+          ? '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: https: http:; connect-src https: http:; object-src \'none\'; base-uri \'none\'; form-action \'none\'; navigate-to \'none\';">'
+          : '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data:; object-src \'none\'; base-uri \'none\'; form-action \'none\'; navigate-to \'none\';">';
+        f.srcdoc = csp + PLUGIN_SHIM + w.html;
         card.querySelector('.pluginbd').appendChild(f);
+        if ((p.permissions || []).length) {
+          const revoke = document.createElement('button');
+          revoke.className = 'grant-btn'; revoke.textContent = '撤销权限'; revoke.title = '撤销此版本的插件授权';
+          revoke.addEventListener('click', () => {
+            revoke.disabled = true;
+            rpc('plugin.revoke', { id: p.id }).then(m => {
+              if (!m || m.error) { showToast('撤销插件权限失败'); revoke.disabled = false; return; }
+              showToast('已撤销 ' + p.name + ' 权限'); loadPluginWidgets(true);
+            });
+          });
+          card.querySelector('.hd').appendChild(revoke);
+        }
         $('#pgrid').appendChild(card);
         pluginWidgetIds.add(card.id);
         WIDGETS.push([card.id, (w.title || p.name) + '（插件）']);
         applyWidgetVisibility();
       }).finally(() => {
         if (--pending === 0 && seq === pluginLoadSeq) {
-          pluginRefreshing = false; pluginStatus(withW.length + ' 个组件');
+          pluginRefreshing = false;
+          pluginStatus(list.length + ' 个插件' + (pendingApproval.length ? ' · ' + pendingApproval.length + ' 个待批准' : ''));
         }
       });
     });

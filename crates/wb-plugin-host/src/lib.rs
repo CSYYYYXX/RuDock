@@ -3,11 +3,13 @@
 //! 执行模型（参考 Raycast/uTools 的进程隔离）：每条插件命令 = 拉起一次 handler 子进程，
 //! stdin 喂 `{"command": id, "args": {...}}`，stdout 收一个 JSON 值，10s 超时强杀。
 //! 解释器按扩展名映射：.ps1 → powershell / .js → node / .py → python / 其余直接执行。
-//! 插件是用户自己装的本地代码，v1 不做权限强制（permissions 仅声明、记录在案）。
+//! 插件是用户自己安装的本地代码；宿主负责路径约束、输出限额和进程超时，
+//! 权限批准与能力路由由 daemon 统一执行。
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 use wb_plugin_sdk::Manifest;
 
@@ -17,8 +19,92 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const RUN_TIMEOUT: Duration = Duration::from_secs(10);
+const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
+const HANDLER_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
 const WIDGET_MAX_BYTES: u64 = 256 * 1024;
 const SKILL_MAX_BYTES: u64 = 256 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PipeKind {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Debug)]
+struct PipeCapture {
+    kind: PipeKind,
+    bytes: Vec<u8>,
+    exceeded_limit: bool,
+    error: Option<String>,
+}
+
+fn plugin_file(p: &LoadedPlugin, relative: &str, kind: &str) -> Result<PathBuf, String> {
+    let root = p
+        .dir
+        .canonicalize()
+        .map_err(|e| format!("插件目录读取失败: {e}"))?;
+    let path = p
+        .dir
+        .join(relative)
+        .canonicalize()
+        .map_err(|e| format!("{kind} 文件读取失败: {e}"))?;
+    if !path.starts_with(&root) {
+        return Err(format!("{kind} 路径越出插件目录: {relative}"));
+    }
+    if !path.is_file() {
+        return Err(format!("{kind} 不是文件: {}", path.display()));
+    }
+    Ok(path)
+}
+
+fn spawn_pipe_reader<R>(kind: PipeKind, mut reader: R, tx: Sender<PipeCapture>)
+where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut exceeded_limit = false;
+        let mut error = None;
+        let mut buffer = [0u8; 8192];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    let remaining = HANDLER_OUTPUT_MAX_BYTES.saturating_sub(bytes.len());
+                    bytes.extend_from_slice(&buffer[..read.min(remaining)]);
+                    exceeded_limit |= read > remaining;
+                }
+                Err(e) => {
+                    error = Some(e.to_string());
+                    break;
+                }
+            }
+        }
+        let _ = tx.send(PipeCapture {
+            kind,
+            bytes,
+            exceeded_limit,
+            error,
+        });
+    });
+}
+
+fn collect_pipes(rx: Receiver<PipeCapture>) -> Result<(PipeCapture, PipeCapture), String> {
+    let deadline = Instant::now() + PIPE_DRAIN_TIMEOUT;
+    let mut stdout = None;
+    let mut stderr = None;
+    while stdout.is_none() || stderr.is_none() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let capture = rx
+            .recv_timeout(remaining)
+            .map_err(|_| "handler 退出后输出管道未及时关闭".to_string())?;
+        match capture.kind {
+            PipeKind::Stdout => stdout = Some(capture),
+            PipeKind::Stderr => stderr = Some(capture),
+        }
+    }
+    Ok((stdout.unwrap(), stderr.unwrap()))
+}
 
 #[derive(Debug, Clone)]
 pub struct LoadedPlugin {
@@ -42,11 +128,15 @@ pub fn discover(root: &Path) -> Vec<LoadedPlugin> {
         let Ok(text) = std::fs::read_to_string(&mpath) else {
             continue;
         };
-        match serde_json::from_str::<Manifest>(&text).map_err(|e| e.to_string()).and_then(|m| {
-            m.validate().map(|_| m)
-        }) {
+        match serde_json::from_str::<Manifest>(&text)
+            .map_err(|e| e.to_string())
+            .and_then(|m| m.validate().map(|_| m))
+        {
             Ok(manifest) => out.push(LoadedPlugin { dir, manifest }),
-            Err(e) => eprintln!("wb-plugin-host: 跳过无效插件 {:?}: {e}", dir.file_name().unwrap_or_default()),
+            Err(e) => eprintln!(
+                "wb-plugin-host: 跳过无效插件 {:?}: {e}",
+                dir.file_name().unwrap_or_default()
+            ),
         }
     }
     out.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
@@ -58,18 +148,23 @@ pub fn find_command<'a>(
     plugins: &'a [LoadedPlugin],
     cmd_id: &str,
 ) -> Option<(&'a LoadedPlugin, &'a wb_plugin_sdk::CommandSpec)> {
-    plugins
-        .iter()
-        .find_map(|p| p.manifest.commands.iter().find(|c| c.id == cmd_id).map(|c| (p, c)))
+    plugins.iter().find_map(|p| {
+        p.manifest
+            .commands
+            .iter()
+            .find(|c| c.id == cmd_id)
+            .map(|c| (p, c))
+    })
 }
 
 /// 执行插件命令：spawn handler → stdin JSON → stdout JSON。
-pub fn run_command(p: &LoadedPlugin, cmd_id: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+pub fn run_command(
+    p: &LoadedPlugin,
+    cmd_id: &str,
+    args: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let handler = p.manifest.handler.clone().ok_or("插件无 handler")?;
-    let hpath = p.dir.join(&handler);
-    if !hpath.is_file() {
-        return Err(format!("handler 不存在: {}", hpath.display()));
-    }
+    let hpath = plugin_file(p, &handler, "handler")?;
     let ext = hpath
         .extension()
         .and_then(|s| s.to_str())
@@ -114,17 +209,32 @@ pub fn run_command(p: &LoadedPlugin, cmd_id: &str, args: &serde_json::Value) -> 
         .map_err(|e| format!("write stdin: {e}"))?;
     drop(child.stdin.take());
 
-    // 带超时的等待：try_wait 轮询，超时强杀
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+    let (tx, rx) = mpsc::channel();
+    spawn_pipe_reader(PipeKind::Stdout, stdout, tx.clone());
+    spawn_pipe_reader(PipeKind::Stderr, stderr, tx);
+
+    // 输出从进程启动起就在独立线程中持续排空，避免管道缓冲区填满后互相等待。
     let start = Instant::now();
     loop {
         match child.try_wait().map_err(|e| format!("wait: {e}"))? {
             Some(status) => {
-                let mut out = String::new();
-                child.stdout.take().unwrap().read_to_string(&mut out).ok();
-                let mut err = String::new();
-                if let Some(mut e) = child.stderr.take() {
-                    e.read_to_string(&mut err).ok();
+                let (out, err) = collect_pipes(rx)?;
+                if out.exceeded_limit || err.exceeded_limit {
+                    return Err(format!(
+                        "handler 输出超过 {}KB 限制",
+                        HANDLER_OUTPUT_MAX_BYTES / 1024
+                    ));
                 }
+                if let Some(e) = out.error {
+                    return Err(format!("read stdout: {e}"));
+                }
+                if let Some(e) = err.error {
+                    return Err(format!("read stderr: {e}"));
+                }
+                let out = String::from_utf8_lossy(&out.bytes);
+                let err = String::from_utf8_lossy(&err.bytes);
                 if !status.success() {
                     return Err(format!(
                         "handler 退出码 {:?}: {}",
@@ -137,12 +247,14 @@ pub fn run_command(p: &LoadedPlugin, cmd_id: &str, args: &serde_json::Value) -> 
                     return Ok(serde_json::Value::Null);
                 }
                 // 严格 JSON 优先；解析失败则包成 {"text": ...} 容错（社区插件鱼龙混杂）
-                return Ok(serde_json::from_str(out)
-                    .unwrap_or_else(|_| serde_json::json!({"text": out.chars().take(4000).collect::<String>()})));
+                return Ok(serde_json::from_str(out).unwrap_or_else(
+                    |_| serde_json::json!({"text": out.chars().take(4000).collect::<String>()}),
+                ));
             }
             None => {
                 if start.elapsed() > RUN_TIMEOUT {
                     let _ = child.kill();
+                    let _ = child.wait();
                     return Err(format!("handler 超时（{}s）已终止", RUN_TIMEOUT.as_secs()));
                 }
                 std::thread::sleep(Duration::from_millis(15));
@@ -154,7 +266,7 @@ pub fn run_command(p: &LoadedPlugin, cmd_id: &str, args: &serde_json::Value) -> 
 /// 读挂件 HTML（限 256KB，防巨型文件撑爆 WebView）。
 pub fn widget_html(p: &LoadedPlugin) -> Result<String, String> {
     let w = p.manifest.widget.clone().ok_or("插件无 widget")?;
-    let path = p.dir.join(&w.file);
+    let path = plugin_file(p, &w.file, "widget")?;
     let meta = std::fs::metadata(&path).map_err(|e| format!("widget 文件读取失败: {e}"))?;
     if meta.len() > WIDGET_MAX_BYTES {
         return Err(format!("widget 文件超过 {}KB", WIDGET_MAX_BYTES / 1024));
@@ -163,7 +275,10 @@ pub fn widget_html(p: &LoadedPlugin) -> Result<String, String> {
 }
 
 /// 读取插件声明的 Skill 文档，供 CLI/daemon/MCP 等 Agent 客户端使用。
-pub fn skill_content(p: &LoadedPlugin, skill_id: &str) -> Result<(wb_plugin_sdk::SkillSpec, String), String> {
+pub fn skill_content(
+    p: &LoadedPlugin,
+    skill_id: &str,
+) -> Result<(wb_plugin_sdk::SkillSpec, String), String> {
     let skill = p
         .manifest
         .skills
@@ -171,7 +286,7 @@ pub fn skill_content(p: &LoadedPlugin, skill_id: &str) -> Result<(wb_plugin_sdk:
         .find(|s| s.id == skill_id)
         .cloned()
         .ok_or_else(|| format!("插件无 skill: {skill_id}"))?;
-    let path = p.dir.join(&skill.file);
+    let path = plugin_file(p, &skill.file, "skill")?;
     let meta = std::fs::metadata(&path).map_err(|e| format!("skill 文件读取失败: {e}"))?;
     if meta.len() > SKILL_MAX_BYTES {
         return Err(format!("skill 文件超过 {}KB", SKILL_MAX_BYTES / 1024));
@@ -193,7 +308,7 @@ mod tests {
         std::fs::create_dir_all(root.join("good")).unwrap();
         std::fs::write(
             root.join("good/plugin.json"),
-            r#"{"id":"good","name":"G","version":"0.1.0","handler":"main.ps1","commands":[{"id":"util.g","title":"G"}]}"#,
+            r#"{"id":"good","name":"G","version":"0.1.0","handler":"main.ps1","commands":[{"id":"util.g","title":"G"}],"permissions":["process"]}"#,
         )
         .unwrap();
         let found = discover(&root);
@@ -212,7 +327,8 @@ mod tests {
             manifest: serde_json::from_value(serde_json::json!({
                 "id": "skill-test", "name": "Skill Test", "version": "0.1.0",
                 "skills": [{"id":"triage","name":"Triage","file":"SKILL.md"}]
-            })).unwrap(),
+            }))
+            .unwrap(),
         };
         let (spec, content) = skill_content(&p, "triage").unwrap();
         assert_eq!(spec.name, "Triage");
@@ -233,12 +349,54 @@ mod tests {
         let p = LoadedPlugin {
             dir: root.clone(),
             manifest: serde_json::from_str::<Manifest>(
-                r#"{"id":"t","name":"T","version":"0.1.0","handler":"main.ps1","commands":[{"id":"util.t","title":"T"}]}"#,
+                r#"{"id":"t","name":"T","version":"0.1.0","handler":"main.ps1","commands":[{"id":"util.t","title":"T"}],"permissions":["process"]}"#,
             )
             .unwrap(),
         };
         let v = run_command(&p, "util.t", &serde_json::json!({"name": "WB"})).unwrap();
         assert_eq!(v.get("echo").and_then(|s| s.as_str()), Some("WB"));
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn drains_large_handler_output_without_deadlock() {
+        let root = std::env::temp_dir().join(format!("wb-phost-large-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("main.ps1"),
+            "$null = [Console]::In.ReadToEnd(); @{ text = ('x' * 262144) } | ConvertTo-Json -Compress",
+        )
+        .unwrap();
+        let p = LoadedPlugin {
+            dir: root.clone(),
+            manifest: serde_json::from_str::<Manifest>(
+                r#"{"id":"large","name":"Large","version":"0.1.0","handler":"main.ps1","commands":[{"id":"util.large","title":"Large"}],"permissions":["process"]}"#,
+            )
+            .unwrap(),
+        };
+        let v = run_command(&p, "util.large", &serde_json::json!({})).unwrap();
+        assert_eq!(v["text"].as_str().map(str::len), Some(262144));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn rejects_runtime_path_escape() {
+        let parent = std::env::temp_dir().join(format!("wb-phost-escape-{}", std::process::id()));
+        let root = parent.join("plugin");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(parent.join("outside.js"), "{}").unwrap();
+        let p = LoadedPlugin {
+            dir: root,
+            manifest: serde_json::from_value(serde_json::json!({
+                "id": "escape", "name": "Escape", "version": "0.1.0",
+                "handler": "../outside.js", "commands": [{"id":"util.escape","title":"Escape"}],
+                "permissions": ["process"]
+            }))
+            .unwrap(),
+        };
+        let error = run_command(&p, "util.escape", &serde_json::json!({})).unwrap_err();
+        assert!(error.contains("路径越出插件目录"), "{error}");
+        std::fs::remove_dir_all(parent).ok();
     }
 }

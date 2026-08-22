@@ -84,7 +84,7 @@ fn is_net_err(e: &str) -> bool {
 
 /// 执行一个 AI 工具：面板控制走窗口消息，其余统一走 daemon `cmd.run`
 /// （cmd.run 内部分辨内建注册表 / 插件命令，面板无需感知）。
-/// 工具名 → 命令 id：下划线还原点（todo_add → todo.add），与 cmd.tools 的生成规则互逆。
+/// 工具名由 daemon 按注册表/插件清单解析，避免插件 command id 中的下划线发生有损转换。
 /// 返回喂回给模型的 output 字符串（紧凑 JSON 或错误描述）。
 fn exec_tool(name: &str, arguments: &str) -> String {
     let args: serde_json::Value =
@@ -104,15 +104,13 @@ fn exec_tool(name: &str, arguments: &str) -> String {
             Err(e) => format!("{{\"error\": {}}}", serde_json::to_string(&e).unwrap_or_default()),
         };
     }
-    let cmd_id = wb_plugin_sdk::Manifest::cmd_id(name);
-
     match crate::ipc::Client::connect().and_then(|mut c| {
-        c.call("cmd.run", serde_json::json!({"id": cmd_id, "args": args}))
+        c.call("cmd.tool.run", serde_json::json!({"name": name, "args": args}))
     }) {
         Ok(v) => {
-            let slim = match cmd_id.as_str() {
+            let slim = match name {
                 "search" => slim_search(&v),
-                "clip.get" => slim_clips(&v),
+                "clip_get" => slim_clips(&v),
                 _ => v,
             };
             serde_json::to_string(&slim).unwrap_or_else(|_| "{}".into())

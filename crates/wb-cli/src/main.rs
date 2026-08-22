@@ -1,7 +1,7 @@
 //! wb.exe — thin CLI client. Full command surface; --json everywhere;
 //! semantic exit codes; structured errors; plain output when piped.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use interprocess::local_socket::{prelude::*, GenericNamespaced};
 use interprocess::TryClone;
 use std::io::{BufRead, BufReader, IsTerminal, Write};
@@ -82,6 +82,11 @@ enum Cmd {
     Apps,
     /// Tail the audit log
     Audit,
+    /// Generate configuration for external MCP clients
+    Mcp {
+        #[command(subcommand)]
+        op: McpOp,
+    },
 }
 
 #[derive(Subcommand)]
@@ -113,6 +118,8 @@ enum PluginOp {
     Reload,
     Install { source: String },
     Remove { id: String },
+    Approve { id: String },
+    Revoke { id: String },
     Pack { dir: String, #[arg(short, long)] output: Option<String> },
     Run { name: String, #[arg(long)] command: Option<String>, #[arg(long = "arg", value_parser = parse_kv)] args: Vec<(String, String)> },
 }
@@ -153,6 +160,52 @@ enum DaemonOp {
     Start,
     Stop,
     Status,
+}
+
+#[derive(Subcommand)]
+enum McpOp {
+    /// Print a client configuration snippet using the current wb-mcp.exe
+    Config { #[arg(value_enum, default_value_t = McpClient::Generic)] client: McpClient },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum McpClient {
+    Claude,
+    Cursor,
+    Codex,
+    Generic,
+}
+
+impl std::fmt::Display for McpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Claude => "claude",
+            Self::Cursor => "cursor",
+            Self::Codex => "codex",
+            Self::Generic => "generic",
+        })
+    }
+}
+
+fn mcp_config(client: McpClient) -> Result<String, CoreError> {
+    let exe = std::env::current_exe()
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("定位 wb.exe 失败: {e}")))?
+        .parent()
+        .map(|p| p.join("wb-mcp.exe"))
+        .ok_or_else(|| CoreError::new(ErrorCode::Internal, "定位 wb-mcp.exe 失败"))?;
+    if !exe.is_file() {
+        return Err(CoreError::new(ErrorCode::NotFound, format!("wb-mcp.exe 不在 {}", exe.display())));
+    }
+    let path = exe.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let json = format!(
+        "{{\n  \"mcpServers\": {{\n    \"wb\": {{\n      \"command\": \"{}\",\n      \"args\": []\n    }}\n  }}\n}}",
+        path
+    );
+    let toml = format!("[mcp_servers.wb]\ncommand = \"{}\"\nargs = []\n", path);
+    Ok(match client {
+        McpClient::Codex => toml,
+        McpClient::Claude | McpClient::Cursor | McpClient::Generic => json,
+    })
 }
 
 fn parse_kv(s: &str) -> Result<(String, String), std::convert::Infallible> {
@@ -360,6 +413,14 @@ fn main() {
         emit(&wb_core::protocol::schema(), true, false);
         return;
     }
+    if let Cmd::Mcp { op: McpOp::Config { client } } = &cli.cmd {
+        match mcp_config(*client) {
+            Ok(config) if json => emit(&serde_json::json!({"client": client.to_string(), "config": config}), true, false),
+            Ok(config) => print!("{config}"),
+            Err(e) => fail(&e, json),
+        }
+        return;
+    }
     if let Cmd::Daemon { op: DaemonOp::Start } = cli.cmd {
         spawn_daemon();
         match Client::connect().and_then(|mut c| c.call("daemon.ping", serde_json::json!({}))) {
@@ -405,6 +466,8 @@ fn main() {
             PluginOp::Reload => ("plugin.reload", serde_json::json!({})),
             PluginOp::Install { source } => ("plugin.install", serde_json::json!({"source": source})),
             PluginOp::Remove { id } => ("plugin.remove", serde_json::json!({"id": id})),
+            PluginOp::Approve { id } => ("plugin.approve", serde_json::json!({"id": id})),
+            PluginOp::Revoke { id } => ("plugin.revoke", serde_json::json!({"id": id})),
             PluginOp::Pack { .. } => unreachable!(),
             PluginOp::Run { name, command, args } => {
                 let obj: serde_json::Map<String, serde_json::Value> =
@@ -448,6 +511,7 @@ fn main() {
             DaemonOp::Start => unreachable!(),
         },
         Cmd::Schema => unreachable!(),
+        Cmd::Mcp { .. } => unreachable!(),
     };
 
     match client.call(method, params) {
