@@ -431,6 +431,9 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   gap: 4px; border: 1px solid transparent; border-radius: 8px; color: var(--fg-3); cursor: pointer; }
 .shelf-item:hover { background: var(--hover); border-color: var(--stroke-soft); color: var(--fg); }
 .shelf-item img { width: 26px; height: 26px; object-fit: contain; }
+.shelf-item .shelf-folder { width: 34px; height: 34px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+  padding: 4px; border-radius: 8px; background: rgba(255,255,255,.1); border: 1px solid var(--stroke-soft); }
+.shelf-folder span { display: grid; place-items: center; color: var(--accent); font-size: 10px; }
 .shelf-item .shelf-name { max-width: 100%; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shelf-empty { grid-column: 1 / -1; display: grid; place-items: center; color: var(--fg-4); font-size: 11px; }
 .shelf-add { flex: none; min-height: 26px; border: 1px dashed var(--stroke-soft); border-radius: 7px; background: transparent;
@@ -1549,14 +1552,31 @@ const SHELF_KEY = 'wb.shelf.v1';
 let shelfItems = [];
 try { shelfItems = JSON.parse(localStorage.getItem(SHELF_KEY) || '[]'); } catch { shelfItems = []; }
 function saveShelf() { localStorage.setItem(SHELF_KEY, JSON.stringify(shelfItems.slice(0, 27))); }
+let shelfDragIndex = -1;
+function shelfLeafItems(item) { return Array.isArray(item.items) ? item.items : [item]; }
 function renderShelf() {
   const grid = $('#w-shelf .shelf-grid'); if (!grid) return;
   grid.innerHTML = '';
   if (!shelfItems.length) { grid.innerHTML = `<div class="shelf-empty">${esc(t('shelfEmpty'))}</div>`; return; }
-  shelfItems.slice(0, 9).forEach(item => {
-    const el = document.createElement('button'); el.type = 'button'; el.className = 'shelf-item'; el.title = item.path;
-    el.innerHTML = `<span class="shelf-icon">▧</span><span class="shelf-name">${esc(item.title)}</span>`;
-    el.addEventListener('click', () => send({ kind:'action', action:'open', path:item.path }));
+  shelfItems.slice(0, 9).forEach((item, index) => {
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'shelf-item'; el.draggable = true;
+    const leaves = shelfLeafItems(item);
+    el.title = leaves.map(leaf => leaf.path).join('\n');
+    if (item.items) {
+      el.innerHTML = `<span class="shelf-folder">${item.items.slice(0, 9).map(() => '<span>•</span>').join('')}</span><span class="shelf-name">${esc(item.title)}</span>`;
+    } else el.innerHTML = `<span class="shelf-icon">▧</span><span class="shelf-name">${esc(item.title)}</span>`;
+    el.addEventListener('dragstart', ev => { shelfDragIndex = index; ev.dataTransfer.effectAllowed = 'move'; });
+    el.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; });
+    el.addEventListener('drop', ev => {
+      ev.preventDefault();
+      if (shelfDragIndex < 0 || shelfDragIndex === index) return;
+      const source = shelfItems[shelfDragIndex], target = shelfItems[index];
+      const merged = [...shelfLeafItems(target), ...shelfLeafItems(source)];
+      shelfItems = shelfItems.filter((_, i) => i !== shelfDragIndex && i !== index);
+      shelfItems.splice(Math.min(index, shelfDragIndex), 0, { title: target.title || t('folder'), items: merged.slice(0, 9) });
+      shelfDragIndex = -1; saveShelf(); renderShelf();
+    });
+    el.addEventListener('click', () => send({ kind:'action', action:'open', path:leaves[0].path }));
     grid.appendChild(el);
   });
 }
@@ -1565,7 +1585,7 @@ $('#w-shelf .shelf-add').addEventListener('click', ev => {
   const path = prompt(t('importApp') + ':');
   if (!path || !path.trim()) return;
   const clean = path.trim(), title = clean.split(/[\\/]/).pop() || clean;
-  shelfItems = [{ title, path:clean }, ...shelfItems.filter(item => item.path !== clean)];
+  shelfItems = [{ title, path:clean }, ...shelfItems.filter(item => !shelfLeafItems(item).some(leaf => leaf.path === clean))];
   saveShelf(); renderShelf();
 });
 renderShelf();
