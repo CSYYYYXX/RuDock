@@ -68,6 +68,7 @@ E:\cctest\wb\
 - M1 内核 / M2 面板 / v11 磨砂 / M3 随手问流式 / M3.5 命令注册表+function calling / M4 插件系统。
 - M4 实测：`wb cmd run util.hello --arg name=WB` 中文无乱码；`?跟 Luna 打个招呼` → 模型自动调插件 `util_hello` → 确认；插件页挂件渲染 + wbRpc 桥读剪贴板统计正常。
 - M5 第一阶段：插件 manifest 支持 `skills` 文档；daemon 暴露 `skill.list` / `skill.get`、`plugin.install` / `plugin.remove`，CLI 提供 `wb skill ...`、`wb plugin pack/install/remove`；ZIP/目录安装会校验、复制到用户目录并立即刷新 daemon 插件池；面板 AI 增加 `skill_list` / `skill_get` 工具。插件页现在每 3 秒检查清单 revision，新增/删除/替换挂件会自动重建 iframe，另有手动刷新按钮。`hello-assistant` 已带 `SKILL.md` 示例。真实 CLI 安装/执行/卸载冒烟、插件页新增挂件截图验证通过，workspace 测试全绿。
+- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。协议级冒烟已验证能看到 `util_hello`、`skill_list` 并读取 Skill。
 - cargo test：wb-core 6 + wb-plugin-sdk 5 + wb-plugin-host 2 全绿。
 
 ## 6. 已知瑕疵 / 未验证声明
@@ -76,14 +77,14 @@ E:\cctest\wb\
 - Start-Process 不带重定向会出控制台黑窗——生产路径（daemon panelctl 拉起）已用 CREATE_NO_WINDOW，无此问题。
 - 插件挂件支持面板内自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
 - 插件权限仅声明不强制（v1 信任模型 = 用户自装本地代码）。
-- wb-mcp 是 stub；`events.tail` 未实现；`daemon stop` 未实现（用 taskkill）。
+- `events.tail` 未实现；`daemon stop` 未实现（用 taskkill）。MCP 当前为单进程 stdio 会话，每个 MCP server 连接独立复用一个 daemon pipe。
 - Everything（voidtools）文件搜索未接入，daemon 启动时只检测并打印是否存在。
 - 托盘、开机自启未做（用户两轮没接茬，优先级存疑，做前问一下）。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
 1. **M5 插件生态深化**：插件设置页、把内置 16 个组件逐步迁移成插件格式自证、插件市场/版本升级。Skill 读取、AI 上下文选择和挂件热加载已接入。
-2. **MCP 层**（wb-mcp）：把 daemon 能力暴露给 Claude/Cursor 等外部 Agent——用户明确说过"面向 CLI 的软件工程，让 Agent 加入进来"，CLI 已通，MCP 是另一半。
+2. **Agent 生态深化**：MCP 已接通，下一步补外部 Agent 配置样例、事件订阅和更细的权限/确认策略。
 3. **Everything 搜索接入**（WM_COPYDATA 客户端）——文件搜索从"本地存储"升级"全盘毫秒级"。
 4. 托盘常驻 + 开机自启 + `daemon stop`。
 5. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。

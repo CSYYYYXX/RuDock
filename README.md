@@ -12,7 +12,7 @@
 | wb-cli（`wb.exe` 全命令面 + `--json` 契约） | ✅ 可用 |
 | wb-hook（**PoC 1：Win 键钩子，自测 PASS**） | ✅ 可用 |
 | wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由） | ✅ 可用 |
-| wb-mcp（M3 MCP 适配层） | 🔜 stub |
+| wb-mcp（M5 Agent 适配层） | ✅ stdio MCP（tools + Skill resources） |
 | wb-plugin-sdk / wb-plugin-host（M4 插件系统） | ✅ 可用（发现/校验/进程执行/挂件桥） |
 | 插件生态（M5 第一阶段） | ✅ 可用（Skill / pack / install / remove / daemon 热重载 / 面板挂件热加载 / AI Skill 工具） |
 
@@ -123,6 +123,7 @@
 - **实测**（2026-08-22）：`wb cmd run util.hello --arg name=WB` 中文往返无乱码；AI 实测 `?跟 Luna 打个招呼` → 模型自主调 `util_hello` → PS1 插件执行 → 自然语言确认；插件页挂件正常渲染。截图：`docs-assets/m4-ai-plugin.png`、`docs-assets/m4-plugins-page.png`。
 - **边界**：插件是用户自装的本地代码，v1 权限仅声明不强制；破坏性命令不暴露 `ai` 段即可避开模型。
 - **Skill**：插件可以随附 Markdown Skill 文档；面板 AI 通过 `skill_list` / `skill_get` 读取工作流说明，再调用插件命令完成任务。Skill 不拥有额外执行权限。
+- **MCP**：`wb-mcp.exe` 通过 stdio 提供 MCP `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read`；工具转发 daemon `cmd.run`，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。Claude/Cursor 等 Agent 不需要了解 Windows Named Pipe。
 
 ## 构建环境（Windows，已固化在本仓库）
 
