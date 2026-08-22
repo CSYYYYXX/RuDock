@@ -71,9 +71,10 @@ E:\cctest\wb\
 - M5 第一阶段：插件 manifest 支持 `skills` 文档；daemon 暴露 `skill.list` / `skill.get`、`plugin.install` / `plugin.remove`，CLI 提供 `wb skill ...`、`wb plugin pack/install/remove`；ZIP/目录安装会校验、复制到用户目录并立即刷新 daemon 插件池；面板 AI 增加 `skill_list` / `skill_get` 工具。插件页现在每 3 秒检查清单 revision，新增/删除/替换挂件会自动重建 iframe，另有手动刷新按钮。`hello-assistant` 已带 `SKILL.md` 示例。真实 CLI 安装/执行/卸载冒烟、插件页新增挂件截图验证通过，workspace 测试全绿。
 - M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。协议级冒烟已验证能看到 `util_hello`、`skill_list` 并读取 Skill；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
+- M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；daemon 按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
 - Spotlight 搜索：daemon 启动后在后台广度优先索引 Desktop/Documents/Downloads/OneDrive，最多 50,000 项，与应用、剪贴板、笔记、待办、插件命令合并排序；`wb search ... --type file|plugin` 已真实验证。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费，视觉验收截图 `docs-assets/m5-spotlight-plugin-search-fixed.png`。
-- 2026-08-22 全量测试：wb-core 7 + wb-daemon 2 + wb-plugin-sdk 9 + wb-plugin-host 5，共 23 个单测全绿；workspace build/check 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,928 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
+- 2026-08-22 全量测试基线：wb-core 7 + wb-daemon 2 + wb-plugin-sdk 9 + wb-plugin-host 6 + wb-cli 1，共 25 个单测；workspace build/check 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,928 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
 
 ## 6. 已知瑕疵 / 未验证声明
 
@@ -87,7 +88,7 @@ E:\cctest\wb\
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **M5 插件生态深化**：把 1-2 个内置组件迁移成插件格式自证、插件市场/版本升级。Skill、权限管理页和挂件热加载已接入。
+1. **M5 插件生态深化**：把 1-2 个内置组件迁移成插件格式自证、插件市场/版本升级。Skill、权限管理页、开发脚手架和挂件热加载已接入。
 2. **Agent 生态深化**：MCP 与外部配置样例已接通，下一步补事件订阅、写操作确认策略和安装级接入体验。
 3. **Everything 搜索接入**（WM_COPYDATA 客户端）——文件搜索从"本地存储"升级"全盘毫秒级"。
 4. 托盘常驻 + `daemon stop`。
@@ -95,4 +96,4 @@ E:\cctest\wb\
 
 ## 8. 上次会话最后在做的事
 
-已完成插件权限生命周期、widget RPC 网关、插件文件/handler 输出加固和外部 MCP 配置生成。下一步先跑全量测试并提交；随后优先从内置组件迁移、Agent 写操作确认或 Everything IPC 中选择一条继续推进。
+已完成插件权限生命周期、widget RPC 网关、插件文件/handler 输出加固、外部 MCP 配置生成，以及 create/validate/pack 开发者闭环。下一步优先从内置组件迁移、插件市场索引、Agent 写操作确认或 Everything IPC 中选择一条继续推进。

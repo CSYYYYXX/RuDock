@@ -116,12 +116,41 @@ enum ClipOp {
 enum PluginOp {
     List,
     Reload,
+    /// Create an Agent-ready plugin scaffold without overwriting existing files
+    Create {
+        id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, value_enum, default_value_t = PluginKind::Command)]
+        kind: PluginKind,
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Validate a plugin manifest and every declared local file
+    Validate { dir: String },
     Install { source: String },
     Remove { id: String },
     Approve { id: String },
     Revoke { id: String },
     Pack { dir: String, #[arg(short, long)] output: Option<String> },
     Run { name: String, #[arg(long)] command: Option<String>, #[arg(long = "arg", value_parser = parse_kv)] args: Vec<(String, String)> },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum PluginKind {
+    Command,
+    Widget,
+    Hybrid,
+}
+
+impl PluginKind {
+    fn has_command(self) -> bool {
+        matches!(self, Self::Command | Self::Hybrid)
+    }
+
+    fn has_widget(self) -> bool {
+        matches!(self, Self::Widget | Self::Hybrid)
+    }
 }
 
 #[derive(Subcommand)]
@@ -213,10 +242,7 @@ fn parse_kv(s: &str) -> Result<(String, String), std::convert::Infallible> {
     Ok((k.to_string(), v.to_string()))
 }
 
-#[cfg(windows)]
-fn pack_plugin(dir: &str, output: Option<&str>) -> Result<serde_json::Value, CoreError> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+fn load_local_plugin(dir: &str) -> Result<wb_plugin_host::LoadedPlugin, CoreError> {
     let root = std::path::PathBuf::from(dir)
         .canonicalize()
         .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("插件目录不存在: {dir} ({e})")))?;
@@ -226,13 +252,168 @@ fn pack_plugin(dir: &str, output: Option<&str>) -> Result<serde_json::Value, Cor
         root
     };
     if !root.is_dir() {
-        return Err(CoreError::new(ErrorCode::InvalidParams, "pack 需要插件目录"));
+        return Err(CoreError::new(ErrorCode::InvalidParams, "需要插件目录"));
     }
     let manifest_text = std::fs::read_to_string(root.join("plugin.json"))
         .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("读取 plugin.json 失败: {e}")))?;
     let manifest: wb_plugin_sdk::Manifest = serde_json::from_str(&manifest_text)
         .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("plugin.json 格式错误: {e}")))?;
     manifest.validate().map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("插件校验失败: {e}")))?;
+    let plugin = wb_plugin_host::LoadedPlugin { dir: root, manifest };
+    wb_plugin_host::validate_files(&plugin)
+        .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("插件文件校验失败: {e}")))?;
+    Ok(plugin)
+}
+
+fn validate_plugin(dir: &str) -> Result<serde_json::Value, CoreError> {
+    let plugin = load_local_plugin(dir)?;
+    let tools: Vec<String> = plugin
+        .manifest
+        .commands
+        .iter()
+        .filter(|command| command.ai.is_some())
+        .map(|command| wb_plugin_sdk::Manifest::tool_name(&command.id))
+        .collect();
+    Ok(serde_json::json!({
+        "valid": true,
+        "id": plugin.manifest.id,
+        "name": plugin.manifest.name,
+        "version": plugin.manifest.version,
+        "permissions": plugin.manifest.sorted_permissions(),
+        "commands": plugin.manifest.commands.iter().map(|command| &command.id).collect::<Vec<_>>(),
+        "tools": tools,
+        "widget": plugin.manifest.widget.is_some(),
+        "skills": plugin.manifest.skills.iter().map(|skill| &skill.id).collect::<Vec<_>>(),
+        "dir": plugin.dir,
+    }))
+}
+
+fn html_escape(value: &str) -> String {
+    value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+fn create_plugin(
+    id: &str,
+    name: Option<&str>,
+    kind: PluginKind,
+    output: Option<&str>,
+) -> Result<serde_json::Value, CoreError> {
+    let name = name.unwrap_or(id);
+    let command_id = format!("{id}.run");
+    let commands = if kind.has_command() {
+        vec![serde_json::json!({
+            "id": command_id,
+            "title": format!("Run {name}"),
+            "hint": format!("Run the {name} plugin"),
+            "arg": {"name": "name", "prompt": "Name"},
+            "ai": {
+                "description": format!("Use {name} to greet a named person."),
+                "properties": {"name": {"type": "string", "description": "Person to greet"}},
+                "required": ["name"]
+            }
+        })]
+    } else {
+        Vec::new()
+    };
+    let widget = kind.has_widget().then(|| serde_json::json!({
+        "file": "widget.html", "title": name, "span": 2
+    }));
+    let permissions = if kind.has_command() { vec!["process"] } else { Vec::new() };
+    let manifest: wb_plugin_sdk::Manifest = serde_json::from_value(serde_json::json!({
+        "id": id,
+        "name": name,
+        "version": "0.1.0",
+        "description": format!("WB plugin scaffold for {name}."),
+        "author": "",
+        "handler": kind.has_command().then_some("main.ps1"),
+        "commands": commands,
+        "widget": widget,
+        "skills": [{
+            "id": "usage",
+            "name": format!("{name} Usage"),
+            "description": format!("How an Agent should use {name}."),
+            "file": "SKILL.md",
+            "tags": ["workflow"]
+        }],
+        "permissions": permissions
+    }))
+    .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("生成 manifest 失败: {e}")))?;
+    manifest.validate().map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("插件 id/name 无效: {e}")))?;
+
+    let target = output
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(id));
+    let target = if target.is_absolute() {
+        target
+    } else {
+        std::env::current_dir()
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取当前目录失败: {e}")))?
+            .join(target)
+    };
+    if target.exists() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("输出目录已存在，拒绝覆盖: {}", target.display()),
+        ));
+    }
+    std::fs::create_dir_all(&target)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建插件目录失败: {e}")))?;
+    std::fs::write(
+        target.join("plugin.json"),
+        serde_json::to_vec_pretty(&manifest)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("序列化 manifest 失败: {e}")))?,
+    )
+    .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写 plugin.json 失败: {e}")))?;
+
+    if kind.has_command() {
+        let script = r#"$request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$name = if ($request.args.name) { [string]$request.args.name } else { "World" }
+@{ text = "Hello, $name!"; plugin = "__PLUGIN_ID__" } | ConvertTo-Json -Compress
+"#
+        .replace("__PLUGIN_ID__", id);
+        let mut bytes = vec![0xef, 0xbb, 0xbf];
+        bytes.extend_from_slice(script.as_bytes());
+        std::fs::write(target.join("main.ps1"), bytes)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写 main.ps1 失败: {e}")))?;
+    }
+    if kind.has_widget() {
+        let widget = format!(
+            r#"<!doctype html><meta charset="utf-8"><style>
+html,body{{margin:0;height:100%;background:transparent;color:#eaf0ff;font:13px "Segoe UI",sans-serif}}
+.root{{height:100%;display:grid;place-content:center;text-align:center}}.time{{font-size:32px;font-weight:300}}.name{{opacity:.65;margin-top:6px}}
+</style><div class="root"><div><div class="time" id="time"></div><div class="name">{}</div></div></div>
+<script>const time=document.getElementById('time');function tick(){{time.textContent=new Date().toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit'}})}}tick();setInterval(tick,1000)</script>
+"#,
+            html_escape(name)
+        );
+        std::fs::write(target.join("widget.html"), widget)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写 widget.html 失败: {e}")))?;
+    }
+    let skill = if kind.has_command() {
+        format!(
+            "# {name}\n\nUse this skill when the user asks for a greeting. Call `{command_id}` with a `name` string.\n"
+        )
+    } else {
+        format!("# {name}\n\nThis plugin provides the `{name}` dashboard widget.\n")
+    };
+    std::fs::write(target.join("SKILL.md"), skill)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写 SKILL.md 失败: {e}")))?;
+
+    validate_plugin(&target.to_string_lossy()).map(|mut summary| {
+        if let Some(object) = summary.as_object_mut() {
+            object.insert("created".into(), serde_json::Value::Bool(true));
+        }
+        summary
+    })
+}
+
+#[cfg(windows)]
+fn pack_plugin(dir: &str, output: Option<&str>) -> Result<serde_json::Value, CoreError> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let plugin = load_local_plugin(dir)?;
+    let root = plugin.dir;
+    let manifest = plugin.manifest;
     let out = output
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| root.parent().unwrap_or(&root).join(format!("{}-{}.zip", manifest.id, manifest.version)));
@@ -401,8 +582,16 @@ fn main() {
     let json = cli.json;
     let ndjson = cli.ndjson;
 
-    if let Cmd::Plugin { op: PluginOp::Pack { dir, output } } = &cli.cmd {
-        match pack_plugin(dir, output.as_deref()) {
+    let local_plugin_result = match &cli.cmd {
+        Cmd::Plugin { op: PluginOp::Create { id, name, kind, output } } => {
+            Some(create_plugin(id, name.as_deref(), *kind, output.as_deref()))
+        }
+        Cmd::Plugin { op: PluginOp::Validate { dir } } => Some(validate_plugin(dir)),
+        Cmd::Plugin { op: PluginOp::Pack { dir, output } } => Some(pack_plugin(dir, output.as_deref())),
+        _ => None,
+    };
+    if let Some(result) = local_plugin_result {
+        match result {
             Ok(v) => emit(&v, json, false),
             Err(e) => fail(&e, json),
         }
@@ -468,7 +657,7 @@ fn main() {
             PluginOp::Remove { id } => ("plugin.remove", serde_json::json!({"id": id})),
             PluginOp::Approve { id } => ("plugin.approve", serde_json::json!({"id": id})),
             PluginOp::Revoke { id } => ("plugin.revoke", serde_json::json!({"id": id})),
-            PluginOp::Pack { .. } => unreachable!(),
+            PluginOp::Create { .. } | PluginOp::Validate { .. } | PluginOp::Pack { .. } => unreachable!(),
             PluginOp::Run { name, command, args } => {
                 let obj: serde_json::Map<String, serde_json::Value> =
                     args.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect();
@@ -517,5 +706,48 @@ fn main() {
     match client.call(method, params) {
         Ok(v) => emit(&v, json, ndjson),
         Err(e) => fail(&e, json),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn creates_valid_runnable_hybrid_scaffold_without_overwrite() {
+        let root = std::env::temp_dir().join(format!(
+            "wb-cli-create-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let target = root.join("hello-world");
+        let path = target.to_string_lossy();
+        let summary = create_plugin("hello-world", Some("Hello World"), PluginKind::Hybrid, Some(&path)).unwrap();
+        assert_eq!(summary["valid"], true);
+        assert_eq!(summary["created"], true);
+        assert_eq!(summary["widget"], true);
+        assert_eq!(summary["commands"][0], "hello-world.run");
+        assert_eq!(summary["skills"][0], "usage");
+
+        let plugin = load_local_plugin(&path).unwrap();
+        let handler = std::fs::read(target.join("main.ps1")).unwrap();
+        assert!(handler.starts_with(&[0xef, 0xbb, 0xbf]));
+        let widget = std::fs::read_to_string(target.join("widget.html")).unwrap();
+        assert!(widget.contains("</script>"));
+        let result = wb_plugin_host::run_command(
+            &plugin,
+            "hello-world.run",
+            &serde_json::json!({"name": "WB"}),
+        )
+        .unwrap();
+        assert_eq!(result["text"], "Hello, WB!");
+
+        let error = create_plugin("hello-world", None, PluginKind::Command, Some(&path)).unwrap_err();
+        assert!(error.message.contains("拒绝覆盖"));
+        std::fs::remove_dir_all(root).ok();
     }
 }

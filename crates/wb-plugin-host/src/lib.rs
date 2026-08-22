@@ -112,6 +112,22 @@ pub struct LoadedPlugin {
     pub manifest: Manifest,
 }
 
+/// Validate every file declared by a manifest before the plugin is exposed,
+/// packed, installed, or approved.
+pub fn validate_files(p: &LoadedPlugin) -> Result<(), String> {
+    plugin_file(p, "plugin.json", "manifest")?;
+    if let Some(handler) = &p.manifest.handler {
+        plugin_file(p, handler, "handler")?;
+    }
+    if p.manifest.widget.is_some() {
+        widget_html(p)?;
+    }
+    for skill in &p.manifest.skills {
+        skill_content(p, &skill.id)?;
+    }
+    Ok(())
+}
+
 /// 扫描 plugins 根目录：每个含 plugin.json 的子文件夹是一个插件。
 /// 无效插件跳过并 eprintln 记录（不让一个烂插件拖垮全部）。
 pub fn discover(root: &Path) -> Vec<LoadedPlugin> {
@@ -132,7 +148,16 @@ pub fn discover(root: &Path) -> Vec<LoadedPlugin> {
             .map_err(|e| e.to_string())
             .and_then(|m| m.validate().map(|_| m))
         {
-            Ok(manifest) => out.push(LoadedPlugin { dir, manifest }),
+            Ok(manifest) => {
+                let plugin = LoadedPlugin { dir: dir.clone(), manifest };
+                match validate_files(&plugin) {
+                    Ok(()) => out.push(plugin),
+                    Err(e) => eprintln!(
+                        "wb-plugin-host: 跳过文件不完整的插件 {:?}: {e}",
+                        dir.file_name().unwrap_or_default()
+                    ),
+                }
+            }
             Err(e) => eprintln!(
                 "wb-plugin-host: 跳过无效插件 {:?}: {e}",
                 dir.file_name().unwrap_or_default()
@@ -306,6 +331,7 @@ mod tests {
         std::fs::create_dir_all(root.join("bad")).unwrap();
         std::fs::write(root.join("bad/plugin.json"), "{not json").unwrap();
         std::fs::create_dir_all(root.join("good")).unwrap();
+        std::fs::write(root.join("good/main.ps1"), "{}").unwrap();
         std::fs::write(
             root.join("good/plugin.json"),
             r#"{"id":"good","name":"G","version":"0.1.0","handler":"main.ps1","commands":[{"id":"util.g","title":"G"}],"permissions":["process"]}"#,
@@ -398,5 +424,23 @@ mod tests {
         let error = run_command(&p, "util.escape", &serde_json::json!({})).unwrap_err();
         assert!(error.contains("路径越出插件目录"), "{error}");
         std::fs::remove_dir_all(parent).ok();
+    }
+
+    #[test]
+    fn validation_rejects_missing_declared_file() {
+        let root = std::env::temp_dir().join(format!("wb-phost-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("plugin.json"), "{}").unwrap();
+        let p = LoadedPlugin {
+            dir: root.clone(),
+            manifest: serde_json::from_value(serde_json::json!({
+                "id": "missing", "name": "Missing", "version": "0.1.0",
+                "widget": {"file": "widget.html", "title": "Missing"}
+            }))
+            .unwrap(),
+        };
+        let error = validate_files(&p).unwrap_err();
+        assert!(error.contains("widget 文件读取失败"), "{error}");
+        std::fs::remove_dir_all(root).ok();
     }
 }

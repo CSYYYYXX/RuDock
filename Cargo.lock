@@ -677,6 +677,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "wb-core",
+ "wb-plugin-host",
  "wb-plugin-sdk",
 ]
 

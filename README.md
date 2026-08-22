@@ -14,7 +14,7 @@
 | wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由） | ✅ 可用 |
 | wb-mcp（M5 Agent 适配层） | ✅ stdio MCP（tools + Skill resources，可冷启动 daemon） |
 | wb-plugin-sdk / wb-plugin-host（M4 插件系统） | ✅ 可用（发现/校验/进程执行/挂件桥） |
-| 插件生态（M5） | ✅ 可用（权限批准 / Skill / pack / install / remove / 热加载 / AI 与 MCP 工具） |
+| 插件生态（M5） | ✅ 可用（create / validate / 权限批准 / Skill / pack / install / 热加载 / AI 与 MCP 工具） |
 
 ### PoC 结果（验证于本机 Win11 26200，WebView2 Runtime 151）
 
@@ -123,6 +123,7 @@
 - **daemon 新方法**：`plugin.list` / `plugin.run` / `plugin.reload` / `plugin.install` / `plugin.remove` / `plugin.approve` / `plugin.revoke` / `plugin.widget` / `plugin.rpc` / `cmd.tools` / `cmd.tool.run` / `skill.list` / `skill.get`；插件目录 = `%LOCALAPPDATA%/WB/plugins`（用户）+ 仓库 `plugins/`（开发）。
 - **实测**（2026-08-22）：`wb cmd run util.hello --arg name=WB` 中文往返无乱码；AI 实测 `?跟 Luna 打个招呼` → 模型自主调 `util_hello` → PS1 插件执行 → 自然语言确认；插件页挂件正常渲染。截图：`docs-assets/m4-ai-plugin.png`、`docs-assets/m4-plugins-page.png`。
 - **权限边界**：带权限插件默认不可见、不可执行；批准绑定版本、权限集合和插件文件 SHA-256 指纹，任一变化都会使授权失效。handler/widget/Skill canonical path 必须留在插件根目录。`process` 仍是当前用户权限的本地代码执行，不是 OS 沙箱。
+- **开发者闭环**：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的可运行骨架；`wb plugin validate <dir>` 校验 manifest 与全部声明文件，`pack` 强制复用同一校验后才生成 ZIP。
 - **Skill**：插件可以随附 Markdown Skill 文档；面板 AI 通过 `skill_list` / `skill_get` 读取工作流说明，再调用插件命令完成任务。Skill 不拥有额外执行权限。
 - **MCP**：`wb-mcp.exe` 通过 stdio 提供 tools + Skill resources，daemon 离线时会从同一产物目录静默拉起。`wb mcp config claude|cursor|codex|generic` 可生成外部客户端配置，详见 `AGENT_INTEGRATION.md`。
 
@@ -154,6 +155,7 @@ wb search "不存在xyz"            # 无结果 → exit 2
 wb panel show                    # 跨进程显示正式 WebView2 面板
 wb schema --json                 # Agent 自省命令面
 wb mcp config codex              # 生成外部 MCP 客户端配置
+wb plugin create hello-world --kind hybrid
 ```
 
 ## CLI 输出契约（§5.2）

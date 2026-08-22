@@ -186,6 +186,9 @@ fn install_plugin(source: &str) -> Result<wb_plugin_sdk::Manifest, String> {
     };
 
     let manifest = read_manifest(&root)?;
+    let candidate = LoadedPlugin { dir: root.clone(), manifest: manifest.clone() };
+    wb_plugin_host::validate_files(&candidate)
+        .map_err(|e| format!("插件文件校验失败: {e}"))?;
     let target_root = user_plugin_dir();
     std::fs::create_dir_all(&target_root).map_err(|e| format!("创建插件目录失败: {e}"))?;
     let staging = target_root.join(format!(

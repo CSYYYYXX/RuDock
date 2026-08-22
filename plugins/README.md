@@ -3,6 +3,25 @@
 一个插件 = 一个文件夹 + 一个 `plugin.json`。放进 `%LOCALAPPDATA%\WB\plugins\` 即可被加载
 （开发期也可直接放在本仓库 `plugins/` 下，daemon 会自动发现）。
 
+## 创建与校验
+
+CLI 可以生成不会覆盖已有目录的 Agent-ready 脚手架。三种形态都会带 `plugin.json` 和 `SKILL.md`；命令型会生成带 UTF-8 BOM 的 PowerShell handler，挂件型会生成可直接渲染的离线 widget：
+
+```text
+wb plugin create hello-world --name "Hello World" --kind command
+wb plugin create clock-card --name "Clock Card" --kind widget
+wb plugin create team-helper --name "Team Helper" --kind hybrid
+```
+
+发布前先执行完整校验。它会检查 manifest、权限、重复 id、handler/widget/Skill 是否存在、canonical path 是否留在插件根目录，以及 widget/Skill 的大小和 UTF-8 内容限制：
+
+```text
+wb plugin validate path\to\my-plugin --json
+wb plugin pack path\to\my-plugin --output my-plugin.zip
+```
+
+`pack` 强制复用同一套完整性校验，因此不会产出缺少声明文件的 ZIP。
+
 ```text
 %LOCALAPPDATA%\WB\plugins\
   hello-assistant\
@@ -128,12 +147,13 @@ AI 侧只能调用 manifest 里显式带 `ai` 的命令；高风险命令不要�
 
 ```text
 wb plugin pack path\to\my-plugin --output my-plugin.zip
+wb plugin validate path\to\my-plugin --json
 wb plugin install my-plugin.zip
 wb plugin list
 wb plugin remove my-plugin
 ```
 
-安装会校验 manifest、复制到 `%LOCALAPPDATA%\WB\plugins\` 并立即刷新 daemon 插件池；同 id 的用户插件会覆盖仓库开发态插件。卸载只删除用户插件，不会修改仓库里的开发插件。
+安装会校验 manifest 和所有声明文件、复制到 `%LOCALAPPDATA%\WB\plugins\` 并立即刷新 daemon 插件池；同 id 的用户插件会覆盖仓库开发态插件。卸载只删除用户插件，不会修改仓库里的开发插件。
 
 AI 面板会把 `skill_list` / `skill_get` 作为工具提供给模型。模型可以先读取插件 Skill，再调用同一插件声明的命令；Skill 本身只提供上下文，不直接执行代码。
 
