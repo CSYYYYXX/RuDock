@@ -3,7 +3,7 @@
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindowVisible, PostMessageW};
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindowVisible, PostMessageW, WM_CLOSE};
 
 /// 与 wb-panel host.rs 保持一致
 pub const WM_WB_TOGGLE: u32 = 0x8000 + 41;
@@ -81,5 +81,15 @@ pub fn toggle() -> serde_json::Value {
             spawn_panel();
             serde_json::json!({"panel": "started"})
         }
+    }
+}
+
+pub fn close() -> serde_json::Value {
+    match find_panel() {
+        Some(h) => {
+            post(h, WM_CLOSE);
+            serde_json::json!({"panel": "closing"})
+        }
+        None => serde_json::json!({"panel": "not running"}),
     }
 }

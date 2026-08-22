@@ -41,6 +41,7 @@ pub fn schema() -> Value {
         "version": 1,
         "methods": [
             {"name": "daemon.ping", "params": {}, "returns": {"type": "object"}},
+            {"name": "daemon.stop", "params": {}, "returns": {"type": "object"}},
             {"name": "settings.get", "params": {}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "hook.status", "params": {}, "returns": {"type": "object"}, "status": "M5"},
@@ -77,4 +78,16 @@ pub fn schema() -> Value {
             {"name": "schema", "params": {}, "returns": {"type": "object"}},
         ]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_exposes_daemon_stop() {
+        let schema = schema();
+        let methods = schema["methods"].as_array().unwrap();
+        assert!(methods.iter().any(|method| method["name"] == "daemon.stop"));
+    }
 }

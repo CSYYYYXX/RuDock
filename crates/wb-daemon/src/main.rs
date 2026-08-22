@@ -21,6 +21,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 mod clipboard;
 mod panelctl;
+mod tray;
 
 struct Ctx {
     storage: Arc<Storage>,
@@ -442,6 +443,10 @@ fn hook_exe() -> Option<PathBuf> {
         .filter(|p| p.is_file())
 }
 
+fn daemon_exe() -> Option<PathBuf> {
+    std::env::current_exe().ok().filter(|p| p.is_file())
+}
+
 fn hook_running() -> bool {
     std::process::Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq wb-hook-poc.exe", "/FO", "CSV", "/NH"])
@@ -469,8 +474,11 @@ fn set_hook_running(enabled: bool) -> Result<(), String> {
         cmd.spawn()
             .map_err(|e| format!("启动 Win 键钩子失败: {e}"))?;
     } else if hook_running() {
-        let status = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "wb-hook-poc.exe"])
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/F", "/IM", "wb-hook-poc.exe"]);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let status = cmd
             .status()
             .map_err(|e| format!("停止 Win 键钩子失败: {e}"))?;
         if !status.success() {
@@ -481,13 +489,13 @@ fn set_hook_running(enabled: bool) -> Result<(), String> {
 }
 
 fn set_autostart(enabled: bool) -> Result<(), String> {
-    let Some(exe) = hook_exe() else {
-        return Err("wb-hook-poc.exe 不在当前产物目录".into());
+    let Some(exe) = daemon_exe() else {
+        return Err("无法定位 wb-daemon.exe".into());
     };
-    let command = format!("\"{}\" --panel", exe.display());
-    let status = if enabled {
-        std::process::Command::new("reg")
-            .args([
+    let command = format!("\"{}\"", exe.display());
+    let mut cmd = std::process::Command::new("reg");
+    if enabled {
+        cmd.args([
                 "ADD",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
                 "/V",
@@ -497,20 +505,21 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
                 "/D",
                 &command,
                 "/F",
-            ])
-            .status()
+            ]);
     } else {
-        std::process::Command::new("reg")
-            .args([
+        cmd.args([
                 "DELETE",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
                 "/V",
                 "WB",
                 "/F",
-            ])
-            .status()
+            ]);
     }
-    .map_err(|e| format!("设置开机自启失败: {e}"))?;
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let status = cmd
+        .status()
+        .map_err(|e| format!("设置开机自启失败: {e}"))?;
     if !status.success() && enabled {
         return Err("设置开机自启失败".into());
     }
@@ -570,6 +579,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ctx.storage
         .audit("daemon", "daemon.start", env!("CARGO_PKG_VERSION"))?;
     clipboard::start(storage);
+    tray::start();
     log_everything_presence();
     eprintln!(
         "wb-daemon listening on named pipe: {}",
@@ -606,17 +616,27 @@ fn handle_conn(stream: interprocess::local_socket::Stream, ctx: Arc<Ctx>) -> wb_
         if trimmed.is_empty() {
             continue;
         }
-        let resp = match serde_json::from_str::<Request>(trimmed) {
-            Ok(req) => dispatch(&ctx, req),
-            Err(e) => Response::err(
-                serde_json::Value::Null,
-                &CoreError::new(ErrorCode::InvalidParams, format!("bad request: {e}")),
+        let (resp, stop_after_response) = match serde_json::from_str::<Request>(trimmed) {
+            Ok(req) => {
+                let stop = req.method == "daemon.stop";
+                (dispatch(&ctx, req), stop)
+            }
+            Err(e) => (
+                Response::err(
+                    serde_json::Value::Null,
+                    &CoreError::new(ErrorCode::InvalidParams, format!("bad request: {e}")),
+                ),
+                false,
             ),
         };
+        let should_stop = stop_after_response && resp.error.is_none();
         let mut out = serde_json::to_string(&resp)?;
         out.push('\n');
         writer.write_all(out.as_bytes()).map_err(io_err)?;
         writer.flush().map_err(io_err)?;
+        if should_stop {
+            std::process::exit(0);
+        }
     }
 }
 
@@ -661,6 +681,14 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             "status": "ok",
             "files_indexed": ctx.files.read().unwrap().len(),
         })),
+
+        "daemon.stop" => {
+            set_hook_running(false).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+            let panel = panelctl::close();
+            tray::remove();
+            let _ = ctx.storage.audit("daemon", "daemon.stop", "requested");
+            Ok(serde_json::json!({"status":"stopped","hook":"stopped","panel":panel["panel"]}))
+        }
 
         "schema" => Ok(wb_core::protocol::schema()),
 

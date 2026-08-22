@@ -453,37 +453,36 @@ struct Client {
 }
 
 impl Client {
-    fn connect() -> Result<Self, CoreError> {
+    fn connect_existing() -> Result<Self, CoreError> {
         let name = wb_core::paths::pipe_name()
             .to_ns_name::<GenericNamespaced>()
             .map_err(|e| CoreError::new(ErrorCode::Internal, format!("pipe name: {e}")))?;
-        match interprocess::local_socket::Stream::connect(name.clone()) {
-            Ok(s) => Ok(Self {
-                reader: BufReader::new(s.try_clone().map_err(io_err)?),
-                writer: s,
-            }),
-            Err(_) => {
-                spawn_daemon();
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-                loop {
-                    match interprocess::local_socket::Stream::connect(name.clone()) {
-                        Ok(s) => {
-                            return Ok(Self {
-                                reader: BufReader::new(s.try_clone().map_err(io_err)?),
-                                writer: s,
-                            })
-                        }
-                        Err(e) => {
-                            if std::time::Instant::now() > deadline {
-                                return Err(CoreError::new(
-                                    ErrorCode::DaemonUnavailable,
-                                    format!("cannot reach daemon: {e}"),
-                                )
-                                .with_hint("try `wb daemon start`"));
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(80));
-                        }
+        let stream = interprocess::local_socket::Stream::connect(name).map_err(|e| {
+            CoreError::new(
+                ErrorCode::DaemonUnavailable,
+                format!("cannot reach daemon: {e}"),
+            )
+        })?;
+        Ok(Self {
+            reader: BufReader::new(stream.try_clone().map_err(io_err)?),
+            writer: stream,
+        })
+    }
+
+    fn connect() -> Result<Self, CoreError> {
+        if let Ok(client) = Self::connect_existing() {
+            return Ok(client);
+        }
+        spawn_daemon();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match Self::connect_existing() {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    if std::time::Instant::now() > deadline {
+                        return Err(e.with_hint("try `wb daemon start`"));
                     }
+                    std::thread::sleep(std::time::Duration::from_millis(80));
                 }
             }
         }
@@ -611,13 +610,39 @@ fn main() {
         return;
     }
     if let Cmd::Daemon { op: DaemonOp::Start } = cli.cmd {
-        spawn_daemon();
         match Client::connect().and_then(|mut c| c.call("daemon.ping", serde_json::json!({}))) {
             Ok(v) => {
                 emit(&v, json, false);
                 return;
             }
             Err(e) => fail(&e, json),
+        }
+    }
+    if let Cmd::Daemon { op } = &cli.cmd {
+        match op {
+            DaemonOp::Status => {
+                let value = match Client::connect_existing() {
+                    Ok(mut client) => match client.call("daemon.ping", serde_json::json!({})) {
+                        Ok(value) => value,
+                        Err(e) => fail(&e, json),
+                    },
+                    Err(_) => serde_json::json!({"status":"stopped"}),
+                };
+                emit(&value, json, false);
+                return;
+            }
+            DaemonOp::Stop => {
+                let value = match Client::connect_existing() {
+                    Ok(mut client) => match client.call("daemon.stop", serde_json::json!({})) {
+                        Ok(value) => value,
+                        Err(e) => fail(&e, json),
+                    },
+                    Err(_) => serde_json::json!({"status":"stopped","already_stopped":true}),
+                };
+                emit(&value, json, false);
+                return;
+            }
+            DaemonOp::Start => unreachable!(),
         }
     }
 
@@ -691,14 +716,7 @@ fn main() {
         },
         Cmd::Audit => ("audit.tail", serde_json::json!({})),
         Cmd::Apps => ("apps.list", serde_json::json!({})),
-        Cmd::Daemon { op } => match op {
-            DaemonOp::Status => ("daemon.ping", serde_json::json!({})),
-            DaemonOp::Stop => {
-                eprintln!("{}", serde_json::to_string(&CoreError::new(ErrorCode::Unimplemented, "daemon stop lands with tray/service work").to_envelope()).unwrap_or_default());
-                std::process::exit(5);
-            }
-            DaemonOp::Start => unreachable!(),
-        },
+        Cmd::Daemon { .. } => unreachable!(),
         Cmd::Schema => unreachable!(),
         Cmd::Mcp { .. } => unreachable!(),
     };
