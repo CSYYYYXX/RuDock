@@ -7,7 +7,7 @@
 
 | 组件 | 状态 |
 | --- | --- |
-| wb-core（模型/存储/搜索/协议） | ✅ 含 11 个单元测试 |
+| wb-core（模型/存储/搜索/协议） | ✅ 含 12 个单元测试 |
 | wb-daemon（JSON-RPC over Named Pipe） | ✅ 可用，托盘常驻 + Everything IPC + 完整 start/status/stop 生命周期 |
 | wb-cli（`wb.exe` 全命令面 + `--json` 契约） | ✅ 可用 |
 | wb-hook（**Win 键钩子：接管开关 / 开机自启 / 单实例**） | ✅ 可用 |
@@ -54,7 +54,7 @@
 ### v6/v7：时序修复 + 应用索引补全（当前）
 
 - **呼出卡顿修复（三段握手）**：`show_panel()` 只取**缓存**背景（隐藏期间 120ms 后台预截；绝不现截）→ 发 `{"kind":"show"}` → 页面加 `enter`+`hold`（`animation-play-state:paused` 冻结在第 0 帧）→ 回 `show.ready` → 宿主 `reveal_now()` 才 `ShowWindow` + 发 `go`（双 rAF 后摘 `hold`）。亮窗帧 = 动画第 0 帧，无静帧闪现；200ms 兜底定时器（`SHOW_TIMER_ID`）防页面不应答。截图压缩 miniz_oxide level 4。
-- **应用索引补全**：`.lnk` 扫描之外并入 `Get-StartApps`（UWP/Store 应用无 .lnk），按小写标题去重——本机 45 → **287 个**；`shell:AppsFolder\<AppID>` 可 ShellExecute 启动、可 SHCreateItemFromParsingName 提取图标。PowerShell 输出强制 UTF8（`[Console]::OutputEncoding`）修中文乱码；`wb apps` 新子命令直出列表。坑：daemon spawn 必须 `Stdio::null`，否则启动日志污染 CLI 的 stdout JSON；wb-daemon 的 `windows` 特性漏 `Win32_Graphics_Gdi`（WNDCLASSW/RegisterClassW 被它门控），之前靠 wb-panel 特性统一掩盖，单独构建即炸。
+- **应用索引补全**：`.lnk` 扫描之外并入 `Get-StartApps`（UWP/Store 应用无 .lnk），按小写标题去重——本机 45 → **287 个**；`shell:AppsFolder\<AppID>` 可 ShellExecute 启动、可 SHCreateItemFromParsingName 提取图标。首份完整索引在 daemon 启动阶段同步建立，命名管道开始处理请求前即已就绪，随后每 5 分钟由后台线程刷新；统一搜索和 `wb apps` 只读内存快照，不会在面板交互路径启动 PowerShell。`wb daemon status` 暴露 `apps_indexed` / `apps_index_ready`。PowerShell 输出强制 UTF8（`[Console]::OutputEncoding`）修中文乱码；daemon spawn 必须 `Stdio::null`，否则启动日志污染 CLI 的 stdout JSON。
 - **新组件**：最近文件卡（读 `%APPDATA%\Microsoft\Windows\Recent` 按 mtime 排序，daemon `recent.list`）；精致化一轮——卡片 inset 顶部高光、Spotlight focus 光圈、结果选中行 accent 竖条、快捷启动竖向图标按钮、时钟 200 字重、卡头图标字符。网格 R4 = 最近文件 span2 + 应用 span4。
 - 验证截图：`docs-assets/v7-settled.png`（主面板）/ `v7-apps.png`（287 应用抽屉）/ `v6-mid015.png`（动画中间帧无静帧）。
 
@@ -133,7 +133,7 @@
 - **Everything IPC**：文件类搜索优先走官方 Unicode v1 `WM_COPYDATA` 协议，严格校验 32MB 回包、条目表、字符串偏移和 UTF-16 终止符，结果标记 `source: "everything"`。Everything 不可用时保留原有用户常用目录索引作为无感降级；非文件类型搜索不会触发 Everything。
 - **社区分发底座**：`wb plugin pack` 返回归档 SHA-256；`wb plugin install <http(s)-url> --sha256 <hex>` 支持远程安装且强制校验。安装器用结构化 ZIP 解析逐项拒绝路径穿越、NTFS ADS、设备名、符号链接和大小写冲突，并在写盘前/写盘中限制归档、解压树和单文件；staging/backup 与正式发现目录隔离，升级提交失败会恢复旧版本。
 - **开放插件市场**：官方与社区共用版本化 JSON Schema；市场源持久化在设置中，CLI 可聚合最多 8 个源，也可用 `--index` 临时指定来源。面板第三页提供“已安装 / 市场”双视图、搜索、来源管理、安装、更新与卸载；市场安装会在提交前同时核对 SHA-256、插件 id 与版本。截图：`docs-assets/m5-market-page.png`、`docs-assets/m5-market-sources.png`、`docs-assets/m5-plugins-installed-uninstall.png`。
-- **测试基线**（2026-08-22）：wb-core 11 + wb-daemon 14 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 8，共 57 个单测；workspace test/build 通过。真实 MCP E2E 已覆盖 read-only 阻断、ask 无能力拒绝、elicitation 接受后写入、事件长轮询、审计正文不落盘，以及同一 stdio 会话内插件安装/批准/卸载的 tool + Skill 双目录通知与重新枚举；Everything E2E 已覆盖真实 IPC 命中与进程离线后的本地索引降级。设置页截图：`docs-assets/m5-mcp-write-policy.png`。
+- **测试基线**（2026-08-22）：wb-core 12 + wb-daemon 14 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 8，共 58 个单测；workspace test/build 通过。真实 MCP E2E 已覆盖 read-only 阻断、ask 无能力拒绝、elicitation 接受后写入、事件长轮询、审计正文不落盘，以及同一 stdio 会话内插件安装/批准/卸载的 tool + Skill 双目录通知与重新枚举；应用索引 E2E 已验证 daemon 就绪即有 341 项、列表与搜索热路径不启动 PowerShell；Everything E2E 已覆盖真实 IPC 命中与进程离线后的本地索引降级。设置页截图：`docs-assets/m5-mcp-write-policy.png`。
 
 ## 构建环境（Windows，已固化在本仓库）
 

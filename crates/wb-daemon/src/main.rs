@@ -27,6 +27,7 @@ mod tray;
 struct Ctx {
     storage: Arc<Storage>,
     plugins: RwLock<Vec<LoadedPlugin>>,
+    apps: RwLock<Vec<SearchResult>>,
     files: RwLock<Vec<SearchResult>>,
     plugin_tx: Mutex<()>,
     settings_tx: Mutex<()>,
@@ -1286,13 +1287,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         plugins.len(),
         plugin_dirs()
     );
+    let apps = wb_core::search::index_apps();
+    eprintln!("wb-daemon: 应用索引 {} 项", apps.len());
     let ctx = Arc::new(Ctx {
         storage: Arc::clone(&storage),
         plugins: RwLock::new(plugins),
+        apps: RwLock::new(apps),
         files: RwLock::new(wb_core::search::list_recent_files(200)),
         plugin_tx: Mutex::new(()),
         settings_tx: Mutex::new(()),
     });
+    {
+        let ctx = Arc::clone(&ctx);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(300));
+            let apps = wb_core::search::index_apps();
+            eprintln!("wb-daemon: 应用索引已刷新，共 {} 项", apps.len());
+            *ctx.apps.write().unwrap() = apps;
+        });
+    }
     {
         let ctx = Arc::clone(&ctx);
         std::thread::spawn(move || {
@@ -1500,6 +1513,8 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             "name": "wb-daemon",
             "version": env!("CARGO_PKG_VERSION"),
             "status": "ok",
+            "apps_indexed": ctx.apps.read().unwrap().len(),
+            "apps_index_ready": true,
             "files_indexed": ctx.files.read().unwrap().len(),
             "everything_available": everything::available(),
             "everything_database_loaded": everything::database_loaded(),
@@ -1585,7 +1600,8 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             } else {
                 limit.max(100)
             };
-            let mut results = Searcher::new(&ctx.storage).search(query, provider_limit);
+            let apps = ctx.apps.read().unwrap().clone();
+            let mut results = Searcher::new(&ctx.storage, &apps).search(query, provider_limit);
             let include_files = params
                 .get("type")
                 .and_then(|v| v.as_str())
@@ -1735,7 +1751,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             Ok(serde_json::json!({"cleared": n}))
         }
 
-        "apps.list" => Ok(serde_json::to_value(wb_core::search::list_apps())?),
+        "apps.list" => Ok(serde_json::to_value(ctx.apps.read().unwrap().as_slice())?),
         "recent.list" => {
             let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(6) as usize;
             Ok(serde_json::to_value(wb_core::search::list_recent_files(

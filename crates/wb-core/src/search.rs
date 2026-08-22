@@ -7,11 +7,12 @@ use crate::storage::Storage;
 
 pub struct Searcher<'a> {
     pub storage: &'a Storage,
+    apps: &'a [SearchResult],
 }
 
 impl<'a> Searcher<'a> {
-    pub fn new(storage: &'a Storage) -> Self {
-        Self { storage }
+    pub fn new(storage: &'a Storage, apps: &'a [SearchResult]) -> Self {
+        Self { storage, apps }
     }
 
     /// Unified search. Provider failures degrade to empty, never to an error
@@ -25,7 +26,7 @@ impl<'a> Searcher<'a> {
         out.extend(self.search_notes(&q).unwrap_or_default());
         out.extend(self.search_todos(&q).unwrap_or_default());
         out.extend(self.search_clips(&q).unwrap_or_default());
-        out.extend(search_apps(&q).unwrap_or_default());
+        out.extend(search_indexed_apps(self.apps, &q, 50));
         out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         out.truncate(limit);
         out
@@ -83,31 +84,28 @@ impl<'a> Searcher<'a> {
     }
 }
 
-/// Scan Start Menu shortcuts (.lnk) — pure filesystem, no shell deps.
-fn search_apps(q: &str) -> std::io::Result<Vec<SearchResult>> {
-    Ok(list_apps()
-        .into_iter()
-        .filter(|a| a.title.to_lowercase().contains(q))
-        .take(50)
-        .collect())
-}
-
-/// All Start Menu apps, unfiltered (panel app-grid uses this).
-/// 5 分钟进程内缓存：daemon 的 search 每次查询也走这里，不能每次都重扫。
-pub fn list_apps() -> Vec<SearchResult> {
-    static CACHE: std::sync::Mutex<Option<(std::time::Instant, Vec<SearchResult>)>> =
-        std::sync::Mutex::new(None);
-    if let Some((at, apps)) = &*CACHE.lock().unwrap() {
-        if at.elapsed() < std::time::Duration::from_secs(300) {
-            return apps.clone();
-        }
+/// Search a daemon-owned application snapshot without touching the filesystem
+/// or spawning PowerShell on the request path.
+pub fn search_indexed_apps(
+    apps: &[SearchResult],
+    query: &str,
+    limit: usize,
+) -> Vec<SearchResult> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
     }
-    let apps = list_apps_fresh();
-    *CACHE.lock().unwrap() = Some((std::time::Instant::now(), apps.clone()));
     apps
+        .iter()
+        .filter(|a| a.title.to_lowercase().contains(&q))
+        .take(limit)
+        .cloned()
+        .collect()
 }
 
-fn list_apps_fresh() -> Vec<SearchResult> {
+/// Build the complete Start Menu application snapshot. The daemon calls this
+/// during startup and on its refresh thread, never from an interactive request.
+pub fn index_apps() -> Vec<SearchResult> {
     let mut roots = Vec::new();
     if let Some(p) = std::env::var_os("APPDATA") {
         roots.push(std::path::PathBuf::from(p).join(r"Microsoft\Windows\Start Menu\Programs"));

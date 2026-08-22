@@ -310,7 +310,7 @@ fn audit_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{new_id, ClipEntry, ClipKind, Note, TodoItem};
+    use crate::models::{new_id, ClipEntry, ClipKind, Note, ResultKind, SearchResult, TodoItem};
 
     #[test]
     fn notes_crud_roundtrip() {
@@ -365,11 +365,30 @@ mod tests {
     fn search_hits_local_stores() {
         let st = Storage::open_memory().unwrap();
         st.note_add(&Note::new(new_id(), "周报模板在这里".into(), vec![])).unwrap();
-        let s = crate::search::Searcher::new(&st);
+        let s = crate::search::Searcher::new(&st, &[]);
         let hits = s.search("周报", 10);
         assert!(hits.iter().any(|r| r.source == "notes"));
         assert!(s.search("", 10).is_empty());
         assert!(s.search("绝不存在xyz", 10).is_empty());
+    }
+
+    #[test]
+    fn search_uses_prebuilt_application_snapshot() {
+        let st = Storage::open_memory().unwrap();
+        let apps = vec![SearchResult {
+            kind: ResultKind::App,
+            title: "Snapshot Calculator".into(),
+            subtitle: Some("app".into()),
+            path: Some("shell:AppsFolder\\snapshot.calculator".into()),
+            score: 0.8,
+            source: "test-snapshot".into(),
+        }];
+        let hits = crate::search::Searcher::new(&st, &apps).search("calculator", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].source, "test-snapshot");
+        assert!(crate::search::Searcher::new(&st, &[])
+            .search("calculator", 10)
+            .is_empty());
     }
 
     #[test]
