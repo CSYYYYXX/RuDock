@@ -1086,6 +1086,11 @@ fn read_settings() -> serde_json::Value {
     }
     if !had_onboarding_flag {
         obj.insert("onboarding_complete".into(), serde_json::json!(true));
+    } else if !obj
+        .get("onboarding_complete")
+        .is_some_and(serde_json::Value::is_boolean)
+    {
+        obj.insert("onboarding_complete".into(), serde_json::json!(true));
     }
     if !obj.get("widget_layouts").is_some_and(|v| v.is_object()) {
         obj.insert("widget_layouts".into(), serde_json::json!({"panel": {}, "desktop": {}}));
