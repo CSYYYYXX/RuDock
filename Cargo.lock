@@ -788,6 +788,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "interprocess",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",
@@ -797,6 +798,7 @@ dependencies = [
  "wb-plugin-host",
  "wb-plugin-sdk",
  "windows-sys",
+ "zip",
 ]
 
 [[package]]

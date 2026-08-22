@@ -20,6 +20,8 @@ thiserror = { workspace = true }
 interprocess = "2"
 sha2 = { workspace = true }
 toml_edit = "0.22"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }

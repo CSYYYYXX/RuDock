@@ -6,6 +6,7 @@ use interprocess::local_socket::{prelude::*, GenericNamespaced};
 use interprocess::TryClone;
 use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use wb_core::error::{CoreError, ErrorCode};
 use wb_core::protocol::{Request, Response};
 
@@ -97,6 +98,11 @@ enum Cmd {
     Mcp {
         #[command(subcommand)]
         op: McpOp,
+    },
+    /// Create a consistent local backup of RuDock data
+    Backup {
+        #[command(subcommand)]
+        op: BackupOp,
     },
 }
 
@@ -328,6 +334,16 @@ enum McpOp {
         /// Remove a conflicting mcp server named "wb"
         #[arg(long)]
         force: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum BackupOp {
+    /// Back up the SQLite database, settings, and user-installed plugins
+    Create {
+        /// Destination ZIP path; defaults to the Downloads folder
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -905,6 +921,270 @@ fn archive_sha256(path: &std::path::Path) -> Result<String, CoreError> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+const BACKUP_MAX_FILES: usize = 1024;
+const BACKUP_MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
+const BACKUP_MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
+
+struct BackupStats {
+    files: usize,
+    bytes: u64,
+}
+
+impl BackupStats {
+    fn add(&mut self, size: u64, name: &str) -> Result<(), CoreError> {
+        if size > BACKUP_MAX_FILE_BYTES {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("备份文件超过 16 MiB 限制: {name}"),
+            ));
+        }
+        if self.files >= BACKUP_MAX_FILES {
+            return Err(CoreError::new(ErrorCode::InvalidParams, "备份文件数量超过 1024 项"));
+        }
+        let total = self
+            .bytes
+            .checked_add(size)
+            .ok_or_else(|| CoreError::new(ErrorCode::InvalidParams, "备份总大小溢出"))?;
+        if total > BACKUP_MAX_TOTAL_BYTES {
+            return Err(CoreError::new(ErrorCode::InvalidParams, "备份总大小超过 256 MiB 限制"));
+        }
+        self.files += 1;
+        self.bytes = total;
+        Ok(())
+    }
+}
+
+fn backup_options() -> zip::write::SimpleFileOptions {
+    zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated)
+}
+
+fn backup_zip_error(error: zip::result::ZipError, action: &str) -> CoreError {
+    CoreError::new(ErrorCode::Internal, format!("{action}: {error}"))
+}
+
+fn add_backup_file<W: Write + std::io::Seek>(
+    writer: &mut zip::ZipWriter<W>,
+    archive_name: &str,
+    source: &Path,
+    stats: &mut BackupStats,
+) -> Result<(), CoreError> {
+    let metadata = std::fs::symlink_metadata(source).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            format!("读取备份文件失败 {}: {e}", source.display()),
+        )
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("备份不支持符号链接或特殊文件: {}", source.display()),
+        ));
+    }
+    stats.add(metadata.len(), archive_name)?;
+    let bytes = std::fs::read(source).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            format!("读取备份文件失败 {}: {e}", source.display()),
+        )
+    })?;
+    writer
+        .start_file(archive_name.replace('\\', "/"), backup_options())
+        .map_err(|e| backup_zip_error(e, "创建备份条目失败"))?;
+    writer
+        .write_all(&bytes)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写入备份条目失败: {e}")))?;
+    Ok(())
+}
+
+fn add_backup_tree<W: Write + std::io::Seek>(
+    writer: &mut zip::ZipWriter<W>,
+    root: &Path,
+    current: &Path,
+    prefix: &str,
+    depth: usize,
+    stats: &mut BackupStats,
+) -> Result<(), CoreError> {
+    if depth > 16 {
+        return Err(CoreError::new(ErrorCode::InvalidParams, "插件目录层级超过 16 层"));
+    }
+    let mut entries = std::fs::read_dir(current)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取插件目录失败 {}: {e}", current.display())))?
+        .flatten()
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|e| {
+            CoreError::new(ErrorCode::Internal, format!("读取插件文件失败 {}: {e}", path.display()))
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("备份不支持插件符号链接: {}", path.display()),
+            ));
+        }
+        let relative = path.strip_prefix(root).map_err(|_| {
+            CoreError::new(ErrorCode::Internal, format!("插件路径越界: {}", path.display()))
+        })?;
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        let archive_name = format!("{prefix}{relative}");
+        if metadata.is_dir() {
+            add_backup_tree(writer, root, &path, prefix, depth + 1, stats)?;
+        } else if metadata.is_file() {
+            add_backup_file(writer, &archive_name, &path, stats)?;
+        } else {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("备份不支持特殊插件文件: {}", path.display()),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn backup_database(source: &Path, destination: &Path) -> Result<(), CoreError> {
+    if !source.is_file() {
+        return Err(CoreError::new(
+            ErrorCode::NotFound,
+            format!("数据库不存在: {}", source.display()),
+        ));
+    }
+    if destination.exists() {
+        std::fs::remove_file(destination).map_err(|e| {
+            CoreError::new(ErrorCode::Internal, format!("清理临时数据库失败: {e}"))
+        })?;
+    }
+    let source_conn = rusqlite::Connection::open(source)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("打开数据库失败: {e}")))?;
+    source_conn
+        .backup(rusqlite::DatabaseName::Main, destination, None)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("在线备份数据库失败: {e}")))
+}
+
+fn backup_output_path(output: Option<&Path>) -> Result<PathBuf, CoreError> {
+    let path = if let Some(output) = output {
+        if output.as_os_str().is_empty() {
+            return Err(CoreError::new(ErrorCode::InvalidParams, "备份输出路径不能为空"));
+        }
+        if output.is_absolute() {
+            output.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取当前目录失败: {e}")))?
+                .join(output)
+        }
+    } else {
+        let base = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .map(|p| p.join("Downloads"))
+            .filter(|p| p.is_dir())
+            .or_else(|| std::env::current_dir().ok())
+            .ok_or_else(|| CoreError::new(ErrorCode::Internal, "无法确定备份输出目录"))?;
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取系统时间失败: {e}")))?
+            .as_secs();
+        base.join(format!("RuDock-backup-{stamp}.zip"))
+    };
+    let path = if path.extension().is_none() {
+        path.with_extension("zip")
+    } else {
+        path
+    };
+    if path.exists() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("备份文件已存在，拒绝覆盖: {}", path.display()),
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建备份目录失败: {e}")))?;
+    }
+    Ok(path)
+}
+
+fn create_backup(output: Option<&Path>) -> Result<serde_json::Value, CoreError> {
+    let output = backup_output_path(output)?;
+    let temp_db = std::env::temp_dir().join(format!(
+        "rudock-backup-db-{}-{}.db",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取系统时间失败: {e}")))?
+            .as_nanos()
+    ));
+    let result = (|| {
+        backup_database(&wb_core::paths::db_path(), &temp_db)?;
+        let file = std::fs::File::create(&output)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建备份归档失败: {e}")))?;
+        let mut writer = zip::ZipWriter::new(file);
+        let mut stats = BackupStats { files: 0, bytes: 0 };
+        let settings = wb_core::paths::settings_path();
+        let settings_present = settings.is_file();
+        if settings_present {
+            add_backup_file(&mut writer, "settings.json", &settings, &mut stats)?;
+        }
+        add_backup_file(&mut writer, "database/wb.db", &temp_db, &mut stats)?;
+        let plugin_root = wb_core::paths::local_data_dir().join("plugins");
+        if plugin_root.is_dir() {
+            let output_parent = output.parent().unwrap_or_else(|| Path::new("."));
+            let output_parent = output_parent.canonicalize().map_err(|e| {
+                CoreError::new(ErrorCode::Internal, format!("解析备份目录失败: {e}"))
+            })?;
+            let plugin_root_canonical = plugin_root.canonicalize().map_err(|e| {
+                CoreError::new(ErrorCode::Internal, format!("解析插件目录失败: {e}"))
+            })?;
+            if output_parent.starts_with(&plugin_root_canonical) {
+                return Err(CoreError::new(
+                    ErrorCode::InvalidParams,
+                    "备份输出不能放在用户插件目录内",
+                ));
+            }
+            add_backup_tree(&mut writer, &plugin_root, &plugin_root, "plugins/", 0, &mut stats)?;
+        }
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "kind": "rudock-backup",
+            "app_version": env!("CARGO_PKG_VERSION"),
+            "created_unix": SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+            "database": "database/wb.db",
+            "settings": settings_present.then_some("settings.json"),
+            "plugins": "plugins/",
+            "file_count": stats.files,
+            "payload_bytes": stats.bytes,
+        });
+        writer
+            .start_file("manifest.json", backup_options())
+            .map_err(|e| backup_zip_error(e, "创建备份清单失败"))?;
+        writer
+            .write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写入备份清单失败: {e}")))?;
+        writer
+            .start_file("README.txt", backup_options())
+            .map_err(|e| backup_zip_error(e, "创建备份说明失败"))?;
+        writer
+            .write_all(b"RuDock local backup. Stop RuDock before restoring these files. This archive contains personal data and should be stored privately.\r\n")
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("写入备份说明失败: {e}")))?;
+        writer
+            .finish()
+            .map_err(|e| backup_zip_error(e, "完成备份归档失败"))?;
+        let sha256 = archive_sha256(&output)?;
+        Ok(serde_json::json!({
+            "created": true,
+            "output": output,
+            "sha256": format!("sha256:{sha256}"),
+            "file_count": stats.files,
+            "payload_bytes": stats.bytes,
+        }))
+    })();
+    let _ = std::fs::remove_file(&temp_db);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&output);
+    }
+    result
+}
+
 #[cfg(not(windows))]
 fn pack_plugin(_dir: &str, _output: Option<&str>) -> Result<serde_json::Value, CoreError> {
     Err(CoreError::new(ErrorCode::Unimplemented, "plugin pack 仅支持 Windows"))
@@ -1086,6 +1366,18 @@ fn main() {
         }
         return;
     }
+
+    let local_backup_result = match &cli.cmd {
+        Cmd::Backup { op: BackupOp::Create { output } } => Some(create_backup(output.as_deref())),
+        _ => None,
+    };
+    if let Some(result) = local_backup_result {
+        match result {
+            Ok(v) => emit(&v, json, false),
+            Err(e) => fail(&e, json),
+        }
+        return;
+    }
     if let Cmd::Daemon { op: DaemonOp::Start } = cli.cmd {
         match Client::connect().and_then(|mut c| c.call("daemon.ping", serde_json::json!({}))) {
             Ok(v) => {
@@ -1245,6 +1537,7 @@ fn main() {
         Cmd::Daemon { .. } => unreachable!(),
         Cmd::Schema => unreachable!(),
         Cmd::Mcp { .. } => unreachable!(),
+        Cmd::Backup { .. } => unreachable!(),
     };
 
     match client.call(method, params) {
@@ -1274,6 +1567,43 @@ mod tests {
         let exe = root.join("wb-mcp.exe");
         std::fs::write(&exe, b"test").unwrap();
         exe
+    }
+
+    #[test]
+    fn parses_backup_create_command() {
+        let cli = Cli::try_parse_from([
+            "wb",
+            "backup",
+            "create",
+            "--output",
+            "C:\\Backups\\rudock.zip",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.cmd,
+            Cmd::Backup {
+                op: BackupOp::Create { output: Some(_) }
+            }
+        ));
+    }
+
+    #[test]
+    fn online_database_backup_preserves_rows() {
+        let root = test_root("backup-db");
+        let source = root.join("source.db");
+        let destination = root.join("destination.db");
+        {
+            let conn = rusqlite::Connection::open(&source).unwrap();
+            conn.execute("CREATE TABLE sample (value TEXT NOT NULL)", []).unwrap();
+            conn.execute("INSERT INTO sample (value) VALUES ('kept')", []).unwrap();
+        }
+        backup_database(&source, &destination).unwrap();
+        let conn = rusqlite::Connection::open(&destination).unwrap();
+        let value: String = conn
+            .query_row("SELECT value FROM sample", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "kept");
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

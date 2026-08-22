@@ -89,6 +89,7 @@ E:\cctest\wb\
 - MCP 服务端策略：设置页和 `wb settings mcp client|ask|read-only` 提供客户端确认、逐次 elicitation、强制只读三档。ask 仅接受 MCP 2025-06-18 且声明 elicitation 的客户端，并要求 `accept + confirm=true`；拒绝、无能力和业务错误统一为 `isError:true`，成功结果带 `structuredContent`。
 - 审计与事件：RPC 审计只保留 actor、方法、状态、错误码、耗时和参数形状，旧明文记录启动时一次性脱敏，最多保留 5000 条。`events.tail`、CLI `wb events`、MCP `events_tail` 支持 id 游标和最长 30 秒长轮询。真实 E2E 已验证游标跨连接唤醒，测试 secret 不进入 `wb audit`。
 - M6 便携发布：panel 优先从 exe 同目录加载 `assets/panel-ui/index.html` 和 `WebView2Loader.dll`，路径会正确转义空格、`#` 和 UTF-8；daemon 同时发现 exe 同目录内置插件。`scripts/build-release.ps1` 使用 `--release --locked` 构建 5 个 exe，生成固定目录、包内逐文件 `SHA256SUMS.txt`、ZIP 与包外 `.sha256`，并执行版本、解压和关键文件冒烟。GitHub Actions 在手动触发或 `v*` tag 时跑 workspace tests、构建 artifact，并在 tag 上创建 Release。首个本地产物 `RuDock-0.1.0-windows-x64.zip` 已通过 25 个文件的完整哈希复核；`dist/` 不提交。
+- 数据可恢复性：`wb backup create [--output PATH]` 使用 SQLite Online Backup 生成一致数据库副本，再打包设置和 `%LOCALAPPDATA%\WB\plugins` 用户插件；归档限制 1024 文件、单文件 16 MiB、总 payload 256 MiB，拒绝符号链接/特殊文件且不覆盖已有输出。结果返回归档 SHA-256，备份单测覆盖在线数据库行保留，真实本机归档冒烟已通过。
 - 2026-08-23 全量测试基线：wb-core 12 + wb-daemon 17 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 12 + wb-mcp 14 + wb-panel 3，共 76 个单测；workspace test 和 release build 通过（wb-panel 仍有原有 11 条 warning）。MCP 配置隔离测试覆盖 JSON/TOML 保留、幂等、冲突、强制替换、原子写入和卸载，真实 CLI `--file` 也完成两种格式的 install→status→uninstall。本机应用索引 341 项、后台文件索引实测 43,927 项；应用列表/搜索热路径无 PowerShell 子进程，Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。组件调整大小的 pointer→RPC→settings 持久化链路已在真实 WebView2 宿主冒烟，测试布局随后恢复；日语组件页与英文应用页实机检查无 JS 错误。桌面组件既有无隐私视觉回归截图为 `docs-assets/desktop-widgets.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
@@ -104,11 +105,11 @@ E:\cctest\wb\
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **发行与引导**：在最终集中前台验收后创建首个 `v0.1.0` tag，验证 GitHub Actions 的真实 Release；下一步补安装器、升级检查、首次启动引导、配置备份与诊断导出。
+1. **发行与引导**：在最终集中前台验收后创建首个 `v0.1.0` tag，验证 GitHub Actions 的真实 Release；下一步补安装器、升级检查、首次启动引导、备份恢复和诊断导出。
 2. **Agent 生态深化**：一键安装和 MCP 动态 tools/resources/prompts、写策略、elicitation、脱敏事件订阅均已接通；下一步做 Agent profile 与更细粒度的事件过滤。
 3. **插件生态深化**：继续把天气、倒数日等内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
 4. **搜索体验深化**：可继续做图片/文本文件内容预览、结果分组折叠与钉到看板。
 
 ## 8. 上次会话最后在做的事
 
-完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证和 GitHub Release workflow；面向用户的 README 已改为下载、启动、校验、升级和卸载说明。相关提交：`79c13d9`、`d67e15e`。下一步先做最后的后台安全/配置回归，再把便携目录启动、多语言、组件响应式和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。
+完成便携运行布局、PowerShell 发布脚本、包内/包外 SHA-256、GPLv3 许可证、GitHub Release workflow 和 `wb backup create` 数据备份。面向用户的 README 已改为下载、启动、校验、升级、备份和卸载说明。相关提交：`79c13d9`、`d67e15e`、`a5b9b4d`、`7f100fc`、`92cf822`。下一步先补备份恢复/诊断导出，再把便携目录启动、多语言、组件响应式和关键交互合并成一次前台验收。用户允许必要的前台验收，但明确要求尽量减少频率。

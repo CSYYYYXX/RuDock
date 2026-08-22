@@ -154,6 +154,17 @@ $actual -eq $expected
 
 随后删除 RuDock 程序目录即可。若也要永久删除笔记、待办、设置和用户插件，再手动删除 `%LOCALAPPDATA%\WB`。
 
+### 创建备份
+
+升级或迁移前，可以创建一个一致的本地备份。数据库使用 SQLite Online Backup 读取，即使 RuDock 正在运行也不会直接复制 WAL 文件：
+
+```powershell
+.\wb.exe backup create
+.\wb.exe backup create --output D:\Backups\rudock-before-upgrade.zip
+```
+
+备份包含 SQLite 数据库、设置和 `%LOCALAPPDATA%\WB\plugins` 下的用户插件，并返回归档 SHA-256。备份文件包含个人数据，应存放在私密位置；恢复前先退出 RuDock，并保留原目录作为回滚副本。
+
 ## CLI 与 Agent
 
 RuDock 的 CLI 支持结构化 JSON 输出，可直接用于 PowerShell、自动化脚本和 Agent：
