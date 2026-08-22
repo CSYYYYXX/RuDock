@@ -69,7 +69,7 @@ E:\cctest\wb\
 - M1 内核 / M2 面板 / v11 磨砂 / M3 随手问流式 / M3.5 命令注册表+function calling / M4 插件系统。
 - M4 实测：`wb cmd run util.hello --arg name=WB` 中文无乱码；`?跟 Luna 打个招呼` → 模型自动调插件 `util_hello` → 确认；插件页挂件渲染 + wbRpc 桥读剪贴板统计正常。
 - M5 第一阶段：插件 manifest 支持 `skills` 文档；daemon 暴露 `skill.list` / `skill.get`、`plugin.install` / `plugin.remove`，CLI 提供 `wb skill ...`、`wb plugin pack/install/remove`；ZIP/目录安装会校验、复制到用户目录并立即刷新 daemon 插件池；面板 AI 增加 `skill_list` / `skill_get` 工具。插件页现在每 3 秒检查清单 revision，新增/删除/替换挂件会自动重建 iframe，另有手动刷新按钮。`hello-assistant` 已带 `SKILL.md` 示例。真实 CLI 安装/执行/卸载冒烟、插件页新增挂件截图验证通过，workspace 测试全绿。
-- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。工具现携带标准 MCP annotations（只读/破坏性/幂等/开放世界），旧插件缺省按最保守风险，供客户端执行前展示和确认；面板 AI 的 OpenAI schema 不混入扩展字段。真实 stdio 冒烟已验证 `search`、`todo_add`、`skill_get` 和临时批准插件 `util_hello` 的标注；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
+- M5 Agent 层：`wb-mcp.exe` 已从 stub 升级为 stdio MCP server，支持 `initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`ping`；内建/插件命令从 daemon `cmd.tools` 映射，Skill 以 `wb://skill/<plugin>/<id>` resource 暴露。工具现携带标准 MCP annotations（只读/破坏性/幂等/开放世界），旧插件缺省按最保守风险，供客户端执行前展示和确认；面板 AI 的 OpenAI schema 不混入扩展字段。初始化声明 tool/resource `listChanged`，插件生命周期或开发态刷新真正改变目录后主动通知客户端重新枚举。真实 stdio 冒烟已验证 `search`、`todo_add`、`skill_get`、临时批准插件 `util_hello` 的标注，以及同一会话安装/批准/卸载时的双目录通知；daemon 离线时 MCP 会从同目录冷启动并等待最多 5 秒。
 - M5 权限与外部接入：manifest 权限白名单、批准/撤销、内容指纹失效、widget RPC 网关、路径与 handler 输出边界已接入。`wb mcp config claude|cursor|codex|generic` 生成客户端配置，说明见 `AGENT_INTEGRATION.md`。未批准/批准/撤销的 CLI、MCP 与 widget RPC 链路均已真实验证；插件管理页两种状态截图在 `docs-assets/m5-plugin-permissions-*.png`。
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；HKCU Run 指向 daemon，由它恢复托盘并按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
@@ -80,25 +80,25 @@ E:\cctest\wb\
 - 开放插件市场：`plugins/market-index.schema.json` 固化 v1 静态索引契约，官方与社区使用同一格式；设置可持久化最多 8 个市场源，CLI/RPC 不传 `index` 时聚合来源并自动解析插件，重复 id 会要求显式选源。面板第三页已是“已安装 / 市场”双视图，支持搜索、来源管理、安装、更新与用户插件卸载。市场版本强制 SemVer，远程索引下载限 2MB，远程条目只接受绝对 HTTP(S) 包地址；安装提交前同时核对 SHA-256、插件 id 和版本。真实 HTTP E2E 已验证持久化源、多源聚合和无 `--index` 安装；截图为 `m5-market-page.png`、`m5-market-sources.png`、`m5-plugins-installed-uninstall.png`。
 - MCP 服务端策略：设置页和 `wb settings mcp client|ask|read-only` 提供客户端确认、逐次 elicitation、强制只读三档。ask 仅接受 MCP 2025-06-18 且声明 elicitation 的客户端，并要求 `accept + confirm=true`；拒绝、无能力和业务错误统一为 `isError:true`，成功结果带 `structuredContent`。
 - 审计与事件：RPC 审计只保留 actor、方法、状态、错误码、耗时和参数形状，旧明文记录启动时一次性脱敏，最多保留 5000 条。`events.tail`、CLI `wb events`、MCP `events_tail` 支持 id 游标和最长 30 秒长轮询。真实 E2E 已验证游标跨连接唤醒，测试 secret 不进入 `wb audit`。
-- 2026-08-22 全量测试基线：wb-core 11 + wb-daemon 14 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 4，共 53 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,927 项；Everything 在线真实 IPC 与离线降级、MCP read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。设置 UI 截图为 `docs-assets/m5-mcp-write-policy.png`。
+- 2026-08-22 全量测试基线：wb-core 11 + wb-daemon 14 + wb-plugin-sdk 12 + wb-plugin-host 6 + wb-cli 6 + wb-mcp 8，共 57 个单测；workspace test/build 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,927 项；Everything 在线真实 IPC 与离线降级、MCP 动态目录通知、read-only 阻断、ask 无能力拒绝、双向 elicitation 接受后真实写入/清理均通过。设置 UI 截图为 `docs-assets/m5-mcp-write-policy.png`。
 
 ## 6. 已知瑕疵 / 未验证声明
 
 - Start-Process 不带重定向会出控制台黑窗——生产路径（daemon panelctl 拉起）已用 CREATE_NO_WINDOW，无此问题。
 - 插件挂件支持面板内自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
 - `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
-- `events.tail` 当前是基于审计 id 的长轮询，不是 daemon 主动推送；每个 MCP stdio server 会话仍独立复用一个 daemon pipe。
+- `events.tail` 当前是基于审计 id 的长轮询，不是 daemon 主动推送；每个 MCP stdio 会话使用独立请求连接和目录监听连接，监听线程每 3 秒兜底复核开发态插件变化。
 - MCP elicitation 已落地，但只覆盖经 `wb-mcp.exe` 进入的工具调用；CLI、面板 AI 和 widget 仍遵循各自既有权限边界。
 - Everything IPC 已接入，但全盘覆盖取决于用户的 Everything 索引配置和数据库状态；未运行/未就绪时只覆盖 WB 的用户常用目录降级索引。
 - 市场底层、持久化多源和可视化页面均已接通；正式官方索引地址尚未配置，必须等真实托管地址，不写占位 URL。
 
 ## 7. 建议的下一步（按用户愿景排序）
 
-1. **Agent 生态深化**：MCP 写策略、elicitation 和脱敏事件长轮询已接通；下一步做 `tools/list_changed`、事件订阅深化和安装级接入体验。
+1. **Agent 生态深化**：MCP 动态工具/Skill 目录、写策略、elicitation 和脱敏事件长轮询已接通；下一步做安装级接入体验和更通用的事件订阅。
 2. **插件生态深化**：把 1-2 个内置组件迁移成可独立发布的正式插件；正式官方索引等真实托管地址确定后再配置。
 3. **搜索体验深化**：补文件动作菜单、预览、来源展示与本地选择行为排序，利用已接通的 Everything 全盘结果继续提升 Spotlight。
 4. 更多内置插件候选：天气城市切换、二维码生成、颜色拾取、SSH/Hosts 快捷。
 
 ## 8. 上次会话最后在做的事
 
-刚完成 Everything 1.4/1.5 Unicode v1 IPC 全盘文件搜索：真实便携版 E2E 命中独立测试文件，进程离线后本地索引降级正常；`daemon.ping` 暴露进程与数据库状态。53 个测试及 workspace build 全绿。下一步优先深化 `tools/list_changed` / 事件订阅，或迁移 1-2 个内置组件为正式插件。
+刚完成 MCP 动态目录通知：initialize 声明 tool/resource `listChanged`，独立 daemon 长轮询连接监听插件生命周期，3 秒快照兜底开发态刷新；共享 stdout 锁保证响应、elicitation 和后台 notification 各占完整 JSON 行。真实 E2E 已在同一会话验证临时混合插件安装+批准后 tool/Skill 出现、卸载后消失，并在两阶段各收到两类通知。57 个测试及 workspace build 全绿。下一步优先做安装级 Agent 接入体验，或迁移 1-2 个内置组件为正式插件。

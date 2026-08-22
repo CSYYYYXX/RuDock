@@ -31,8 +31,11 @@ args = []
 - `initialize`, `ping`（协商支持 `2024-11-05` / `2025-06-18`）
 - `tools/list`, `tools/call`
 - `resources/list`, `resources/read`
+- `notifications/tools/list_changed`, `notifications/resources/list_changed`
 
 内建命令和已批准插件的 AI 命令会成为 MCP tools。插件 command id 会通过真实工具注册表解析，避免用字符串替换猜回 id。已批准的 Skill 以 `wb://skill/<plugin>/<skill>` resource 暴露，另提供 `skill_list` / `skill_get` 工具。
+
+初始化响应会声明 `tools.listChanged=true` 和 `resources.listChanged=true`。插件安装、升级、卸载、批准、撤销或开发态刷新真正改变目录后，WB 会主动发送对应 notification；客户端收到后应重新调用 `tools/list` 或 `resources/list`，无需重启 MCP 会话。通知只表示目录失效，不携带插件内容。
 
 每个 tool 都带 MCP 标准 `annotations`：`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`，并附可读标题。搜索、剪贴板读取和 Skill 读取标记为本地只读；新增待办/笔记标记为非破坏性写入；插件命令使用 manifest 声明，旧插件或缺失声明一律按最保守风险处理。
 

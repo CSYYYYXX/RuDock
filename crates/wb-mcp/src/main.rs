@@ -5,9 +5,14 @@
 //! - tools/call  -> daemon cmd.run / skill.list / skill.get
 //! - resources   <- plugin Skills exposed by daemon
 
+mod catalog;
+
+use catalog::JsonWriter;
 use interprocess::local_socket::{prelude::*, GenericNamespaced};
 use interprocess::TryClone;
 use std::io::{BufRead, BufReader, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use wb_core::protocol::{Request, Response};
 
 struct DaemonClient {
@@ -50,6 +55,18 @@ impl DaemonClient {
         let resp: Response = serde_json::from_str(buf.trim()).map_err(|e| e.to_string())?;
         if let Some(error) = resp.error { return Err(error.get("message").and_then(|v| v.as_str()).unwrap_or("daemon error").into()); }
         Ok(resp.result.unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Retry only side-effect-free daemon calls. Write calls deliberately use
+    /// `call`: a lost response must not cause an automatic duplicate write.
+    fn call_read(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+        match self.call(method, params.clone()) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                *self = Self::connect()?;
+                self.call(method, params)
+            }
+        }
     }
 }
 
@@ -116,9 +133,9 @@ fn mcp_tools(daemon_tools: serde_json::Value) -> serde_json::Value {
 
 fn call_tool(client: &mut DaemonClient, name: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
     let result = match name {
-        "skill_list" => client.call("skill.list", args)?,
-        "skill_get" => client.call("skill.get", args)?,
-        "events_tail" => client.call("events.tail", args)?,
+        "skill_list" => client.call_read("skill.list", args)?,
+        "skill_get" => client.call_read("skill.get", args)?,
+        "events_tail" => client.call_read("events.tail", args)?,
         other => client.call("cmd.tool.run", serde_json::json!({"name": other, "args": args, "origin": "mcp"}))?,
     };
     Ok(text_content(&result))
@@ -128,7 +145,7 @@ fn call_tool(client: &mut DaemonClient, name: &str, args: serde_json::Value) -> 
 enum WritePolicy { Client, Ask, ReadOnly }
 
 fn write_policy(client: &mut DaemonClient) -> Result<WritePolicy, String> {
-    let settings = client.call("settings.get", serde_json::json!({}))?;
+    let settings = client.call_read("settings.get", serde_json::json!({}))?;
     Ok(write_policy_from_settings(&settings))
 }
 
@@ -147,7 +164,7 @@ fn tool_risk(client: &mut DaemonClient, name: &str) -> Result<(bool, String), St
         "events_tail" => return Ok((true, "读取 WB 事件".into())),
         _ => {}
     }
-    let tools = client.call("cmd.tools", serde_json::json!({"include_annotations":true}))?;
+    let tools = client.call_read("cmd.tools", serde_json::json!({"include_annotations":true}))?;
     let tool = tools.as_array()
         .and_then(|items| items.iter().find(|tool| tool.get("name").and_then(|value| value.as_str()) == Some(name)))
         .ok_or_else(|| format!("unknown tool: {name}"))?;
@@ -160,15 +177,34 @@ struct SessionState {
     protocol_version: String,
     elicitation: bool,
     next_server_id: u64,
+    initialize_seen: bool,
+    catalog_started: bool,
+    initialized: Arc<AtomicBool>,
 }
 
 impl Default for SessionState {
     fn default() -> Self {
-        Self { protocol_version: "2024-11-05".into(), elicitation: false, next_server_id: 1 }
+        Self {
+            protocol_version: "2024-11-05".into(),
+            elicitation: false,
+            next_server_id: 1,
+            initialize_seen: false,
+            catalog_started: false,
+            initialized: Arc::new(AtomicBool::new(false)),
+        }
     }
 }
 
-fn confirm_tool<R: BufRead, W: Write>(state: &mut SessionState, name: &str, title: &str, args: &serde_json::Value, reader: &mut R, writer: &mut W) -> Result<bool, String> {
+fn initialize_result(state: &mut SessionState, request: &serde_json::Value) -> serde_json::Value {
+    let requested = request.pointer("/params/protocolVersion").and_then(|value| value.as_str()).unwrap_or("2024-11-05");
+    let modern = requested >= "2025-06-18";
+    state.protocol_version = if modern { "2025-06-18" } else { "2024-11-05" }.into();
+    state.elicitation = modern && request.pointer("/params/capabilities/elicitation").is_some();
+    state.initialize_seen = true;
+    serde_json::json!({"protocolVersion":state.protocol_version,"capabilities":{"tools":{"listChanged":true},"resources":{"subscribe":false,"listChanged":true}},"serverInfo":{"name":"wb-mcp","version":env!("CARGO_PKG_VERSION")}})
+}
+
+fn confirm_tool<R: BufRead, W: Write>(state: &mut SessionState, name: &str, title: &str, args: &serde_json::Value, reader: &mut R, output: &JsonWriter<W>) -> Result<bool, String> {
     let request_id = format!("wb-elicitation-{}", state.next_server_id);
     state.next_server_id += 1;
     let args = serde_json::to_string(args).unwrap_or_else(|_| "{}".into());
@@ -178,8 +214,7 @@ fn confirm_tool<R: BufRead, W: Write>(state: &mut SessionState, name: &str, titl
         "params":{"message":format!("WB 请求执行工具「{title}」({name})。参数：{args}"),
         "requestedSchema":{"type":"object","properties":{"confirm":{"type":"boolean","title":"允许执行","description":"仅确认本次调用","default":false}},"required":["confirm"]}}
     });
-    writeln!(writer, "{request}").map_err(|error| error.to_string())?;
-    writer.flush().map_err(|error| error.to_string())?;
+    output.send(&request)?;
     let mut line = String::new();
     loop {
         line.clear();
@@ -198,13 +233,12 @@ fn confirm_tool<R: BufRead, W: Write>(state: &mut SessionState, name: &str, titl
         }
         if let Some(id) = message.get("id") {
             let response = rpc_error(id, -32000, "WB is awaiting tool confirmation");
-            writeln!(writer, "{response}").map_err(|error| error.to_string())?;
-            writer.flush().map_err(|error| error.to_string())?;
+            output.send(&response)?;
         }
     }
 }
 
-fn call_tool_with_policy<R: BufRead, W: Write>(client: &mut DaemonClient, state: &mut SessionState, name: &str, args: serde_json::Value, reader: &mut R, writer: &mut W) -> Result<serde_json::Value, String> {
+fn call_tool_with_policy<R: BufRead, W: Write>(client: &mut DaemonClient, state: &mut SessionState, name: &str, args: serde_json::Value, reader: &mut R, output: &JsonWriter<W>) -> Result<serde_json::Value, String> {
     let (read_only, title) = tool_risk(client, name)?;
     if !read_only {
         match write_policy(client)? {
@@ -214,7 +248,7 @@ fn call_tool_with_policy<R: BufRead, W: Write>(client: &mut DaemonClient, state:
                 if !state.elicitation {
                     return Ok(tool_error("WB 的 ask 策略要求 MCP 2025-06-18 elicitation；当前客户端未声明支持"));
                 }
-                if !confirm_tool(state, name, &title, &args, reader, writer)? {
+                if !confirm_tool(state, name, &title, &args, reader, output)? {
                     return Ok(tool_error(format!("用户未批准工具调用：{title} ({name})")));
                 }
             }
@@ -224,7 +258,7 @@ fn call_tool_with_policy<R: BufRead, W: Write>(client: &mut DaemonClient, state:
 }
 
 fn resources_list(client: &mut DaemonClient) -> Result<serde_json::Value, String> {
-    let skills = client.call("skill.list", serde_json::json!({}))?;
+    let skills = client.call_read("skill.list", serde_json::json!({}))?;
     let empty = Vec::new();
     let resources: Vec<serde_json::Value> = skills.as_array().unwrap_or(&empty).iter().filter_map(|s| {
         let plugin = s.get("plugin")?.as_str()?;
@@ -237,29 +271,36 @@ fn resources_list(client: &mut DaemonClient) -> Result<serde_json::Value, String
 fn resource_read(client: &mut DaemonClient, uri: &str) -> Result<serde_json::Value, String> {
     let rest = uri.strip_prefix("wb://skill/").ok_or("unsupported resource URI")?;
     let (plugin, id) = rest.split_once('/').ok_or("invalid Skill resource URI")?;
-    let value = client.call("skill.get", serde_json::json!({"plugin":plugin,"id":id}))?;
+    let value = client.call_read("skill.get", serde_json::json!({"plugin":plugin,"id":id}))?;
     let text = value.get("content").and_then(|v| v.as_str()).unwrap_or("");
     Ok(serde_json::json!({"contents":[{"uri":uri,"mimeType":"text/markdown","text":text}]}))
 }
 
-fn handle<R: BufRead, W: Write>(client: &mut DaemonClient, state: &mut SessionState, request: serde_json::Value, reader: &mut R, writer: &mut W) -> Option<serde_json::Value> {
+fn handle<R: BufRead, W: Write + Send + 'static>(client: &mut DaemonClient, state: &mut SessionState, request: serde_json::Value, reader: &mut R, output: &JsonWriter<W>) -> Option<serde_json::Value> {
     let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
     let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
-    if request.get("id").is_none() { return None; }
+    if request.get("id").is_none() {
+        if method == "notifications/initialized" && state.initialize_seen {
+            state.initialized.store(true, Ordering::Release);
+        }
+        return None;
+    }
     let result = match method {
         "initialize" => {
-            let requested = request.pointer("/params/protocolVersion").and_then(|value| value.as_str()).unwrap_or("2024-11-05");
-            let modern = requested >= "2025-06-18";
-            state.protocol_version = if modern { "2025-06-18" } else { "2024-11-05" }.into();
-            state.elicitation = modern && request.pointer("/params/capabilities/elicitation").is_some();
-            Ok(serde_json::json!({"protocolVersion":state.protocol_version,"capabilities":{"tools":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false}},"serverInfo":{"name":"wb-mcp","version":env!("CARGO_PKG_VERSION")}}))
+            let value = initialize_result(state, &request);
+            if !state.catalog_started {
+                let seed = catalog::MonitorSeed::load(client).ok();
+                catalog::start(output.clone(), Arc::clone(&state.initialized), seed);
+                state.catalog_started = true;
+            }
+            Ok(value)
         }
         "ping" => Ok(serde_json::json!({})),
-        "tools/list" => client.call("cmd.tools", serde_json::json!({"include_annotations":true})).map(mcp_tools),
+        "tools/list" => client.call_read("cmd.tools", serde_json::json!({"include_annotations":true})).map(mcp_tools),
         "tools/call" => {
             let name = request.pointer("/params/name").and_then(|v| v.as_str()).ok_or_else(|| "missing tool name".to_string());
             let args = request.pointer("/params/arguments").cloned().unwrap_or(serde_json::json!({}));
-            name.and_then(|name| call_tool_with_policy(client, state, name, args, reader, writer))
+            name.and_then(|name| call_tool_with_policy(client, state, name, args, reader, output))
         }
         "resources/list" => resources_list(client),
         "resources/read" => {
@@ -275,7 +316,7 @@ fn main() {
     let stdin = std::io::stdin();
     let mut client = match DaemonClient::connect() { Ok(c) => c, Err(e) => { eprintln!("wb-mcp: {e}"); std::process::exit(5); } };
     let mut state = SessionState::default();
-    let mut stdout = std::io::BufWriter::new(std::io::stdout());
+    let output = JsonWriter::new(std::io::BufWriter::new(std::io::stdout()));
     let mut reader = BufReader::new(stdin.lock());
     let mut line = String::new();
     loop {
@@ -285,9 +326,9 @@ fn main() {
         if line.trim().is_empty() { continue; }
         let request = match serde_json::from_str::<serde_json::Value>(&line) {
             Ok(v) => v,
-            Err(e) => { let out = rpc_error(&serde_json::Value::Null, -32700, e.to_string()); let _ = writeln!(stdout, "{}", out); let _ = stdout.flush(); continue; }
+            Err(e) => { let out = rpc_error(&serde_json::Value::Null, -32700, e.to_string()); let _ = output.send(&out); continue; }
         };
-        if let Some(response) = handle(&mut client, &mut state, request, &mut reader, &mut stdout) { let _ = writeln!(stdout, "{}", response); let _ = stdout.flush(); }
+        if let Some(response) = handle(&mut client, &mut state, request, &mut reader, &output) { let _ = output.send(&response); }
     }
 }
 
@@ -369,7 +410,7 @@ mod tests {
     fn elicitation_requires_explicit_accept_and_confirmation() {
         let accepted = b"{\"jsonrpc\":\"2.0\",\"id\":\"wb-elicitation-1\",\"result\":{\"action\":\"accept\",\"content\":{\"confirm\":true}}}\n";
         let mut reader = BufReader::new(&accepted[..]);
-        let mut writer = Vec::new();
+        let output = JsonWriter::new(Vec::new());
         let mut state = SessionState::default();
         assert!(confirm_tool(
             &mut state,
@@ -377,11 +418,11 @@ mod tests {
             "添加待办",
             &serde_json::json!({"title":"ship"}),
             &mut reader,
-            &mut writer,
+            &output,
         )
         .unwrap());
-        let request: serde_json::Value =
-            serde_json::from_slice(writer.strip_suffix(b"\n").unwrap()).unwrap();
+        let bytes = output.bytes();
+        let request: serde_json::Value = serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap()).unwrap();
         assert_eq!(request["method"], "elicitation/create");
         assert_eq!(
             request["params"]["requestedSchema"]["required"][0],
@@ -393,7 +434,7 @@ mod tests {
             b"{\"jsonrpc\":\"2.0\",\"id\":\"wb-elicitation-1\",\"result\":{\"action\":\"accept\",\"content\":{\"confirm\":false}}}\n".as_slice(),
         ] {
             let mut reader = BufReader::new(response);
-            let mut writer = Vec::new();
+            let output = JsonWriter::new(Vec::new());
             let mut state = SessionState::default();
             assert!(!confirm_tool(
                 &mut state,
@@ -401,9 +442,22 @@ mod tests {
                 "添加待办",
                 &serde_json::json!({}),
                 &mut reader,
-                &mut writer,
+                &output,
             )
             .unwrap());
         }
+    }
+
+    #[test]
+    fn initialize_advertises_dynamic_catalogs() {
+        let mut state = SessionState::default();
+        let result = initialize_result(
+            &mut state,
+            &serde_json::json!({"params":{"protocolVersion":"2025-06-18","capabilities":{"elicitation":{}}}}),
+        );
+        assert_eq!(result["capabilities"]["tools"]["listChanged"], true);
+        assert_eq!(result["capabilities"]["resources"]["listChanged"], true);
+        assert!(state.initialize_seen);
+        assert!(state.elicitation);
     }
 }
