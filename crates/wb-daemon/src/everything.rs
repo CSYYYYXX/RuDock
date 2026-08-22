@@ -175,8 +175,7 @@ unsafe extern "system" fn reply_wnd_proc(
         let len = data.cbData as usize;
         if data.dwData == REPLY_COPYDATA_ID
             && !data.lpData.is_null()
-            && len >= LIST_HEADER_BYTES
-            && len <= MAX_REPLY_BYTES
+            && (LIST_HEADER_BYTES..=MAX_REPLY_BYTES).contains(&len)
         {
             let bytes = std::slice::from_raw_parts(data.lpData as *const u8, len).to_vec();
             REPLY.with(|slot| *slot.borrow_mut() = Some(bytes));
@@ -265,7 +264,7 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, String> {
 }
 
 fn read_utf16z(bytes: &[u8], offset: usize) -> Result<String, String> {
-    if offset % 2 != 0 || offset >= bytes.len() {
+    if !offset.is_multiple_of(2) || offset >= bytes.len() {
         return Err("Everything reply contains an invalid string offset".into());
     }
     let mut units = Vec::new();

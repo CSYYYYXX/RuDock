@@ -1772,7 +1772,7 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                 .and_then(|v| v.as_str())
                 .is_none_or(|kind| kind == "file");
             if include_files {
-                let file_limit = limit.max(100).min(200);
+                let file_limit = limit.clamp(100, 200);
                 match everything::search(query, file_limit) {
                     Ok(files) => results.extend(files),
                     Err(_) => results.extend(wb_core::search::search_indexed_files(

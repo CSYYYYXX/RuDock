@@ -2,6 +2,7 @@
 //! - 面板 `>` 命令模式（人）：cmd.list → 模糊过滤 → 回车 cmd.run
 //! - AI 工具调用（模型）：tools_json → Responses API function calling
 //! - wb CLI（外部 Agent）：wb cmd list / wb cmd run
+//!
 //! 破坏性操作（清剪贴板、锁屏）故意不暴露给 AI 工具。
 
 use serde_json::Value;
@@ -84,7 +85,7 @@ impl ToolAnnotations {
 }
 
 pub fn registry() -> &'static [CmdSpec] {
-    &REGISTRY
+    REGISTRY
 }
 
 static REGISTRY: &[CmdSpec] = &[

@@ -50,13 +50,16 @@ fn run() -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
 
-        let mut icon = NOTIFYICONDATAW::default();
-        icon.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-        icon.hWnd = hwnd;
-        icon.uID = TRAY_ID;
-        icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-        icon.uCallbackMessage = WM_WB_TRAY;
-        icon.hIcon = LoadIconW(HINSTANCE::default(), IDI_APPLICATION).map_err(|e| e.to_string())?;
+        let mut icon = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: TRAY_ID,
+            uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
+            uCallbackMessage: WM_WB_TRAY,
+            hIcon: LoadIconW(HINSTANCE::default(), IDI_APPLICATION)
+                .map_err(|e| e.to_string())?,
+            ..Default::default()
+        };
         set_wide(&mut icon.szTip, "WB - Agent-Native Desktop");
         if !Shell_NotifyIconW(NIM_ADD, &icon).as_bool() {
             return Err("Shell_NotifyIconW(NIM_ADD) failed".into());
@@ -80,10 +83,12 @@ pub fn remove() {
     if raw == 0 {
         return;
     }
-    let mut icon = NOTIFYICONDATAW::default();
-    icon.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-    icon.hWnd = HWND(raw as *mut _);
-    icon.uID = TRAY_ID;
+    let icon = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: HWND(raw as *mut _),
+        uID: TRAY_ID,
+        ..Default::default()
+    };
     unsafe {
         let _ = Shell_NotifyIconW(NIM_DELETE, &icon);
     }

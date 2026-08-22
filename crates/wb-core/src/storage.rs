@@ -86,6 +86,7 @@ impl Storage {
             let found = columns
                 .filter_map(|column| column.ok())
                 .any(|column| column == "event_version");
+            drop(stmt);
             found
         };
         if !has_event_version {
@@ -401,11 +402,14 @@ mod tests {
         std::fs::create_dir_all(root.join("nested")).unwrap();
         std::fs::write(root.join("nested/quarterly-report.txt"), "x").unwrap();
         std::fs::write(root.join("notes.md"), "x").unwrap();
-        let files = crate::search::index_files_from_roots(&[root.clone()], 10);
+        let files = crate::search::index_files_from_roots(std::slice::from_ref(&root), 10);
         let hits = crate::search::search_indexed_files(&files, "quarterly-report", 10);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].title, "quarterly-report.txt");
-        assert_eq!(crate::search::index_files_from_roots(&[root.clone()], 1).len(), 1);
+        assert_eq!(
+            crate::search::index_files_from_roots(std::slice::from_ref(&root), 1).len(),
+            1
+        );
         std::fs::remove_dir_all(root).ok();
     }
 

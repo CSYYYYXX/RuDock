@@ -217,14 +217,10 @@ fn monitor<W: Write>(
             continue;
         };
 
-        loop {
-            let events = match client.call(
-                "events.tail",
-                serde_json::json!({"after":after,"limit":200,"wait_ms":POLL_MS}),
-            ) {
-                Ok(events) => events,
-                Err(_) => break,
-            };
+        while let Ok(events) = client.call(
+            "events.tail",
+            serde_json::json!({"after":after,"limit":200,"wait_ms":POLL_MS}),
+        ) {
             after = events
                 .get("cursor")
                 .and_then(|value| value.as_u64())

@@ -135,7 +135,7 @@ pub fn index_apps() -> Vec<SearchResult> {
             out.push(app);
         }
     }
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|app| app.title.to_lowercase());
     out
 }
 
@@ -227,7 +227,7 @@ pub fn list_recent_files(limit: usize) -> Vec<SearchResult> {
             }))
         })
         .collect();
-    items.sort_by(|a, b| b.0.cmp(&a.0));
+    items.sort_by_key(|item| std::cmp::Reverse(item.0));
     items.into_iter().take(limit).map(|(_, r)| r).collect()
 }
 

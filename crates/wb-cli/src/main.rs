@@ -24,6 +24,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::enum_variant_names)]
 enum Cmd {
     /// Unified search: files/apps/clips/notes/plugins
     Search { query: String, #[arg(long)] limit: Option<usize>, #[arg(long, value_name = "TYPE")] r#type: Option<String> },
