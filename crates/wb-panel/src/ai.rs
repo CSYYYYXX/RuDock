@@ -105,7 +105,7 @@ fn exec_tool(name: &str, arguments: &str) -> String {
         };
     }
     match crate::ipc::Client::connect().and_then(|mut c| {
-        c.call("cmd.tool.run", serde_json::json!({"name": name, "args": args}))
+        c.call("cmd.tool.run", serde_json::json!({"name": name, "args": args, "origin": "panel-ai"}))
     }) {
         Ok(v) => {
             let slim = match name {

@@ -74,10 +74,32 @@ impl Storage {
             CREATE TABLE IF NOT EXISTS audit (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 actor TEXT NOT NULL, action TEXT NOT NULL,
-                detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+                detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+                event_version INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_audit_created ON audit(created_at DESC);",
+        )?;
+        let has_event_version = {
+            let mut stmt = conn.prepare("PRAGMA table_info(audit)")?;
+            let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+            let found = columns
+                .filter_map(|column| column.ok())
+                .any(|column| column == "event_version");
+            found
+        };
+        if !has_event_version {
+            conn.execute(
+                "ALTER TABLE audit ADD COLUMN event_version INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        conn.execute(
+            "UPDATE audit
+             SET detail = '{\"audit_version\":1,\"data\":{\"status\":\"legacy_redacted\"}}',
+                 event_version = 1
+             WHERE event_version < 1",
+            [],
         )?;
         Ok(())
     }
@@ -229,11 +251,23 @@ impl Storage {
 
     // ---------- audit ----------
 
-    pub fn audit(&self, actor: &str, action: &str, detail: &str) -> Result<()> {
+    pub fn audit_event(&self, actor: &str, action: &str, detail: &serde_json::Value) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let detail = serde_json::json!({
+            "audit_version": 1,
+            "data": detail,
+        })
+        .to_string();
         conn.execute(
-            "INSERT INTO audit (actor, action, detail, created_at) VALUES (?1,?2,?3,?4)",
+            "INSERT INTO audit (actor, action, detail, created_at, event_version)
+             VALUES (?1,?2,?3,?4,1)",
             params![actor, action, detail, fmt_time(&Utc::now())],
+        )?;
+        conn.execute(
+            "DELETE FROM audit WHERE id NOT IN (
+                SELECT id FROM audit ORDER BY id DESC LIMIT 5000
+            )",
+            [],
         )?;
         Ok(())
     }
@@ -241,18 +275,36 @@ impl Storage {
     pub fn audit_tail(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT actor, action, detail, created_at FROM audit ORDER BY rowid DESC LIMIT ?1",
+            "SELECT id, actor, action, detail, created_at FROM audit ORDER BY id DESC LIMIT ?1",
         )?;
-        let rows = stmt.query_map(params![limit as i64], |r| {
-            Ok(serde_json::json!({
-                "actor": r.get::<_, String>(0)?,
-                "action": r.get::<_, String>(1)?,
-                "detail": r.get::<_, String>(2)?,
-                "created_at": r.get::<_, String>(3)?,
-            }))
-        })?;
+        let rows = stmt.query_map(params![limit.min(200) as i64], audit_row)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
+
+    pub fn audit_after(&self, after: u64, limit: usize) -> Result<Vec<serde_json::Value>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, actor, action, detail, created_at
+             FROM audit WHERE id > ?1 ORDER BY id ASC LIMIT ?2",
+        )?;
+        let after = after.min(i64::MAX as u64) as i64;
+        let rows = stmt.query_map(params![after, limit.min(200) as i64], audit_row)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+}
+
+fn audit_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
+    let raw = r.get::<_, String>(3)?;
+    let detail = serde_json::from_str::<serde_json::Value>(&raw).unwrap_or_else(
+        |_| serde_json::json!({"audit_version":1,"data":{"status":"legacy_redacted"}}),
+    );
+    Ok(serde_json::json!({
+        "id": r.get::<_, i64>(0)?,
+        "actor": r.get::<_, String>(1)?,
+        "action": r.get::<_, String>(2)?,
+        "detail": detail.get("data").cloned().unwrap_or(serde_json::Value::Null),
+        "created_at": r.get::<_, String>(4)?,
+    }))
 }
 
 #[cfg(test)]
@@ -348,5 +400,53 @@ mod tests {
         assert_eq!(ErrorCode::PermissionDenied.exit_code(), 3);
         assert_eq!(ErrorCode::InvalidParams.exit_code(), 4);
         assert_eq!(ErrorCode::DaemonUnavailable.exit_code(), 5);
+    }
+
+    #[test]
+    fn audit_events_are_structured_and_cursor_ordered() {
+        let st = Storage::open_memory().unwrap();
+        st.audit_event(
+            "mcp",
+            "todo.add",
+            &serde_json::json!({"status":"ok","params":{"title":{"type":"string","length":6}}}),
+        )
+        .unwrap();
+        st.audit_event("client", "todo.rm", &serde_json::json!({"status":"ok"}))
+            .unwrap();
+
+        let tail = st.audit_tail(10).unwrap();
+        assert_eq!(tail.len(), 2);
+        assert!(tail[0]["id"].as_u64().is_some());
+        assert_eq!(tail[1]["actor"], "mcp");
+        assert_eq!(tail[1]["detail"]["params"]["title"]["type"], "string");
+
+        let first_id = tail[1]["id"].as_u64().unwrap();
+        let after = st.audit_after(first_id, 10).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0]["action"], "todo.rm");
+        assert!(st.audit_after(u64::MAX, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn legacy_audit_details_are_redacted_once() {
+        let st = Storage::open_memory().unwrap();
+        {
+            let conn = st.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO audit (actor, action, detail, created_at, event_version)
+                 VALUES ('client','note.add',?1,?2,0)",
+                params!["secret-body", fmt_time(&Utc::now())],
+            )
+            .unwrap();
+        }
+        st.init().unwrap();
+        let event = st.audit_tail(1).unwrap().pop().unwrap();
+        assert_eq!(event["detail"]["status"], "legacy_redacted");
+        assert!(!event.to_string().contains("secret-body"));
+
+        st.audit_event("client", "todo.add", &serde_json::json!({"status":"ok"}))
+            .unwrap();
+        st.init().unwrap();
+        assert_eq!(st.audit_tail(1).unwrap()[0]["detail"]["status"], "ok");
     }
 }

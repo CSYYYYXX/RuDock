@@ -43,7 +43,7 @@ pub fn schema() -> Value {
             {"name": "daemon.ping", "params": {}, "returns": {"type": "object"}},
             {"name": "daemon.stop", "params": {}, "returns": {"type": "object"}},
             {"name": "settings.get", "params": {}, "returns": {"type": "object"}, "status": "M5"},
-            {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?", "mcp_write_policy": "client|ask|read-only?"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "hook.status", "params": {}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "search", "params": {"query": "string", "limit": "number?", "type": "file|app|clip|note|todo|plugin?"}, "returns": {"type": "array"}},
             {"name": "note.add", "params": {"content": "string", "tags": "string[]?"}, "returns": {"type": "object"}},
@@ -82,6 +82,7 @@ pub fn schema() -> Value {
             {"name": "skill.list", "params": {}, "returns": {"type": "array"}, "status": "M5"},
             {"name": "skill.get", "params": {"plugin": "string", "id": "string"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "audit.tail", "params": {"limit": "number?"}, "returns": {"type": "array"}, "status": "M3.5"},
+            {"name": "events.tail", "params": {"after": "number?", "limit": "number?", "wait_ms": "number? (max 30000)"}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "schema", "params": {}, "returns": {"type": "object"}},
         ]
     })

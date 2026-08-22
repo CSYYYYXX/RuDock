@@ -1039,6 +1039,7 @@ fn default_settings() -> serde_json::Value {
     serde_json::json!({
         "takeover_win": false,
         "autostart": false,
+        "mcp_write_policy": "client",
         "plugin_grants": {},
         "plugin_markets": [],
     })
@@ -1319,8 +1320,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("wb-daemon: Win 键接管启动失败: {e}");
         }
     }
-    ctx.storage
-        .audit("daemon", "daemon.start", env!("CARGO_PKG_VERSION"))?;
+    ctx.storage.audit_event(
+        "daemon",
+        "daemon.start",
+        &serde_json::json!({"status":"ok","version":env!("CARGO_PKG_VERSION")}),
+    )?;
     clipboard::start(storage);
     tray::start();
     log_everything_presence();
@@ -1402,9 +1406,92 @@ fn log_everything_presence() {
 
 fn dispatch(ctx: &Ctx, req: Request) -> Response {
     let id = req.id.clone();
-    match call(ctx, &req.method, &req.params) {
-        Ok(v) => Response::ok(id, v),
-        Err(e) => Response::err(id, &e),
+    let started = std::time::Instant::now();
+    let result = call(ctx, &req.method, &req.params);
+    if should_audit(&req.method) {
+        let (status, error_code) = match &result {
+            Ok(_) => ("ok", serde_json::Value::Null),
+            Err(error) => (
+                "error",
+                serde_json::to_value(error.code).unwrap_or(serde_json::Value::Null),
+            ),
+        };
+        let _ = ctx.storage.audit_event(
+            audit_actor(&req.method, &req.params),
+            &req.method,
+            &serde_json::json!({
+                "status": status,
+                "error_code": error_code,
+                "duration_ms": started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                "params": audit_params(&req.params),
+            }),
+        );
+    }
+    match result {
+        Ok(value) => Response::ok(id, value),
+        Err(error) => Response::err(id, &error),
+    }
+}
+
+fn should_audit(method: &str) -> bool {
+    !matches!(
+        method,
+        "daemon.ping"
+            | "settings.get"
+            | "hook.status"
+            | "schema"
+            | "cmd.list"
+            | "cmd.tools"
+            | "plugin.list"
+            | "plugin.market.sources"
+            | "plugin.market.list"
+            | "plugin.market.check"
+            | "skill.list"
+            | "skill.get"
+            | "audit.tail"
+            | "events.tail"
+            | "apps.list"
+    )
+}
+
+fn audit_actor<'a>(method: &str, params: &'a serde_json::Value) -> &'a str {
+    if method == "plugin.rpc" {
+        return "widget";
+    }
+    match params.get("origin").and_then(|value| value.as_str()) {
+        Some("mcp") => "mcp",
+        Some("panel-ai") => "panel-ai",
+        _ => "client",
+    }
+}
+
+fn audit_params(params: &serde_json::Value) -> serde_json::Value {
+    let Some(object) = params.as_object() else {
+        return audit_value_shape(params);
+    };
+    let mut summary = serde_json::Map::new();
+    for (key, value) in object {
+        summary.insert(key.clone(), audit_value_shape(value));
+    }
+    serde_json::Value::Object(summary)
+}
+
+fn audit_value_shape(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Null => serde_json::json!({"type":"null"}),
+        serde_json::Value::Bool(_) => serde_json::json!({"type":"boolean"}),
+        serde_json::Value::Number(_) => serde_json::json!({"type":"number"}),
+        serde_json::Value::String(text) => {
+            serde_json::json!({"type":"string","length":text.chars().count()})
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::json!({"type":"array","length":items.len()})
+        }
+        serde_json::Value::Object(object) => {
+            let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            serde_json::json!({"type":"object","keys":keys})
+        }
     }
 }
 
@@ -1416,7 +1503,6 @@ fn str_param<'a>(params: &'a serde_json::Value, key: &str) -> wb_core::Result<&'
 }
 
 fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<serde_json::Value> {
-    let _ = ctx.storage.audit("client", method, &params.to_string());
     match method {
         "daemon.ping" => Ok(serde_json::json!({
             "name": "wb-daemon",
@@ -1429,7 +1515,6 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
             set_hook_running(false).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
             let panel = panelctl::close();
             tray::remove();
-            let _ = ctx.storage.audit("daemon", "daemon.stop", "requested");
             Ok(serde_json::json!({"status":"stopped","hook":"stopped","panel":panel["panel"]}))
         }
 
@@ -1462,6 +1547,21 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
                     set_hook_running(true).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
                     obj.insert("takeover_win".into(), serde_json::json!(true));
                 }
+            }
+            if let Some(value) = params.get("mcp_write_policy") {
+                let value = value.as_str().ok_or_else(|| {
+                    CoreError::new(
+                        ErrorCode::InvalidParams,
+                        "mcp_write_policy must be client, ask, or read-only",
+                    )
+                })?;
+                if !matches!(value, "client" | "ask" | "read-only") {
+                    return Err(CoreError::new(
+                        ErrorCode::InvalidParams,
+                        "mcp_write_policy must be client, ask, or read-only",
+                    ));
+                }
+                obj.insert("mcp_write_policy".into(), serde_json::json!(value));
             }
             write_settings(&settings).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
             if let Some(obj) = settings.as_object_mut() {
@@ -2101,14 +2201,44 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         }
 
         "audit.tail" => {
-            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+            let limit = params
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20)
+                .clamp(1, 200) as usize;
             Ok(serde_json::to_value(ctx.storage.audit_tail(limit)?)?)
         }
 
-        "events.tail" => Err(CoreError::new(
-            ErrorCode::Unimplemented,
-            format!("{method} lands in a later milestone"),
-        )),
+        "events.tail" => {
+            let after = params.get("after").and_then(|v| v.as_u64()).unwrap_or(0);
+            let limit = params
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(50)
+                .clamp(1, 200) as usize;
+            let wait_ms = params
+                .get("wait_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .min(30_000);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
+            loop {
+                let events = ctx.storage.audit_after(after, limit)?;
+                if !events.is_empty() || std::time::Instant::now() >= deadline {
+                    let cursor = events
+                        .last()
+                        .and_then(|event| event.get("id"))
+                        .and_then(|id| id.as_u64())
+                        .unwrap_or(after);
+                    return Ok(serde_json::json!({
+                        "events": events,
+                        "cursor": cursor,
+                        "timed_out": wait_ms > 0 && cursor == after,
+                    }));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
 
         other => Err(CoreError::new(
             ErrorCode::InvalidParams,
@@ -2457,5 +2587,44 @@ mod tests {
         );
         assert!(widget_rpc_permissions("settings.set").is_none());
         assert!(widget_rpc_permissions("plugin.approve").is_none());
+    }
+
+    #[test]
+    fn audit_parameter_summary_never_keeps_values() {
+        let secret = "wb-secret-audit-value";
+        let summary = audit_params(&serde_json::json!({
+            "id": secret,
+            "name": secret,
+            "args": {"prompt": secret},
+            "tags": [secret],
+            "enabled": true,
+            "count": 2
+        }));
+        let encoded = summary.to_string();
+        assert!(!encoded.contains(secret));
+        assert_eq!(summary["id"]["type"], "string");
+        assert_eq!(summary["id"]["length"], secret.chars().count());
+        assert_eq!(summary["args"]["keys"], serde_json::json!(["prompt"]));
+        assert_eq!(summary["tags"]["length"], 1);
+    }
+
+    #[test]
+    fn audit_actor_uses_declared_internal_origins_only() {
+        assert_eq!(
+            audit_actor("cmd.tool.run", &serde_json::json!({"origin":"mcp"})),
+            "mcp"
+        );
+        assert_eq!(
+            audit_actor("cmd.tool.run", &serde_json::json!({"origin":"panel-ai"})),
+            "panel-ai"
+        );
+        assert_eq!(
+            audit_actor("cmd.tool.run", &serde_json::json!({"origin":"unknown"})),
+            "client"
+        );
+        assert_eq!(
+            audit_actor("plugin.rpc", &serde_json::json!({"origin":"mcp"})),
+            "widget"
+        );
     }
 }

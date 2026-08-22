@@ -82,6 +82,15 @@ enum Cmd {
     Apps,
     /// Tail the audit log
     Audit,
+    /// Read incremental daemon events with an optional long-poll wait
+    Events {
+        #[arg(long, default_value_t = 0)]
+        after: u64,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long, default_value_t = 0)]
+        wait_ms: u64,
+    },
     /// Generate configuration for external MCP clients
     Mcp {
         #[command(subcommand)]
@@ -219,6 +228,25 @@ enum SettingsOp {
     Get,
     Win { #[arg(action = clap::ArgAction::Set)] enabled: bool },
     Autostart { #[arg(action = clap::ArgAction::Set)] enabled: bool },
+    /// MCP write handling: trust client prompts, require elicitation, or block writes
+    Mcp { #[arg(value_enum)] policy: McpWritePolicy },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum McpWritePolicy {
+    Client,
+    Ask,
+    ReadOnly,
+}
+
+impl McpWritePolicy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Client => "client",
+            Self::Ask => "ask",
+            Self::ReadOnly => "read-only",
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -819,6 +847,10 @@ fn main() {
             SettingsOp::Get => ("settings.get", serde_json::json!({})),
             SettingsOp::Win { enabled } => ("settings.set", serde_json::json!({"takeover_win":enabled})),
             SettingsOp::Autostart { enabled } => ("settings.set", serde_json::json!({"autostart":enabled})),
+            SettingsOp::Mcp { policy } => (
+                "settings.set",
+                serde_json::json!({"mcp_write_policy":policy.as_str()}),
+            ),
         },
         Cmd::Agent { op } => match op {
             AgentOp::Ask { prompt, provider } => ("agent.ask", serde_json::json!({"prompt": prompt, "provider": provider})),
@@ -832,6 +864,14 @@ fn main() {
             }
         },
         Cmd::Audit => ("audit.tail", serde_json::json!({})),
+        Cmd::Events {
+            after,
+            limit,
+            wait_ms,
+        } => (
+            "events.tail",
+            serde_json::json!({"after":after,"limit":limit,"wait_ms":wait_ms}),
+        ),
         Cmd::Apps => ("apps.list", serde_json::json!({})),
         Cmd::Daemon { .. } => unreachable!(),
         Cmd::Schema => unreachable!(),
@@ -956,6 +996,52 @@ mod tests {
                             },
                     },
             } => assert_eq!(index, "https://plugins.example/index.json"),
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parses_mcp_write_policy() {
+        let cli = Cli::try_parse_from(["wb", "settings", "mcp", "ask"]).unwrap();
+        match cli.cmd {
+            Cmd::Settings {
+                op: SettingsOp::Mcp { policy },
+            } => assert_eq!(policy.as_str(), "ask"),
+            _ => panic!("unexpected command"),
+        }
+
+        let cli = Cli::try_parse_from(["wb", "settings", "mcp", "read-only"]).unwrap();
+        match cli.cmd {
+            Cmd::Settings {
+                op: SettingsOp::Mcp { policy },
+            } => assert_eq!(policy.as_str(), "read-only"),
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parses_incremental_events_options() {
+        let cli = Cli::try_parse_from([
+            "wb",
+            "events",
+            "--after",
+            "123",
+            "--limit",
+            "25",
+            "--wait-ms",
+            "30000",
+        ])
+        .unwrap();
+        match cli.cmd {
+            Cmd::Events {
+                after,
+                limit,
+                wait_ms,
+            } => {
+                assert_eq!(after, 123);
+                assert_eq!(limit, 25);
+                assert_eq!(wait_ms, 30_000);
+            }
             _ => panic!("unexpected command"),
         }
     }

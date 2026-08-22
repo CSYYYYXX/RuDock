@@ -28,13 +28,25 @@ args = []
 
 `wb-mcp.exe` 是 stdio MCP server，支持：
 
-- `initialize`, `ping`
+- `initialize`, `ping`（协商支持 `2024-11-05` / `2025-06-18`）
 - `tools/list`, `tools/call`
 - `resources/list`, `resources/read`
 
 内建命令和已批准插件的 AI 命令会成为 MCP tools。插件 command id 会通过真实工具注册表解析，避免用字符串替换猜回 id。已批准的 Skill 以 `wb://skill/<plugin>/<skill>` resource 暴露，另提供 `skill_list` / `skill_get` 工具。
 
-每个 tool 都带 MCP 标准 `annotations`：`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`，并附可读标题。搜索、剪贴板读取和 Skill 读取标记为本地只读；新增待办/笔记标记为非破坏性写入；插件命令使用 manifest 声明，旧插件或缺失声明一律按最保守风险处理。annotations 供 MCP 客户端在执行前呈现风险并触发其确认策略，不替代 WB 的插件批准边界。
+每个 tool 都带 MCP 标准 `annotations`：`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`，并附可读标题。搜索、剪贴板读取和 Skill 读取标记为本地只读；新增待办/笔记标记为非破坏性写入；插件命令使用 manifest 声明，旧插件或缺失声明一律按最保守风险处理。
+
+WB 另有独立的 MCP 写操作策略：
+
+```text
+wb settings mcp client     # 默认：沿用客户端自己的确认
+wb settings mcp ask        # 每次非只读调用要求 elicitation/create
+wb settings mcp read-only  # 服务端阻止所有非只读调用
+```
+
+`ask` 仅对 MCP 2025-06-18 且 initialize capabilities 声明 `elicitation` 的客户端开放；WB 只在响应为 `action: accept` 且 `content.confirm: true` 时执行。未声明能力、decline、cancel 或未勾确认都会返回 `isError:true`，不会写入数据。成功工具结果提供文本 `content` 和机器可读 `structuredContent`。
+
+MCP 还提供只读工具 `events_tail`，参数为 `after`、`limit`、`wait_ms`。它按审计 id 游标增量返回事件，`wait_ms` 最长 30000；事件只含参数结构和执行状态，不含笔记、剪贴板、AI prompt 等正文。
 
 若 daemon 未运行，MCP 会从 `wb-mcp.exe` 所在目录静默启动 `wb-daemon.exe`，等待就绪后继续当前请求。客户端不需要了解 Windows Named Pipe。
 
@@ -49,6 +61,7 @@ wb cmd run todo.add --arg title="检查发布" --json
 wb search "发布" --type note --json
 wb skill list --json
 wb skill get hello-assistant greeting --json
+wb events --after 0 --limit 50 --wait-ms 30000 --json
 ```
 
 stdout 被管道时保持机器可读；错误固定为 `{"error":{"code","message","hint"}}`。退出码为 0 成功、2 无结果/NotFound、3 权限不足、4 参数错误、5 daemon 不可用或未实现。

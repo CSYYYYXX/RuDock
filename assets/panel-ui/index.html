@@ -447,6 +447,12 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 #cfgView .sysrow { display: flex; align-items: center; min-height: 38px; padding: 6px 4px; color: var(--fg-2); font-size: 13px; }
 #cfgView .sysrow .state { margin-left: 8px; color: var(--fg-4); font-size: 11px; }
 #cfgView .sysrow input { margin-left: auto; width: 34px; height: 18px; accent-color: var(--accent); }
+#cfgView .policyseg { margin-left: auto; height: 28px; display: inline-grid; grid-template-columns: repeat(3, 1fr);
+  padding: 2px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--stroke-soft); }
+#cfgView .policyseg button { min-width: 48px; padding: 0 8px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--fg-4); font-size: 11px; cursor: pointer; }
+#cfgView .policyseg button:hover { color: var(--fg-2); }
+#cfgView .policyseg button.on { color: var(--fg); background: rgba(255,255,255,.13); }
 
 /* Spotlight 里的定制入口 */
 .spot-box .gear { flex: none; font-size: 15px; color: var(--fg-3); cursor: pointer; padding: 2px 4px;
@@ -663,6 +669,11 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
     <div class="cfgsection">通用</div>
     <label class="sysrow">接管 Windows 键<span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
     <label class="sysrow">开机自启<input type="checkbox" id="cfg-autostart"></label>
+    <div class="sysrow">MCP 写操作<div class="policyseg" id="cfg-mcp-policy" role="group" aria-label="MCP 写操作策略">
+      <button data-policy="client" title="沿用 MCP 客户端的调用确认">客户端</button>
+      <button data-policy="ask" title="每次写操作使用 MCP elicitation 询问">询问</button>
+      <button data-policy="read-only" title="阻止所有 MCP 写操作">只读</button>
+    </div></div>
     <div class="cfgsection">组件</div>
     <div class="tip">勾选要显示在组件页的内容</div>
     <div id="cfgList"></div>
@@ -1391,6 +1402,14 @@ if (hasBridge) {
     else if (m.kind === 'show' || m.kind === 'reset') showPanel();
     else if (m.kind === 'go') {
       send({ kind: 'selftest', detail: 'go recv @' + Math.round(performance.now()), ok: true });
+      if (location.href.includes('view=settings')) setTimeout(() => {
+        try {
+          openConfig();
+          send({ kind: 'selftest', detail: 'settings view opened', ok: $('#cfgView').classList.contains('on') });
+        } catch (e) {
+          send({ kind: 'selftest', detail: 'settings view failed: ' + e, ok: false });
+        }
+      }, 350);
       requestAnimationFrame(() => requestAnimationFrame(() => {
         stage.classList.remove('hold');
         send({ kind: 'selftest', detail: 'hold removed @' + Math.round(performance.now()), ok: true });
@@ -1522,7 +1541,10 @@ function applyWidgetVisibility() {
   });
   clearTimeout(rectsTimer); rectsTimer = setTimeout(reportRects, 200);
 }
-$('#cfg-open').addEventListener('click', () => {
+function setMcpPolicy(policy) {
+  $$('#cfg-mcp-policy button').forEach(button => button.classList.toggle('on', button.dataset.policy === policy));
+}
+function openConfig() {
   const list = $('#cfgList'); list.innerHTML = '';
   WIDGETS.forEach(([id, name]) => {
     const row = document.createElement('label'); row.className = 'cfgrow';
@@ -1540,21 +1562,27 @@ $('#cfg-open').addEventListener('click', () => {
     const s = m && m.result; if (!s) return;
     $('#cfg-win').checked = !!s.takeover_win;
     $('#cfg-autostart').checked = !!s.autostart;
+    setMcpPolicy(s.mcp_write_policy || 'client');
     $('#hook-state').textContent = s.hook_running ? '运行中' : '未运行';
   });
   $('#cfgView').classList.add('on');
-});
+}
+$('#cfg-open').addEventListener('click', openConfig);
 async function saveSystemSetting(key, value) {
   const params = {}; params[key] = value;
   const m = await rpc('settings.set', params);
   if (!m || m.error || !m.result) { showToast('设置保存失败'); return; }
   $('#cfg-win').checked = !!m.result.takeover_win;
   $('#cfg-autostart').checked = !!m.result.autostart;
+  setMcpPolicy(m.result.mcp_write_policy || 'client');
   $('#hook-state').textContent = m.result.hook_running ? '运行中' : '未运行';
   showToast('设置已保存');
 }
 $('#cfg-win').addEventListener('change', ev => saveSystemSetting('takeover_win', ev.target.checked));
 $('#cfg-autostart').addEventListener('change', ev => saveSystemSetting('autostart', ev.target.checked));
+$$('#cfg-mcp-policy button').forEach(button => button.addEventListener('click', () => {
+  saveSystemSetting('mcp_write_policy', button.dataset.policy);
+}));
 $('#cfgClose').addEventListener('click', () => $('#cfgView').classList.remove('on'));
 $('#cfgView').addEventListener('click', ev => { if (ev.target.id === 'cfgView') ev.currentTarget.classList.remove('on'); });
 
