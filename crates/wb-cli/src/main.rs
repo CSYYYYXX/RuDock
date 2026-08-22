@@ -350,6 +350,8 @@ enum BackupOp {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Restore a backup after validating it and creating a rollback copy
+    Restore { archive: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -1217,6 +1219,320 @@ fn create_backup(output: Option<&Path>) -> Result<serde_json::Value, CoreError> 
     result
 }
 
+fn safe_backup_entry(raw: &str) -> Result<String, CoreError> {
+    if raw.contains('\0') {
+        return Err(CoreError::new(ErrorCode::InvalidParams, "备份条目包含 NUL 字符"));
+    }
+    let normalized = raw.replace('\\', "/").trim_end_matches('/').to_string();
+    if normalized.is_empty() {
+        return Err(CoreError::new(ErrorCode::InvalidParams, "备份包含空路径条目"));
+    }
+    for component in std::path::Path::new(&normalized).components() {
+        if matches!(
+            component,
+            std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+                | std::path::Component::ParentDir
+                | std::path::Component::CurDir
+        ) {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("备份条目路径不安全: {raw}"),
+            ));
+        }
+    }
+    Ok(normalized)
+}
+
+fn allowed_backup_entry(name: &str) -> bool {
+    matches!(name, "manifest.json" | "README.txt" | "settings.json" | "database/wb.db")
+        || name.starts_with("plugins/")
+}
+
+fn validate_restore_database(path: &Path) -> Result<(), CoreError> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份数据库无法打开: {e}")))?;
+    let integrity: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份数据库完整性检查失败: {e}")))?;
+    if integrity != "ok" {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("备份数据库完整性检查未通过: {integrity}"),
+        ));
+    }
+    for table in ["notes", "todos", "clips", "audit"] {
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                [table],
+                |row| row.get(0),
+            )
+            .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("检查备份表失败: {e}")))?;
+        if !exists {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("备份数据库缺少表: {table}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_restore_plugins(root: &Path) -> Result<usize, CoreError> {
+    if !root.is_dir() {
+        return Ok(0);
+    }
+    let mut count = 0;
+    for entry in std::fs::read_dir(root)
+        .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("读取备份插件目录失败: {e}")))?
+        .flatten()
+    {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            return Err(CoreError::new(
+                ErrorCode::InvalidParams,
+                format!("备份插件目录包含非目录项: {}", dir.display()),
+            ));
+        }
+        let text = std::fs::read_to_string(dir.join("plugin.json")).map_err(|e| {
+            CoreError::new(ErrorCode::InvalidParams, format!("读取备份插件 manifest 失败: {e}"))
+        })?;
+        let manifest: wb_plugin_sdk::Manifest = serde_json::from_str(&text).map_err(|e| {
+            CoreError::new(ErrorCode::InvalidParams, format!("备份插件 manifest 无效: {e}"))
+        })?;
+        manifest.validate().map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份插件 manifest 校验失败: {e}")))?;
+        let plugin = wb_plugin_host::LoadedPlugin { dir, manifest };
+        wb_plugin_host::validate_files(&plugin)
+            .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份插件文件校验失败: {e}")))?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn extract_backup(archive_path: &Path) -> Result<(PathBuf, serde_json::Value, usize), CoreError> {
+    if !archive_path.is_file() {
+        return Err(CoreError::new(
+            ErrorCode::NotFound,
+            format!("备份归档不存在: {}", archive_path.display()),
+        ));
+    }
+    let staging = std::env::temp_dir().join(format!(
+        "rudock-restore-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取系统时间失败: {e}")))?
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&staging)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建恢复暂存目录失败: {e}")))?;
+    let result = (|| {
+        let file = std::fs::File::open(archive_path)
+            .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("打开备份归档失败: {e}")))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份 ZIP 无效: {e}")))?;
+        let mut seen = std::collections::HashSet::new();
+        let mut stats = BackupStats { files: 0, bytes: 0 };
+        for index in 0..archive.len() {
+            let mut entry = archive
+                .by_index(index)
+                .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("读取备份条目失败: {e}")))?;
+            let name = safe_backup_entry(entry.name())?;
+            if !allowed_backup_entry(&name) {
+                return Err(CoreError::new(
+                    ErrorCode::InvalidParams,
+                    format!("备份包含不支持的条目: {name}"),
+                ));
+            }
+            if !seen.insert(name.clone()) {
+                return Err(CoreError::new(
+                    ErrorCode::InvalidParams,
+                    format!("备份包含重复条目: {name}"),
+                ));
+            }
+            if entry.is_dir() {
+                continue;
+            }
+            stats.add(entry.size(), &name)?;
+            let target = staging.join(&name);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    CoreError::new(ErrorCode::Internal, format!("创建恢复目录失败: {e}"))
+                })?;
+            }
+            let canonical_parent = target.parent().and_then(|p| p.canonicalize().ok()).ok_or_else(|| {
+                CoreError::new(ErrorCode::Internal, format!("解析恢复目录失败: {}", target.display()))
+            })?;
+            let staging_canonical = staging.canonicalize().map_err(|e| {
+                CoreError::new(ErrorCode::Internal, format!("解析恢复暂存目录失败: {e}"))
+            })?;
+            if !canonical_parent.starts_with(&staging_canonical) {
+                return Err(CoreError::new(ErrorCode::InvalidParams, "备份条目越出恢复目录"));
+            }
+            let mut output = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+                .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建恢复文件失败: {e}")))?;
+            let copied = std::io::copy(&mut entry, &mut output)
+                .map_err(|e| CoreError::new(ErrorCode::Internal, format!("解压恢复文件失败: {e}")))?;
+            if copied != entry.size() {
+                return Err(CoreError::new(ErrorCode::InvalidParams, format!("恢复文件大小不一致: {name}")));
+            }
+        }
+        let manifest_path = staging.join("manifest.json");
+        let manifest_text = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份缺少 manifest.json: {e}")))?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+            .map_err(|e| CoreError::new(ErrorCode::InvalidParams, format!("备份 manifest 无效: {e}")))?;
+        if manifest.get("kind").and_then(|v| v.as_str()) != Some("rudock-backup")
+            || manifest.get("schema_version").and_then(|v| v.as_u64()) != Some(1)
+        {
+            return Err(CoreError::new(ErrorCode::InvalidParams, "不是兼容的 RuDock 备份格式"));
+        }
+        let database = staging.join("database/wb.db");
+        validate_restore_database(&database)?;
+        let staged_settings = staging.join("settings.json");
+        if staged_settings.is_file() {
+            let text = std::fs::read_to_string(&staged_settings).map_err(|e| {
+                CoreError::new(ErrorCode::InvalidParams, format!("读取备份设置失败: {e}"))
+            })?;
+            let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+                CoreError::new(ErrorCode::InvalidParams, format!("备份设置不是 JSON: {e}"))
+            })?;
+            if !value.is_object() {
+                return Err(CoreError::new(ErrorCode::InvalidParams, "备份设置必须是 JSON 对象"));
+            }
+        }
+        let plugin_count = validate_restore_plugins(&staging.join("plugins"))?;
+        Ok((staging.clone(), manifest, plugin_count))
+    })();
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            Err(error)
+        }
+    }
+}
+
+fn move_restore_source(source: &Path, target: &Path, moved: &mut Vec<(PathBuf, PathBuf)>) -> Result<(), CoreError> {
+    if std::fs::symlink_metadata(source).is_err() {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建回滚目录失败: {e}")))?;
+    }
+    std::fs::rename(source, target).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            format!("移动现有数据到回滚目录失败 {}: {e}", source.display()),
+        )
+    })?;
+    moved.push((source.to_path_buf(), target.to_path_buf()));
+    Ok(())
+}
+
+fn restore_moved_sources(moved: &[(PathBuf, PathBuf)]) {
+    for (source, backup) in moved.iter().rev() {
+        if std::fs::symlink_metadata(source).is_ok() {
+            let _ = std::fs::remove_dir_all(source).or_else(|_| std::fs::remove_file(source));
+        }
+        if std::fs::symlink_metadata(backup).is_ok() {
+            let _ = std::fs::rename(backup, source);
+        }
+    }
+}
+
+fn restore_backup(archive: &Path) -> Result<serde_json::Value, CoreError> {
+    if Client::connect_existing().is_ok() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            "RuDock daemon 正在运行，请先执行 `wb daemon stop` 再恢复",
+        ));
+    }
+    let (staging, manifest, plugin_count) = extract_backup(archive)?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("读取系统时间失败: {e}")))?
+        .as_secs();
+    let rollback = wb_core::paths::local_data_dir()
+        .join("restore-backups")
+        .join(format!("{stamp}-{}", std::process::id()));
+    let app_rollback = rollback.join("app");
+    let local_rollback = rollback.join("local");
+    let db = wb_core::paths::db_path();
+    let settings = wb_core::paths::settings_path();
+    let plugins = wb_core::paths::local_data_dir().join("plugins");
+    let staged_db = staging.join("database/wb.db");
+    let staged_settings = staging.join("settings.json");
+    let staged_plugins = staging.join("plugins");
+    let mut moved = Vec::new();
+    let mut committed = Vec::new();
+    std::fs::create_dir_all(&rollback)
+        .map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建恢复回滚目录失败: {e}")))?;
+    let result = (|| {
+        move_restore_source(&db, &app_rollback.join("wb.db"), &mut moved)?;
+        move_restore_source(&db.with_extension("db-wal"), &app_rollback.join("wb.db-wal"), &mut moved)?;
+        move_restore_source(&db.with_extension("db-shm"), &app_rollback.join("wb.db-shm"), &mut moved)?;
+        if staged_settings.is_file() {
+            move_restore_source(&settings, &app_rollback.join("settings.json"), &mut moved)?;
+        }
+        if staged_plugins.is_dir() {
+            move_restore_source(&plugins, &local_rollback.join("plugins"), &mut moved)?;
+        }
+        if let Some(parent) = db.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建数据库目录失败: {e}")))?;
+        }
+        std::fs::rename(&staged_db, &db)
+            .map_err(|e| CoreError::new(ErrorCode::Internal, format!("提交恢复数据库失败: {e}")))?;
+        committed.push(db.clone());
+        if staged_settings.is_file() {
+            if let Some(parent) = settings.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建设置目录失败: {e}")))?;
+            }
+            std::fs::rename(&staged_settings, &settings)
+                .map_err(|e| CoreError::new(ErrorCode::Internal, format!("提交恢复设置失败: {e}")))?;
+            committed.push(settings.clone());
+        }
+        if staged_plugins.is_dir() {
+            if let Some(parent) = plugins.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| CoreError::new(ErrorCode::Internal, format!("创建插件目录失败: {e}")))?;
+            }
+            std::fs::rename(&staged_plugins, &plugins)
+                .map_err(|e| CoreError::new(ErrorCode::Internal, format!("提交恢复插件失败: {e}")))?;
+            committed.push(plugins.clone());
+        }
+        Ok(serde_json::json!({
+            "restored": true,
+            "restart_required": true,
+            "rollback": rollback,
+            "plugin_count": plugin_count,
+            "manifest": manifest,
+        }))
+    })();
+    let result = match result {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            for path in committed.iter().rev() {
+                if std::fs::symlink_metadata(path).is_ok() {
+                    let _ = std::fs::remove_dir_all(path).or_else(|_| std::fs::remove_file(path));
+                }
+            }
+            restore_moved_sources(&moved);
+            let _ = std::fs::remove_dir_all(&rollback);
+            Err(error)
+        }
+    };
+    let _ = std::fs::remove_dir_all(&staging);
+    result
+}
+
 fn sensitive_json_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     ["key", "token", "secret", "password", "authorization"]
@@ -1504,6 +1820,7 @@ fn main() {
 
     let local_backup_result = match &cli.cmd {
         Cmd::Backup { op: BackupOp::Create { output } } => Some(create_backup(output.as_deref())),
+        Cmd::Backup { op: BackupOp::Restore { archive } } => Some(restore_backup(archive)),
         _ => None,
     };
     if let Some(result) = local_backup_result {
@@ -1735,6 +2052,58 @@ mod tests {
                 op: BackupOp::Create { output: Some(_) }
             }
         ));
+    }
+
+    #[test]
+    fn parses_backup_restore_command() {
+        let cli = Cli::try_parse_from(["wb", "backup", "restore", "backup.zip"]).unwrap();
+        assert!(matches!(
+            cli.cmd,
+            Cmd::Backup {
+                op: BackupOp::Restore { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn safe_backup_entries_reject_traversal_and_accept_nested_files() {
+        assert_eq!(safe_backup_entry("plugins/demo/widget.html").unwrap(), "plugins/demo/widget.html");
+        for entry in ["../escape", "database/../../escape", "C:/escape", "plugins/\0bad"] {
+            assert!(safe_backup_entry(entry).is_err(), "accepted unsafe entry {entry:?}");
+        }
+    }
+
+    #[test]
+    fn extracts_and_validates_minimal_backup_archive() {
+        let root = test_root("extract-backup");
+        let source = root.join("source.db");
+        let archive_path = root.join("backup.zip");
+        {
+            let conn = rusqlite::Connection::open(&source).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE notes (id TEXT PRIMARY KEY, content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                 CREATE TABLE todos (id TEXT PRIMARY KEY, title TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, due TEXT, repeat TEXT, tags TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+                 CREATE TABLE clips (id TEXT PRIMARY KEY, kind TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
+                 CREATE TABLE audit (id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL, event_version INTEGER NOT NULL DEFAULT 0);",
+            )
+            .unwrap();
+        }
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive_path).unwrap());
+        writer
+            .start_file("manifest.json", backup_options())
+            .unwrap();
+        writer
+            .write_all(br#"{"kind":"rudock-backup","schema_version":1}"#)
+            .unwrap();
+        writer.start_file("database/wb.db", backup_options()).unwrap();
+        writer.write_all(&std::fs::read(&source).unwrap()).unwrap();
+        writer.finish().unwrap();
+
+        let (staging, manifest, plugins) = extract_backup(&archive_path).unwrap();
+        assert_eq!(manifest["kind"], "rudock-backup");
+        assert_eq!(plugins, 0);
+        assert!(staging.join("database/wb.db").is_file());
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

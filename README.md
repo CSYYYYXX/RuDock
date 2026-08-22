@@ -165,6 +165,16 @@ $actual -eq $expected
 
 备份包含 SQLite 数据库、设置和 `%LOCALAPPDATA%\WB\plugins` 下的用户插件，并返回归档 SHA-256。备份文件包含个人数据，应存放在私密位置；恢复前先退出 RuDock，并保留原目录作为回滚副本。
 
+恢复时必须先停止 daemon。RuDock 会先校验 ZIP、数据库完整性和插件 manifest，再把现有数据留在 `restore-backups` 回滚目录中：
+
+```powershell
+.\wb.exe daemon stop
+.\wb.exe backup restore D:\Backups\rudock-before-upgrade.zip
+.\wb.exe daemon start
+```
+
+恢复命令不会覆盖正在运行的实例；如果提交失败，会自动回滚已经移动的数据。
+
 遇到问题时可以生成不含数据库、剪贴板、AI 配置和用户文件索引的脱敏诊断包：
 
 ```powershell
