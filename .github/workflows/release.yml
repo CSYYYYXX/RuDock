@@ -27,11 +27,16 @@ jobs:
       - name: Configure MinGW
         shell: pwsh
         run: |
-          $mingw = "C:\msys64\mingw64\bin"
-          if (-not (Test-Path "$mingw\gcc.exe")) {
-            throw "MinGW is unavailable at $mingw"
+          $candidates = @(
+            (Get-Command gcc -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+            "C:\mingw64\bin\gcc.exe",
+            "C:\msys64\mingw64\bin\gcc.exe"
+          ) | Where-Object { $_ }
+          $gcc = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $gcc) {
+            throw "MinGW gcc.exe is unavailable on this runner"
           }
-          $mingw | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Split-Path -Parent $gcc | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Test workspace
         run: cargo test --workspace --locked
