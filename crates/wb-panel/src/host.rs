@@ -26,12 +26,15 @@ pub const WM_WB_DESKTOP_REFRESH: u32 = WM_APP + 45;
 pub const HIDE_TIMER_ID: usize = 7;
 /// Fallback timer id: reveal even if the page never answers "show.ready".
 pub const SHOW_TIMER_ID: usize = 8;
+/// Desktop-only low-frequency z-order/visibility repair.
+pub const DESKTOP_REPAIR_TIMER_ID: usize = 10;
 
 static PENDING_HIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PENDING_SHOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static AUTOHIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 static INTERACTION_LOCK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DESKTOP_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SETTINGS_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 失焦自动隐藏开关（--no-autohide 测试用）
 pub fn set_autohide(on: bool) {
@@ -49,6 +52,8 @@ pub fn set_desktop_mode(on: bool) {
 pub fn desktop_mode() -> bool {
     DESKTOP_MODE.load(std::sync::atomic::Ordering::SeqCst)
 }
+pub fn set_settings_mode(on: bool) { SETTINGS_MODE.store(on, std::sync::atomic::Ordering::SeqCst); }
+pub fn settings_mode() -> bool { SETTINGS_MODE.load(std::sync::atomic::Ordering::SeqCst) }
 
 static PENDING: Mutex<Vec<serde_json::Value>> = Mutex::new(Vec::new());
 static HOST_HWND: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -195,9 +200,14 @@ pub fn on_web_message(text: &str) {
                     })
                     .collect();
                 if desktop_mode() {
-                    crate::dwm::set_desktop_regions(hwnd, &phys);
-                    crate::dwm::set_blur_regions(hwnd, &phys, (20.0 * scale).round() as i32);
-                    crate::dwm::pin_to_desktop(hwnd);
+                    // Desktop cards already render their own CSS glass. Keep
+                    // the native window region stable while WebView2 is
+                    // restoring; transient empty reports must not collapse
+                    // the whole host to a 1x1 black/flickering region.
+                    if !phys.is_empty() {
+                        crate::dwm::set_desktop_regions(hwnd, &phys);
+                        crate::dwm::pin_to_desktop(hwnd);
+                    }
                 } else {
                     crate::dwm::set_card_regions(hwnd, &phys, (20.0 * scale).round() as i32);
                 }
@@ -378,6 +388,13 @@ pub fn show_panel() {
         crate::dwm::pin_to_desktop(hwnd);
         return;
     }
+    if settings_mode() {
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = SetForegroundWindow(hwnd);
+        }
+        return;
+    }
     cancel_hide();
     unsafe {
         if IsWindowVisible(hwnd).as_bool() {
@@ -446,7 +463,9 @@ pub fn request_hide() {
         if !IsWindowVisible(hwnd).as_bool() {
             return;
         }
-        if crate::webview2::is_ready() {
+        if settings_mode() {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        } else if crate::webview2::is_ready() {
             PENDING_HIDE.store(true, std::sync::atomic::Ordering::SeqCst);
             let _ = SetTimer(hwnd, HIDE_TIMER_ID, 380, None);
             if !crate::dwm::card_frost_mode() {

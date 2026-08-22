@@ -13,6 +13,7 @@ const WM_WB_TRAY: u32 = WM_APP + 90;
 const TRAY_ID: u32 = 1;
 const CMD_OPEN: usize = 1001;
 const CMD_EXIT: usize = 1002;
+const CMD_SETTINGS: usize = 1003;
 static TRAY_HWND: AtomicIsize = AtomicIsize::new(0);
 
 pub fn start() {
@@ -125,6 +126,9 @@ unsafe extern "system" fn wnd_proc(
                 CMD_OPEN => {
                     super::panelctl::show();
                 }
+                CMD_SETTINGS => {
+                    super::panelctl::settings();
+                }
                 CMD_EXIT => {
                     std::thread::spawn(request_daemon_stop);
                 }
@@ -143,6 +147,7 @@ unsafe extern "system" fn wnd_proc(
 unsafe fn show_menu(hwnd: HWND) {
     let Ok(menu) = CreatePopupMenu() else { return };
     let _ = AppendMenuW(menu, MF_STRING, CMD_OPEN, w!("打开 WB"));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS, w!("设置"));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
     let _ = AppendMenuW(menu, MF_STRING, CMD_EXIT, w!("退出 WB"));
     let mut point = POINT::default();

@@ -40,9 +40,11 @@ impl Drop for SingleInstance {
 
 /// Returns `None` for a secondary process after it has asked the existing
 /// panel to show. The named mutex also closes the startup race before HWND exists.
-fn acquire_single_instance(desktop: bool) -> Result<Option<SingleInstance>, String> {
+fn acquire_single_instance(desktop: bool, settings: bool) -> Result<Option<SingleInstance>, String> {
     let mutex_name: Vec<u16> = if desktop {
         "Local\\WBDesktopWidgetsSingleInstance\0"
+    } else if settings {
+        "Local\\WBSettingsSingleInstance\0"
     } else {
         "Local\\WBPanelSingleInstance\0"
     }
@@ -54,7 +56,7 @@ fn acquire_single_instance(desktop: bool) -> Result<Option<SingleInstance>, Stri
         return Ok(Some(SingleInstance(mutex)));
     }
 
-    let class_name: Vec<u16> = if desktop { "WBDesktopWidgets\0" } else { "WBPanelPoc\0" }
+    let class_name: Vec<u16> = if desktop { "WBDesktopWidgets\0" } else if settings { "WBSettingsWindow\0" } else { "WBPanelPoc\0" }
         .encode_utf16()
         .collect();
     let hwnd = unsafe { FindWindowW(PCWSTR(class_name.as_ptr()), None) }.unwrap_or_default();
@@ -82,6 +84,7 @@ fn main() {
     }
     let args: Vec<String> = std::env::args().collect();
     let desktop = args.iter().any(|a| a == "--desktop");
+    let settings = args.iter().any(|a| a == "--settings");
 
     // Headless icon-extraction test: wb-panel --icon-test <lnk-or-exe> <out.png>
     if let Some(pos) = args.iter().position(|a| a == "--icon-test") {
@@ -113,7 +116,7 @@ fn main() {
     let _single_instance = if diagnostic_instance {
         None
     } else {
-        match acquire_single_instance(desktop) {
+        match acquire_single_instance(desktop, settings) {
             Ok(Some(instance)) => Some(instance),
             Ok(None) => return,
             Err(e) => {
@@ -126,7 +129,8 @@ fn main() {
     let wv2 = args.iter().any(|a| a == "--wv2");
     // 测试用：失焦不自动隐藏（截图验证 AI 流式等慢速链路时，用户的窗口会抢焦点）
     host::set_desktop_mode(desktop);
-    host::set_autohide(!desktop && !args.iter().any(|a| a == "--no-autohide"));
+    host::set_settings_mode(settings);
+    host::set_autohide(!desktop && !settings && !args.iter().any(|a| a == "--no-autohide"));
     let duration: Option<u64> = args
         .windows(2)
         .find(|w| w[0] == "--duration")
@@ -137,10 +141,10 @@ fn main() {
         .and_then(|w| w[1].parse().ok());
 
     // 磨砂池必须先创建：后创建的面板在 Z 序上盖过它们。
-    if !desktop {
+    if !desktop && !settings {
         dwm::create_frost_pool();
     }
-    let hwnd = match dwm::create_panel_window(desktop) {
+    let hwnd = match dwm::create_panel_window(desktop, settings) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("fatal: {e}");
@@ -151,9 +155,17 @@ fn main() {
     let material = if plain { "none(ab-test)" } else { dwm::apply_material(hwnd) };
     host::set_host_hwnd(hwnd);
     if desktop {
+        // Start click-through while WebView2 is booting. Later empty reports
+        // are ignored, and the retry sequence installs the real card region.
         dwm::set_desktop_regions(hwnd, &[]);
     }
     println!("{}", serde_json::json!({"event": "window_created", "material": material, "w": WINDOW_W, "h": WINDOW_H}));
+    if desktop {
+        // Explorer may rebuild the desktop host after Win+D / monitor changes.
+        // A low-frequency repair tick keeps the widget window present without
+        // polling layout or spawning any foreground process.
+        unsafe { let _ = SetTimer(hwnd, host::DESKTOP_REPAIR_TIMER_ID, 1500, None); }
+    }
 
     if wv2 {
         match webview2::embed(hwnd) {
@@ -182,6 +194,8 @@ fn main() {
             let url = webview2::resolve_url().map(|mut url| {
                 if desktop {
                     url.push_str(if url.contains('?') { "&mode=desktop" } else { "?mode=desktop" });
+                } else if settings {
+                    url.push_str(if url.contains('?') { "&mode=settings" } else { "?mode=settings" });
                 }
                 url
             });
@@ -326,6 +340,11 @@ pub(crate) unsafe extern "system" fn wnd_proc(
                 host::hide_now();
             } else if wparam.0 == host::SHOW_TIMER_ID {
                 host::reveal_now();
+            } else if wparam.0 == host::DESKTOP_REPAIR_TIMER_ID && host::desktop_mode() {
+                if !IsWindowVisible(hwnd).as_bool() {
+                    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                }
+                dwm::pin_to_desktop(hwnd);
             } else if wparam.0 == dwm::FROST_FADE_TIMER_ID {
                 dwm::frost_fade_tick(hwnd);
             }

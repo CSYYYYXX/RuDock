@@ -25,6 +25,23 @@
   --ok: #6CCB5F;
   --r-card: 16px;
   --r-ctl: 8px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --fg: #15202b;
+    --fg-2: rgba(21,32,43,.94);
+    --fg-3: rgba(21,32,43,.68);
+    --fg-4: rgba(21,32,43,.48);
+    --glass: rgba(246,249,252,.72);
+    --glass-strong: rgba(247,250,253,.88);
+    --stroke: rgba(21,32,43,.18);
+    --stroke-soft: rgba(21,32,43,.12);
+    --hover: rgba(21,32,43,.08);
+    --active: rgba(76,142,194,.18);
+    --accent: #087fca;
+    color-scheme: light;
+  }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: transparent;
@@ -35,10 +52,10 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .stage { position: fixed; inset: 0; background-size: 100% 100%; background-position: center; }
 
 /* ---------- 中央 Spotlight（macOS 聚焦风格） ---------- */
-.spot-wrap { position: absolute; left: 0; right: 0; top: 0; height: 26%;
-  display: flex; justify-content: center; align-items: center; pointer-events: none; z-index: 5; }
+.spot-wrap { position: absolute; left: 0; right: 0; top: clamp(18px, 7vh, 92px); height: auto;
+  display: flex; justify-content: center; align-items: flex-start; pointer-events: none; z-index: 5; }
 .spot { pointer-events: auto; width: min(640px, calc(100vw - 32px)); transition: width .22s cubic-bezier(.2,0,0,1); }
-.spot.has-results { width: min(920px, calc(100vw - 32px)); }
+.spot.has-results { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 110px); }
 .spot-box { position: relative; isolation: isolate; display: flex; align-items: center; gap: 14px;
   width: min(640px, 100%); margin: 0 auto;
   background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
@@ -83,9 +100,9 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #results { display: none; margin-top: 10px;
   background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke); border-radius: 16px; box-shadow: 0 20px 70px rgba(0,0,0,.55);
-  max-height: 58vh; overflow: hidden; }
+  max-height: min(54vh, calc(100vh - 190px)); overflow: hidden; }
 #results.on { display: block; }
-.results-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(270px, .85fr); max-height: 58vh; }
+.results-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(270px, .85fr); max-height: inherit; }
 .results-list { min-width: 0; padding: 6px; overflow-y: auto; }
 .results-list::-webkit-scrollbar, .result-preview::-webkit-scrollbar { width: 6px; }
 .results-list::-webkit-scrollbar-thumb, .result-preview::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
@@ -156,7 +173,7 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .widget-ai-form button:disabled { opacity: .45; cursor: default; }
 
 /* ---------- 组件马赛克：铺满剩余区域，无滚动 ---------- */
-.grid { height: 100%; display: grid; gap: 12px;
+.grid { height: 100%; display: grid; gap: 12px; contain: layout style;
   grid-template-columns: repeat(6, 1fr);
   grid-template-rows: minmax(150px, 1.25fr) minmax(100px, .9fr) minmax(120px, 1.25fr) minmax(100px, 1fr);
   grid-auto-rows: minmax(100px, auto); }
@@ -166,7 +183,8 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 .w { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--stroke-soft); border-radius: var(--r-card);
   box-shadow: 0 10px 32px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.09);
-  min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+  min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; position: relative;
+  contain: layout paint; transform: translateZ(0); }
 .grid > .w { grid-column: span var(--widget-cols, 1) !important; grid-row: span var(--widget-rows, 2) !important; }
 .resize-handle { position: absolute; right: 3px; bottom: 3px; z-index: 4; width: 18px; height: 18px;
   display: grid; place-items: center; border: 0; border-radius: 5px; background: rgba(76,194,255,.12);
@@ -406,6 +424,18 @@ html, body { height: 100%; overflow: hidden; background: transparent;
 #w-apps .tile:hover { background: var(--hover); }
 #w-apps .nm { font-size: 11px; color: var(--fg-3); max-width: 100%; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
+#w-shelf .bd { display: flex; flex-direction: column; gap: 8px; }
+.shelf-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr); gap: 6px; }
+.shelf-item { min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; border: 1px solid transparent; border-radius: 8px; color: var(--fg-3); cursor: pointer; }
+.shelf-item:hover { background: var(--hover); border-color: var(--stroke-soft); color: var(--fg); }
+.shelf-item img { width: 26px; height: 26px; object-fit: contain; }
+.shelf-item .shelf-name { max-width: 100%; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shelf-empty { grid-column: 1 / -1; display: grid; place-items: center; color: var(--fg-4); font-size: 11px; }
+.shelf-add { flex: none; min-height: 26px; border: 1px dashed var(--stroke-soft); border-radius: 7px; background: transparent;
+  color: var(--fg-3); font: inherit; font-size: 11px; cursor: pointer; }
+.shelf-add:hover { border-color: rgba(76,194,255,.45); color: var(--fg); background: var(--hover); }
 
 /* ---------- 三页结构：组件页 ⇄ 应用页（程序坞）⇄ 插件页，左右拖动切换 ---------- */
 .pages { position: absolute; left: 0; right: 0; top: 26%; bottom: 0; display: flex; width: 300%;
@@ -551,6 +581,10 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   background: rgba(255,255,255,.08); border: 1px solid var(--stroke-soft); color: var(--fg-2); cursor: pointer; }
 .dock-head .edit-btn:hover { background: var(--hover); }
 .dock-head .edit-btn.done { background: var(--accent); color: #00345c; border-color: transparent; font-weight: 700; }
+.dock-head .head-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.dock-head .head-actions button { font-size: 11px; padding: 5px 9px; border-radius: var(--r-ctl);
+  background: rgba(255,255,255,.07); border: 1px solid var(--stroke-soft); color: var(--fg-3); cursor: pointer; }
+.dock-head .head-actions button:hover, .dock-head .head-actions button.on { color: var(--fg); background: var(--hover); }
 .dockgrid { flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; padding-bottom: 26px; }
 .dockgrid::-webkit-scrollbar { width: 6px; }
 .dockgrid::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
@@ -587,7 +621,7 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 /* 已隐藏区 */
 .hidden-row { width: 100%; margin-top: 8px; padding: 10px 6px; border-top: 1px solid var(--stroke-soft);
   font-size: 12px; color: var(--fg-3); display: none; flex-wrap: wrap; gap: 6px; }
-.hidden-row.on { display: flex; }
+.hidden-row.on, .hidden-row.menu-on { display: flex; }
 .hidden-row .hchip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
   border-radius: 20px; background: rgba(255,255,255,.07); border: 1px solid var(--stroke-soft); cursor: pointer; }
 .hidden-row .hchip:hover { background: var(--hover); color: var(--fg); }
@@ -709,6 +743,15 @@ body.desktop-mode .w > .bd { padding: 8px 14px 14px; }
 body.desktop-mode .w.w-hidden { display: flex; }
 body.desktop-mode .w.desktop-hidden { display: none !important; }
 body.desktop-mode .resize-handle { opacity: .65; }
+body.settings-mode { background: var(--glass-strong); overflow: auto; }
+body.settings-mode .stage { position: relative; min-height: 100vh; background: transparent !important; }
+body.settings-mode .spot-wrap, body.settings-mode .pages, body.settings-mode .dots,
+body.settings-mode #folderView, body.settings-mode #onboardingView, body.settings-mode #marketSourceView,
+body.settings-mode #toast { display: none !important; }
+body.settings-mode #cfgView { position: fixed; inset: 0; display: flex; background: transparent; overflow: auto; }
+body.settings-mode #cfgView .sheet { width: min(720px, calc(100% - 48px)); max-height: none; min-height: calc(100vh - 48px);
+  margin: 24px auto; padding: 28px 32px; border-radius: 14px; background: var(--glass); }
+body.settings-mode #cfgView h3 { font-size: 20px; margin-bottom: 14px; }
 
 /* ---------- 呼出/消失动效（DeskBox：opacity+translation 交错） ---------- */
 @keyframes wbIn  { from { opacity: 0; transform: translateY(26px) scale(.97); } to { opacity: 1; transform: none; } }
@@ -846,6 +889,12 @@ body.desktop-mode .resize-handle { opacity: .65; }
       <div class="bd"><div class="list"></div></div>
     </div>
 
+    <div class="w span2" id="w-shelf">
+      <div class="hd">▦ 收纳<span class="right">桌面</span></div>
+      <div class="hairline"></div>
+      <div class="bd"><div class="shelf-grid"></div><button class="shelf-add" type="button">＋ 添加</button></div>
+    </div>
+
     <div class="w" id="w-cdown"><div class="hd">📅 倒数日</div><div class="hairline"></div><div class="bd">
       <div class="days">--<small>天</small></div>
       <div class="target" id="cd-target">点击设置目标日</div>
@@ -873,7 +922,7 @@ body.desktop-mode .resize-handle { opacity: .65; }
   <div class="page" id="page-apps">
     <div class="dock-wrap">
       <div class="dock-head">⊞ 应用 <span class="cnt" id="apps-n"></span>
-        <button class="edit-btn" id="apps-edit">编辑</button>
+        <div class="head-actions"><button id="apps-hidden" type="button">隐藏</button><button id="apps-import" type="button">导入</button><button class="edit-btn" id="apps-edit">编辑</button></div>
       </div>
       <div class="dockgrid" id="dockgrid"></div>
       <div class="hidden-row" id="hiddenRow"></div>
@@ -981,9 +1030,11 @@ let initialQuery = '';
 const hasBridge = !!(window.chrome && window.chrome.webview);
 const URL_PARAMS = new URLSearchParams(location.search);
 const DESKTOP_MODE = URL_PARAMS.get('mode') === 'desktop';
+const SETTINGS_MODE = URL_PARAMS.get('mode') === 'settings';
 const LANG_OVERRIDE = I18N_LANG(URL_PARAMS.get('lang'));
 const DESKTOP_FIXTURE = DESKTOP_MODE && location.hash === '#test-desktop';
 if (DESKTOP_MODE) document.body.classList.add('desktop-mode');
+if (SETTINGS_MODE) document.body.classList.add('settings-mode');
 if (DESKTOP_FIXTURE) document.body.classList.add('desktop-fixture');
 function send(msg) { if (hasBridge) window.chrome.webview.postMessage(msg); }
 function I18N_LANG(value) { return ['auto','zh-CN','en','ja','ko'].includes(value) ? value : ''; }
@@ -994,7 +1045,7 @@ const I18N = {
     time:'时间', weather:'天气', live:'实时', loading:'获取中…', calendar:'日历', worldClock:'世界时钟',
     beijing:'北京', newYork:'纽约', london:'伦敦', nowPlaying:'正在播放', notPlaying:'未在播放', mediaHint:'打开音乐应用试试',
     systemStatus:'系统状态', memory:'内存', battery:'电池', focusTimer:'专注计时', start:'开始', pause:'暂停', reset:'重置',
-    calculator:'计算器', clipboard:'剪贴板', todo:'待办', note:'随手记', quickLaunch:'快捷启动', recentFiles:'最近文件',
+    calculator:'计算器', clipboard:'剪贴板', todo:'待办', note:'随手记', quickLaunch:'快捷启动', recentFiles:'最近文件', shelf:'收纳', shelfAdd:'添加', shelfEmpty:'还没有收纳内容',
     countdown:'倒数日', quote:'一言', ai:'AI', aiAsk:'问点什么…', send:'发送', apps:'应用', edit:'编辑', done:'完成',
     mergeFolder:'合并为文件夹', clearSelection:'取消选择', plugins:'插件', installed:'已安装', market:'市场',
     manageSources:'管理市场源', refresh:'刷新当前视图', noPlugins:'还没有已安装插件', openMarket:'打开市场',
@@ -1012,7 +1063,7 @@ const I18N = {
     day:'天', daysAfter:'天后', daysBefore:'天前', setTargetDate:'点击设置目标日', dateNamePrompt:'这个日子叫什么？',
     settingsApp:'设置', taskManager:'任务管理器', notepad:'记事本', terminal:'终端', screenshot:'截图',
     todoPlaceholder:'加一条待办，回车保存', notePlaceholder:'记一笔，回车保存', desktopSaveFailed:'桌面组件保存失败', timerDone:'专注时间到',
-    dissolveFolder:'解散文件夹', hideApp:'不显示', hiddenApps:'已隐藏（点按恢复）：', folderNamePrompt:'文件夹名称', folderMerged:'已合并为文件夹',
+    dissolveFolder:'解散文件夹', hideApp:'不显示', hiddenApps:'已隐藏（点按恢复）：', importApp:'导入程序', folderNamePrompt:'文件夹名称', folderMerged:'已合并为文件夹',
     startMenu:'开始菜单', systemApps:'系统应用', localIndex:'本地索引', recentUsed:'最近使用', selectedDetails:'所选结果详情',
     fileType:'{ext} 文件', loadingCommands:'正在加载命令…', loadingCommandsHint:'首次使用拉取命令注册表', commandUnavailable:'命令服务不可用', daemonDisconnected:'WB 服务未连接',
     noCommands:'没有匹配命令', noCommandsHint:'请换一个关键词', parameter:'参数：', needsParameter:'{title} 需要参数：{parameter}', updateTodoFailed:'无法更新待办',
@@ -1030,7 +1081,7 @@ const I18N = {
     time:'Time', weather:'Weather', live:'Live', loading:'Loading…', calendar:'Calendar', worldClock:'World clock',
     beijing:'Beijing', newYork:'New York', london:'London', nowPlaying:'Now playing', notPlaying:'Nothing playing', mediaHint:'Open a music app to begin',
     systemStatus:'System status', memory:'Memory', battery:'Battery', focusTimer:'Focus timer', start:'Start', pause:'Pause', reset:'Reset',
-    calculator:'Calculator', clipboard:'Clipboard', todo:'To-do', note:'Notes', quickLaunch:'Quick launch', recentFiles:'Recent files',
+    calculator:'Calculator', clipboard:'Clipboard', todo:'To-do', note:'Notes', quickLaunch:'Quick launch', recentFiles:'Recent files', shelf:'Shelf', shelfAdd:'Add', shelfEmpty:'Nothing saved yet',
     countdown:'Countdown', quote:'Quote', ai:'AI', aiAsk:'Ask anything…', send:'Send', apps:'Apps', edit:'Edit', done:'Done',
     mergeFolder:'Merge into folder', clearSelection:'Clear selection', plugins:'Plugins', installed:'Installed', market:'Market',
     manageSources:'Manage market sources', refresh:'Refresh current view', noPlugins:'No plugins installed', openMarket:'Open market',
@@ -1048,7 +1099,7 @@ const I18N = {
     day:'days', daysAfter:'days left', daysBefore:'days ago', setTargetDate:'Click to choose a date', dateNamePrompt:'What is this date for?',
     settingsApp:'Settings', taskManager:'Task Manager', notepad:'Notepad', terminal:'Terminal', screenshot:'Screenshot',
     todoPlaceholder:'Add a to-do and press Enter', notePlaceholder:'Write a note and press Enter', desktopSaveFailed:'Could not save desktop widgets', timerDone:'Focus session complete',
-    dissolveFolder:'Dissolve folder', hideApp:'Hide', hiddenApps:'Hidden (click to restore):', folderNamePrompt:'Folder name', folderMerged:'Merged into a folder',
+    dissolveFolder:'Dissolve folder', hideApp:'Hide', hiddenApps:'Hidden (click to restore):', importApp:'Import app', folderNamePrompt:'Folder name', folderMerged:'Merged into a folder',
     startMenu:'Start menu', systemApps:'System apps', localIndex:'Local index', recentUsed:'Recently used', selectedDetails:'Selected result details',
     fileType:'{ext} file', loadingCommands:'Loading commands…', loadingCommandsHint:'Fetching the command registry', commandUnavailable:'Command service unavailable', daemonDisconnected:'WB service is not connected',
     noCommands:'No matching commands', noCommandsHint:'Try another keyword', parameter:'Parameter:', needsParameter:'{title} needs: {parameter}', updateTodoFailed:'Could not update the to-do',
@@ -1066,7 +1117,7 @@ const I18N = {
     time:'時刻', weather:'天気', live:'リアルタイム', loading:'取得中…', calendar:'カレンダー', worldClock:'世界時計',
     beijing:'北京', newYork:'ニューヨーク', london:'ロンドン', nowPlaying:'再生中', notPlaying:'再生していません', mediaHint:'音楽アプリを開いてください',
     systemStatus:'システム状態', memory:'メモリ', battery:'バッテリー', focusTimer:'集中タイマー', start:'開始', pause:'一時停止', reset:'リセット',
-    calculator:'電卓', clipboard:'クリップボード', todo:'ToDo', note:'メモ', quickLaunch:'クイック起動', recentFiles:'最近のファイル',
+    calculator:'電卓', clipboard:'クリップボード', todo:'ToDo', note:'メモ', quickLaunch:'クイック起動', recentFiles:'最近のファイル', shelf:'収納', shelfAdd:'追加', shelfEmpty:'まだありません',
     countdown:'カウントダウン', quote:'一言', ai:'AI', aiAsk:'何でも質問…', send:'送信', apps:'アプリ', edit:'編集', done:'完了',
     mergeFolder:'フォルダーにまとめる', clearSelection:'選択解除', plugins:'プラグイン', installed:'インストール済み', market:'マーケット',
     manageSources:'マーケットソース管理', refresh:'現在の表示を更新', noPlugins:'プラグインはありません', openMarket:'マーケットを開く',
@@ -1084,7 +1135,7 @@ const I18N = {
     day:'日', daysAfter:'日後', daysBefore:'日前', setTargetDate:'クリックして日付を設定', dateNamePrompt:'この日の名前は？',
     settingsApp:'設定', taskManager:'タスク マネージャー', notepad:'メモ帳', terminal:'ターミナル', screenshot:'スクリーンショット',
     todoPlaceholder:'ToDoを入力して Enter', notePlaceholder:'メモを入力して Enter', desktopSaveFailed:'デスクトップウィジェットを保存できません', timerDone:'集中時間が終了しました',
-    dissolveFolder:'フォルダーを解除', hideApp:'非表示', hiddenApps:'非表示（クリックで復元）：', folderNamePrompt:'フォルダー名', folderMerged:'フォルダーにまとめました',
+    dissolveFolder:'フォルダーを解除', hideApp:'非表示', hiddenApps:'非表示（クリックで復元）：', importApp:'アプリを追加', folderNamePrompt:'フォルダー名', folderMerged:'フォルダーにまとめました',
     startMenu:'スタートメニュー', systemApps:'システムアプリ', localIndex:'ローカル索引', recentUsed:'最近使用', selectedDetails:'選択した結果の詳細',
     fileType:'{ext} ファイル', loadingCommands:'コマンドを読み込み中…', loadingCommandsHint:'コマンド一覧を取得しています', commandUnavailable:'コマンドサービスを利用できません', daemonDisconnected:'WB サービスに接続されていません',
     noCommands:'一致するコマンドはありません', noCommandsHint:'別のキーワードを試してください', parameter:'引数：', needsParameter:'{title} に引数が必要です：{parameter}', updateTodoFailed:'ToDoを更新できません',
@@ -1102,7 +1153,7 @@ const I18N = {
     time:'시간', weather:'날씨', live:'실시간', loading:'불러오는 중…', calendar:'달력', worldClock:'세계 시계',
     beijing:'베이징', newYork:'뉴욕', london:'런던', nowPlaying:'재생 중', notPlaying:'재생 중인 항목 없음', mediaHint:'음악 앱을 열어 보세요',
     systemStatus:'시스템 상태', memory:'메모리', battery:'배터리', focusTimer:'집중 타이머', start:'시작', pause:'일시정지', reset:'초기화',
-    calculator:'계산기', clipboard:'클립보드', todo:'할 일', note:'메모', quickLaunch:'빠른 실행', recentFiles:'최근 파일',
+    calculator:'계산기', clipboard:'클립보드', todo:'할 일', note:'메모', quickLaunch:'빠른 실행', recentFiles:'최근 파일', shelf:'보관함', shelfAdd:'추가', shelfEmpty:'아직 없습니다',
     countdown:'카운트다운', quote:'한마디', ai:'AI', aiAsk:'무엇이든 물어보세요…', send:'보내기', apps:'앱', edit:'편집', done:'완료',
     mergeFolder:'폴더로 묶기', clearSelection:'선택 해제', plugins:'플러그인', installed:'설치됨', market:'마켓',
     manageSources:'마켓 소스 관리', refresh:'현재 보기 새로고침', noPlugins:'설치된 플러그인이 없습니다', openMarket:'마켓 열기',
@@ -1120,7 +1171,7 @@ const I18N = {
     day:'일', daysAfter:'일 후', daysBefore:'일 전', setTargetDate:'클릭하여 날짜 설정', dateNamePrompt:'이 날짜의 이름은?',
     settingsApp:'설정', taskManager:'작업 관리자', notepad:'메모장', terminal:'터미널', screenshot:'스크린샷',
     todoPlaceholder:'할 일을 입력하고 Enter', notePlaceholder:'메모를 입력하고 Enter', desktopSaveFailed:'데스크톱 위젯을 저장하지 못했습니다', timerDone:'집중 시간이 끝났습니다',
-    dissolveFolder:'폴더 해제', hideApp:'숨기기', hiddenApps:'숨김 (클릭하여 복원):', folderNamePrompt:'폴더 이름', folderMerged:'폴더로 묶었습니다',
+    dissolveFolder:'폴더 해제', hideApp:'숨기기', hiddenApps:'숨김 (클릭하여 복원):', importApp:'앱 가져오기', folderNamePrompt:'폴더 이름', folderMerged:'폴더로 묶었습니다',
     startMenu:'시작 메뉴', systemApps:'시스템 앱', localIndex:'로컬 인덱스', recentUsed:'최근 사용', selectedDetails:'선택한 결과 세부 정보',
     fileType:'{ext} 파일', loadingCommands:'명령 불러오는 중…', loadingCommandsHint:'명령 목록을 가져오는 중입니다', commandUnavailable:'명령 서비스를 사용할 수 없음', daemonDisconnected:'WB 서비스가 연결되지 않았습니다',
     noCommands:'일치하는 명령이 없습니다', noCommandsHint:'다른 키워드를 사용해 보세요', parameter:'매개변수:', needsParameter:'{title}에 매개변수 필요: {parameter}', updateTodoFailed:'할 일을 업데이트하지 못했습니다',
@@ -1165,7 +1216,7 @@ function applyLanguage(value) {
     ['#w-world .hd','◎','worldClock'], ['#w-media .hd','♫','nowPlaying'], ['#w-sys .hd','◫','systemStatus'],
     ['#w-pomo .hd','◉','focusTimer'], ['#w-calc .hd','=','calculator'], ['#w-clip .hd','⧉','clipboard'],
     ['#w-todo .hd','✓','todo'], ['#w-note .hd','✎','note'], ['#w-quick .hd','⚡','quickLaunch'],
-    ['#w-recent .hd','🕘','recentFiles'], ['#w-cdown .hd','📅','countdown'], ['#w-htk .hd','❝','quote'], ['#w-ai .hd','✦','ai'],
+    ['#w-recent .hd','🕘','recentFiles'], ['#w-shelf .hd','▦','shelf'], ['#w-cdown .hd','📅','countdown'], ['#w-htk .hd','❝','quote'], ['#w-ai .hd','✦','ai'],
   ].forEach(args => setLead(...args));
   $('#w-weather .right').textContent = t('live'); $('#w-clip .right').textContent = t('live');
   $$('#w-world .wcrow span').forEach((el, i) => { el.textContent = t(['beijing','newYork','london'][i]); });
@@ -1204,6 +1255,9 @@ function applyLanguage(value) {
   $('#htk-bd').title = t('quoteRefresh');
   const quickKeys = ['settingsApp','taskManager','calculator','notepad','terminal','screenshot'];
   $$('#w-quick .qbtn').forEach((el, i) => { const label=t(quickKeys[i]); el.title=label; el.setAttribute('aria-label',label); el.querySelector('.qlabel').textContent=label; });
+  $('#w-shelf .shelf-add').textContent = '＋ ' + t('shelfAdd');
+  $('#apps-hidden').textContent = t('hiddenApps').replace(/[:：].*$/, '') || t('hideApp');
+  $('#apps-import').textContent = t('importApp');
   $$('.resize-handle').forEach(el => { el.title=t('resize'); el.setAttribute('aria-label',t('resize')); });
   $$('#board .w[id^="plugin-"] > .hd .right').forEach(el => { el.textContent=t('plugin'); });
   $$('.cfgrow[data-widget]').forEach(row => {
@@ -1490,6 +1544,32 @@ async function loadRecent() {
   });
 }
 
+/* 收纳：轻量本地收藏夹，面板和桌面常驻共用同一份数据。 */
+const SHELF_KEY = 'wb.shelf.v1';
+let shelfItems = [];
+try { shelfItems = JSON.parse(localStorage.getItem(SHELF_KEY) || '[]'); } catch { shelfItems = []; }
+function saveShelf() { localStorage.setItem(SHELF_KEY, JSON.stringify(shelfItems.slice(0, 27))); }
+function renderShelf() {
+  const grid = $('#w-shelf .shelf-grid'); if (!grid) return;
+  grid.innerHTML = '';
+  if (!shelfItems.length) { grid.innerHTML = `<div class="shelf-empty">${esc(t('shelfEmpty'))}</div>`; return; }
+  shelfItems.slice(0, 9).forEach(item => {
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'shelf-item'; el.title = item.path;
+    el.innerHTML = `<span class="shelf-icon">▧</span><span class="shelf-name">${esc(item.title)}</span>`;
+    el.addEventListener('click', () => send({ kind:'action', action:'open', path:item.path }));
+    grid.appendChild(el);
+  });
+}
+$('#w-shelf .shelf-add').addEventListener('click', ev => {
+  ev.stopPropagation();
+  const path = prompt(t('importApp') + ':');
+  if (!path || !path.trim()) return;
+  const clean = path.trim(), title = clean.split(/[\\/]/).pop() || clean;
+  shelfItems = [{ title, path:clean }, ...shelfItems.filter(item => item.path !== clean)];
+  saveShelf(); renderShelf();
+});
+renderShelf();
+
 /* ---------- 应用页（程序坞）：自定义隐藏 / 九宫格文件夹 / 上下滚动 ---------- */
 let appsCache = null;
 async function getApps() {
@@ -1499,66 +1579,97 @@ async function getApps() {
   return appsCache;
 }
 const APP_CFG_KEY = 'wb.appcfg.v1';
-let appCfg = { hidden: [], folders: [] };
-try { appCfg = Object.assign({ hidden: [], folders: [] }, JSON.parse(localStorage.getItem(APP_CFG_KEY) || '{}')); } catch {}
+let appCfg = { hidden: [], folders: [], imported: [] };
+try { appCfg = Object.assign({ hidden: [], folders: [], imported: [] }, JSON.parse(localStorage.getItem(APP_CFG_KEY) || '{}')); } catch {}
+appCfg.hidden = Array.isArray(appCfg.hidden) ? appCfg.hidden : [];
+appCfg.folders = Array.isArray(appCfg.folders) ? appCfg.folders : [];
+appCfg.imported = Array.isArray(appCfg.imported) ? appCfg.imported : [];
 function saveAppCfg() { localStorage.setItem(APP_CFG_KEY, JSON.stringify(appCfg)); }
 
 let editMode = false, selSet = new Set(), dockRendered = false, dragged = false;
 const dockGrid = $('#dockgrid');
-function appById(id) { return (appsCache || []).find(a => a.path === id); }
+function allDockApps() { return [...(appsCache || []), ...appCfg.imported]; }
+function appById(id) { return allDockApps().find(a => a.path === id); }
+function isNoiseApp(a) {
+  const text = `${a.title || ''} ${a.path || ''}`.toLowerCase();
+  return /uninstall|unins|卸载|setup|安装向导|updater|update assistant|repair|maintenance|维护工具|readme|documentation|release notes/.test(text);
+}
+function isSystemApp(a) {
+  if (isNoiseApp(a)) return false;
+  const text = `${a.title || ''} ${a.path || ''}`.toLowerCase();
+  return a.source === 'start-apps' && (
+    /microsoft\.|windows\.|immersivecontrolpanel|windowsapps/.test(text) ||
+    /设置|settings|计算器|calculator|记事本|notepad|终端|terminal|截图|snipping|照片|photos|画图|paint|文件资源管理器|file explorer/.test(text)
+  );
+}
+function isSystemOutside(a) {
+  const text = `${a.title || ''}`.toLowerCase();
+  return /设置|settings|计算器|calculator|记事本|notepad|终端|terminal|截图|snipping|文件资源管理器|file explorer/.test(text);
+}
 
 async function renderDock() {
   dockRendered = true;
-  const apps = await getApps();
-  $('#apps-n').textContent = t('appCount', { n:apps.length });
+  const apps = allDockApps();
+  $('#apps-n').textContent = t('appCount', { n:apps.filter(a => !isNoiseApp(a)).length });
   dockGrid.innerHTML = '';
   const hidden = new Set(appCfg.hidden);
   const inFolder = new Set(appCfg.folders.flatMap(f => f.items));
   let i = 0;
   const put = el => { el.style.setProperty('--i', Math.min(i++, 30)); dockGrid.appendChild(el); };
 
-  appCfg.folders.forEach(f => {
-    const t = document.createElement('div');
-    t.className = 'tile';
+  const systemItems = apps.filter(a => isSystemApp(a) && !isSystemOutside(a) && !hidden.has(a.path) && !inFolder.has(a.path));
+  if (systemItems.length) {
+    const f = { id:'__system__', name:t('systemApps'), items:systemItems.map(a => a.path), system:true };
+    const tile = document.createElement('div');
+    tile.className = 'tile';
     const mini = document.createElement('div'); mini.className = 'fold';
     f.items.slice(0, 8).forEach(id => { const a = appById(id); if (a) mini.appendChild(iconImg(a.path, 14)); });
     if (f.items.length > 8) mini.insertAdjacentHTML('beforeend', `<div class="more">+${f.items.length - 8}</div>`);
-    t.appendChild(mini);
-    t.insertAdjacentHTML('beforeend', `<div class="nm">${esc(f.name || t('folder'))}</div>`);
+    tile.appendChild(mini);
+    tile.insertAdjacentHTML('beforeend', `<div class="nm">${esc(f.name)}</div>`);
+    tile.addEventListener('click', () => { if (!dragged) openFolder(f.id); });
+    put(tile);
+    f.items.forEach(id => inFolder.add(id));
+  }
+
+  appCfg.folders.forEach(f => {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    const mini = document.createElement('div'); mini.className = 'fold';
+    f.items.slice(0, 8).forEach(id => { const a = appById(id); if (a) mini.appendChild(iconImg(a.path, 14)); });
+    if (f.items.length > 8) mini.insertAdjacentHTML('beforeend', `<div class="more">+${f.items.length - 8}</div>`);
+    tile.appendChild(mini);
+    tile.insertAdjacentHTML('beforeend', `<div class="nm">${esc(f.name || t('folder'))}</div>`);
     if (editMode) {
       const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕'; x.title = t('dissolveFolder');
       x.addEventListener('click', ev => { ev.stopPropagation(); appCfg.folders = appCfg.folders.filter(g => g.id !== f.id); saveAppCfg(); renderDock(); });
-      t.appendChild(x);
-      t.addEventListener('click', () => { const n = prompt(t('folderNamePrompt'), f.name || t('folder')); if (n !== null) { f.name = n; saveAppCfg(); renderDock(); } });
-    } else {
-      t.addEventListener('click', () => { if (!dragged) openFolder(f.id); });
-    }
-    put(t);
+      tile.appendChild(x);
+      tile.addEventListener('click', () => { const n = prompt(t('folderNamePrompt'), f.name || t('folder')); if (n !== null) { f.name = n; saveAppCfg(); renderDock(); } });
+    } else tile.addEventListener('click', () => { if (!dragged) openFolder(f.id); });
+    put(tile);
   });
 
-  apps.filter(a => !hidden.has(a.path) && !inFolder.has(a.path)).forEach(a => {
-    const t = document.createElement('div');
-    t.className = 'tile'; t.dataset.id = a.path;
-    t.appendChild(iconImg(a.path, 48));
-    t.insertAdjacentHTML('beforeend', `<div class="nm">${esc(a.title)}</div>`);
+  apps.filter(a => !hidden.has(a.path) && !inFolder.has(a.path) && !isNoiseApp(a)).forEach(a => {
+    const tile = document.createElement('div');
+    tile.className = 'tile'; tile.dataset.id = a.path;
+    tile.appendChild(iconImg(a.path, 48));
+    tile.insertAdjacentHTML('beforeend', `<div class="nm">${esc(a.title)}</div>`);
     if (editMode) {
       const x = document.createElement('span'); x.className = 'x'; x.textContent = '−'; x.title = t('hideApp');
       x.addEventListener('click', ev => { ev.stopPropagation(); appCfg.hidden.push(a.path); selSet.delete(a.path); saveAppCfg(); renderDock(); });
-      t.appendChild(x);
-      t.classList.toggle('sel', selSet.has(a.path));
-      t.addEventListener('click', () => {
+      tile.appendChild(x);
+      tile.classList.toggle('sel', selSet.has(a.path));
+      tile.addEventListener('click', () => {
         if (selSet.has(a.path)) selSet.delete(a.path); else selSet.add(a.path);
-        t.classList.toggle('sel'); syncToolbar();
+        tile.classList.toggle('sel'); syncToolbar();
       });
-    } else {
-      t.addEventListener('click', () => { if (!dragged) send({ kind: 'action', action: 'open', path: a.path }); });
-    }
-    put(t);
+    } else tile.addEventListener('click', () => { if (!dragged) send({ kind: 'action', action: 'open', path: a.path }); });
+    put(tile);
   });
 
   const hr = $('#hiddenRow');
-  if (editMode && appCfg.hidden.length) {
-    hr.classList.add('on');
+  if (appCfg.hidden.length) {
+    hr.classList.toggle('on', editMode || $('#apps-hidden').classList.contains('on'));
     hr.textContent = t('hiddenApps');
     appCfg.hidden.forEach(id => {
       const a = appById(id);
@@ -1567,7 +1678,9 @@ async function renderDock() {
       c.addEventListener('click', () => { appCfg.hidden = appCfg.hidden.filter(x => x !== id); saveAppCfg(); renderDock(); });
       hr.appendChild(c);
     });
-  } else hr.classList.remove('on');
+    hr.classList.toggle('menu-on', $('#apps-hidden').classList.contains('on'));
+  } else hr.classList.remove('on', 'menu-on');
+  $('#apps-hidden').classList.toggle('has-items', appCfg.hidden.length > 0);
   syncToolbar();
 }
 
@@ -1575,6 +1688,21 @@ function syncToolbar() {
   $('#dockToolbar').classList.toggle('on', editMode);
   $('#mkfolder').disabled = selSet.size < 2;
 }
+$('#apps-hidden').addEventListener('click', ev => {
+  ev.stopPropagation();
+  const button = $('#apps-hidden'); button.classList.toggle('on');
+  $('#hiddenRow').classList.toggle('menu-on', button.classList.contains('on'));
+  renderDock();
+});
+$('#apps-import').addEventListener('click', ev => {
+  ev.stopPropagation();
+  const path = prompt(t('importApp') + ':');
+  if (!path || !path.trim()) return;
+  const clean = path.trim(), title = clean.split(/[\\/]/).pop() || clean;
+  appCfg.imported = [{ kind:'app', title, subtitle:t('app'), path:clean, score:1, source:'imported' },
+    ...appCfg.imported.filter(a => a.path !== clean)];
+  saveAppCfg(); renderDock();
+});
 $('#apps-edit').addEventListener('click', () => {
   editMode = !editMode; selSet.clear();
   $('#apps-edit').textContent = editMode ? t('done') : t('edit');
@@ -1593,7 +1721,9 @@ $('#mkfolder').addEventListener('click', () => {
 
 /* 文件夹展开层 */
 function openFolder(fid) {
-  const f = appCfg.folders.find(g => g.id === fid);
+  const f = fid === '__system__'
+    ? { id:'__system__', name:t('systemApps'), items:allDockApps().filter(a => isSystemApp(a) && !isSystemOutside(a) && !appCfg.hidden.includes(a.path)).map(a => a.path) }
+    : appCfg.folders.find(g => g.id === fid);
   if (!f) return;
   $('#folderName').textContent = f.name || t('folder');
   const grid = $('#folderGrid'); grid.innerHTML = '';
@@ -2375,12 +2505,12 @@ const WIDGETS = [
   ['w-clock', '@time'], ['w-weather', '@weather'], ['w-cal', '@calendar'], ['w-world', '@worldClock'],
   ['w-media', '@nowPlaying'], ['w-sys', '@systemStatus'], ['w-pomo', '@focusTimer'], ['w-calc', '@calculator'],
   ['w-clip', '@clipboard'], ['w-todo', '@todo'], ['w-note', '@note'], ['w-quick', '@quickLaunch'],
-  ['w-recent', '@recentFiles'], ['w-cdown', '@countdown'], ['w-htk', '@quote'], ['w-ai', '@ai'],
+  ['w-recent', '@recentFiles'], ['w-shelf', '@shelf'], ['w-cdown', '@countdown'], ['w-htk', '@quote'], ['w-ai', '@ai'],
 ];
 const DEFAULT_WIDGET_LAYOUT = {
   'w-clock':[2,2], 'w-weather':[2,2], 'w-cal':[2,2], 'w-world':[2,2], 'w-media':[2,2],
   'w-sys':[1,2], 'w-pomo':[1,2], 'w-calc':[1,2], 'w-clip':[1,2], 'w-todo':[2,2],
-  'w-note':[2,2], 'w-quick':[2,2], 'w-recent':[2,2], 'w-cdown':[1,2], 'w-htk':[1,2], 'w-ai':[4,3],
+  'w-note':[2,2], 'w-quick':[2,2], 'w-recent':[2,2], 'w-shelf':[2,2], 'w-cdown':[1,2], 'w-htk':[1,2], 'w-ai':[4,3],
 };
 const WCFG_KEY = 'wb.hiddenWidgets.v1';
 let hiddenWidgets = [];
@@ -2438,14 +2568,22 @@ function installWidgetResize(card) {
     const start = { x:ev.clientX, y:ev.clientY, cols:Number(card.dataset.widgetCols), rows:Number(card.dataset.widgetRows) };
     card.classList.add('resizing'); send({ kind:'interaction', active:true });
     try { handle.setPointerCapture(ev.pointerId); } catch {}
+    let frame = 0, pending = null;
     const move = e => {
-      const cols = start.cols + Math.round((e.clientX - start.x) / colStep);
-      const rows = start.rows + Math.round((e.clientY - start.y) / rowStep);
-      setWidgetGridSize(card, cols, rows);
+      pending = e;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!pending) return;
+        const cols = start.cols + Math.round((pending.clientX - start.x) / colStep);
+        const rows = start.rows + Math.round((pending.clientY - start.y) / rowStep);
+        setWidgetGridSize(card, cols, rows);
+      });
     };
     const end = e => {
       handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
       card.classList.remove('resizing'); send({ kind:'interaction', active:false }); persistWidgetLayout(card, false);
+      if (frame) cancelAnimationFrame(frame);
       try { handle.releasePointerCapture(e.pointerId); } catch {}
     };
     handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
@@ -2517,6 +2655,12 @@ function syncDesktopWidgets(initial) {
       renderWidgetAi();
     }
     applyDesktopWidgetVisibility();
+    // WebView2 can report zero-sized cards while the compositor is restoring
+    // the desktop window. Retry a few times so returning to the desktop does
+    // not leave a 1x1 region behind while widgets are still painting.
+    [40, 120, 260, 520, 900].forEach(delay => setTimeout(() => {
+      applyDesktopWidgetVisibility(); reportRects();
+    }, delay));
     if (initial) requestAnimationFrame(() => requestAnimationFrame(() => {
       reportRects();
       send({ kind: 'ready' });
@@ -3028,7 +3172,11 @@ async function boot() {
   const m0 = location.hash.match(/^#q=(.*)$/);
   initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
   if (DESKTOP_MODE) await syncDesktopWidgets(true);
-  else {
+  else if (SETTINGS_MODE) {
+    const response = hasBridge ? await rpc('settings.get', {}, 1800) : null;
+    const settings = response && response.result ? response.result : { language:'auto' };
+    ingestSettings(settings); openConfig(); send({ kind: 'ready' });
+  } else {
     const response = hasBridge ? await rpc('settings.get', {}, 1800) : null;
     const settings = response && response.result ? response.result : { language:'auto' };
     ingestSettings(settings);

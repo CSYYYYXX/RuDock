@@ -15,6 +15,7 @@ pub const WM_WB_DESKTOP_REFRESH: u32 = 0x8000 + 45;
 
 const PANEL_CLASS: &str = "WBPanelPoc";
 const DESKTOP_CLASS: &str = "WBDesktopWidgets";
+const SETTINGS_CLASS: &str = "WBSettingsWindow";
 
 fn find_window(class: &str) -> Option<HWND> {
     unsafe {
@@ -28,6 +29,7 @@ fn find_window(class: &str) -> Option<HWND> {
 fn find_panel() -> Option<HWND> {
     find_window(PANEL_CLASS)
 }
+fn find_settings() -> Option<HWND> { find_window(SETTINGS_CLASS) }
 
 fn post(hwnd: HWND, msg: u32) {
     unsafe {
@@ -59,6 +61,23 @@ fn spawn_panel(desktop: bool) {
                 .spawn();
         }
     }
+}
+pub fn settings() -> serde_json::Value {
+    if let Some(hwnd) = find_settings() {
+        post(hwnd, WM_WB_SHOW);
+        return serde_json::json!({"settings":"shown"});
+    }
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("wb-panel.exe")));
+    if let Some(exe) = exe.filter(|p| p.exists()) {
+        let _ = std::process::Command::new(exe).args(["--wv2", "--settings"])
+            .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
+            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+        return serde_json::json!({"settings":"started"});
+    }
+    serde_json::json!({"settings":"unavailable"})
 }
 
 pub fn show() -> serde_json::Value {
@@ -98,13 +117,12 @@ pub fn toggle() -> serde_json::Value {
 }
 
 pub fn close() -> serde_json::Value {
-    match find_panel() {
-        Some(h) => {
-            post(h, WM_CLOSE);
-            serde_json::json!({"panel": "closing"})
-        }
-        None => serde_json::json!({"panel": "not running"}),
-    }
+    let panel = match find_panel() {
+        Some(h) => { post(h, WM_CLOSE); "closing" }
+        None => "not running",
+    };
+    if let Some(h) = find_settings() { post(h, WM_CLOSE); }
+    serde_json::json!({"panel": panel})
 }
 
 pub fn desktop_running() -> bool {

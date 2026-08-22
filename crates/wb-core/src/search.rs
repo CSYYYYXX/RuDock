@@ -135,8 +135,16 @@ pub fn index_apps() -> Vec<SearchResult> {
             out.push(app);
         }
     }
+    out.retain(|app| !is_noise_app_title(&app.title));
     out.sort_by_key(|app| app.title.to_lowercase());
     out
+}
+
+fn is_noise_app_title(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    ["uninstall", "unins", "卸载", "setup", "安装向导", "updater", "update assistant",
+        "repair", "maintenance", "维护工具", "readme", "documentation", "release notes"]
+        .iter().any(|needle| lower.contains(needle))
 }
 
 /// Get-StartApps 覆盖开始菜单里的一切（含 UWP）：返回 Name + AppID，
