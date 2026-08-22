@@ -17,12 +17,51 @@ mod weather;
 mod webview2;
 
 use std::time::Instant;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::core::w;
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, WPARAM,
+};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, UpdateWindow, PAINTSTRUCT};
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub(crate) const WINDOW_W: i32 = 520; // right-docked panel width; height = work area
 pub(crate) const WINDOW_H: i32 = 560; // bench/fallback only; real height comes from work area
+
+struct SingleInstance(HANDLE);
+
+impl Drop for SingleInstance {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+/// Returns `None` for a secondary process after it has asked the existing
+/// panel to show. The named mutex also closes the startup race before HWND exists.
+fn acquire_single_instance() -> Result<Option<SingleInstance>, String> {
+    let mutex = unsafe { CreateMutexW(None, true, w!("Local\\WBPanelSingleInstance")) }
+        .map_err(|e| format!("single-instance mutex failed: {e}"))?;
+    if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+        return Ok(Some(SingleInstance(mutex)));
+    }
+
+    let hwnd = unsafe { FindWindowW(w!("WBPanelPoc"), None) }.unwrap_or_default();
+    let awakened = if hwnd.0.is_null() {
+        false
+    } else {
+        unsafe { PostMessageW(hwnd, host::WM_WB_SHOW, WPARAM(0), LPARAM(0)) }.is_ok()
+    };
+    unsafe {
+        let _ = CloseHandle(mutex);
+    }
+    println!(
+        "{}",
+        serde_json::json!({"event":"already_running","awakened":awakened})
+    );
+    Ok(None)
+}
 
 fn main() {
     // PerMonitorV2 before any window exists — launcher must get physical pixels.
@@ -56,6 +95,22 @@ fn main() {
             Err(e) => { eprintln!("icon: {e}"); std::process::exit(1); }
         }
     }
+
+    let diagnostic_instance = args
+        .iter()
+        .any(|a| a == "--allow-multiple" || a == "--bench");
+    let _single_instance = if diagnostic_instance {
+        None
+    } else {
+        match acquire_single_instance() {
+            Ok(Some(instance)) => Some(instance),
+            Ok(None) => return,
+            Err(e) => {
+                eprintln!("fatal: {e}");
+                std::process::exit(1);
+            }
+        }
+    };
 
     let wv2 = args.iter().any(|a| a == "--wv2");
     // 测试用：失焦不自动隐藏（截图验证 AI 流式等慢速链路时，用户的窗口会抢焦点）

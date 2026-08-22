@@ -11,7 +11,7 @@
 | wb-daemon（JSON-RPC over Named Pipe） | ✅ 可用，剪贴板实时监听 + 用户文件后台索引 |
 | wb-cli（`wb.exe` 全命令面 + `--json` 契约） | ✅ 可用 |
 | wb-hook（**Win 键钩子：接管开关 / 开机自启 / 单实例**） | ✅ 可用 |
-| wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由） | ✅ 可用 |
+| wb-panel（PoC 2 PASS；**M2 真面板已通**：搜索/分组/键盘/前缀路由/单实例） | ✅ 可用 |
 | wb-mcp（M5 Agent 适配层） | ✅ stdio MCP（tools + Skill resources，可冷启动 daemon） |
 | wb-plugin-sdk / wb-plugin-host（M4 插件系统） | ✅ 可用（发现/校验/进程执行/挂件桥） |
 | 插件生态（M5） | ✅ 可用（create / validate / 权限批准 / Skill / pack / install / 热加载 / AI 与 MCP 工具） |
@@ -33,7 +33,7 @@
 - **系统 API 直联**：音乐卡走 **GSMTC**（曲名/歌手/专辑封面/播放状态 + 上一曲/播放暂停/下一曲，`crates/wb-panel/src/media.rs`）；天气卡走 **open-meteo**（免 key，ip-api 粗定位，10 分钟缓存，`weather.rs`，经系统 curl.exe 零依赖）。
 - **宿主↔前端通道**：WebView2 `WebMessage`（手写 vtable：`PostWebMessageAsJson`=接口29、`add_WebMessageReceived`=接口31，索引已从 WebView2.h 严格复核）。页面 → 宿主分发（`crates/wb-panel/src/host.rs`）；IPC 走 worker 线程→daemon→`WM_APP+42` 回 UI 线程回推。自测页 `selftest.html` roundtrip PASS。
 - **通用 RPC 透传**：页面 `{"kind":"rpc","method":"todo.list",...}` 可直调 daemon 任意方法——小组件全靠它。
-- **Win 键集成**：`wb-hook-poc --panel` 吞裸 Win → `WM_WB_TOGGLE(WM_APP+41)` → 面板 show/hide；未运行则拉起。截图：`m2-panel-visible.png` / `m2-panel-hidden.png`。
+- **Win 键集成**：`wb-hook-poc --panel` 吞裸 Win → `WM_WB_TOGGLE(WM_APP+41)` → 面板 show/hide；未运行则拉起。面板使用 `Local\WBPanelSingleInstance` mutex 防重复实例，重复启动会唤醒现有面板后退出；基准和多窗口诊断可显式传 `--allow-multiple`。截图：`m2-panel-visible.png` / `m2-panel-hidden.png`。
 - **Win 键设置**：面板 ⚙ 设置、`wb settings get|win true|false|autostart true|false` 共用 `%APPDATA%\WB\settings.json`；daemon 按设置自动启动 hook，开机自启写入 HKCU Run；hook 使用 `Local\WBHookSingleInstance` mutex 防重复实例。
 - **10 个小组件**（`assets/panel-ui/index.html`）：时钟 / 日历 / 天气(占位) / 系统状态(CPU+内存,宿主 `sysinfo` 每 2s 推) / 番茄钟 / 计算 / 待办(增删勾) / 随手记 / 剪贴板(实时,点击复制) / 应用(预览 4 格 + 全量抽屉网格)。
 - **真应用图标**：宿主 `SHGetFileInfoW` 提取 32×32 → 手写零依赖 PNG 编码器 → base64 dataUrl 推给页面缓存（`crates/wb-panel/src/icons.rs`）。无头验证：`wb-panel --icon-test <lnk> <out.png>`。

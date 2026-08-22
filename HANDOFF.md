@@ -53,7 +53,7 @@ E:\cctest\wb\
     注意：内联 `<script>` 里写字符串形式的 `</script>` 必须用 `<\/script>` 或拼接（PLUGIN_SHIM 里有范例）。
 11. **AI 配置**：`E:\cctest\api.json` 有中转站信息；模型用 **gpt-5.6-luna**（api.json 里写的别的型号是别的工具的配置，以用户说的为准）。网络问题走代理 `127.0.0.1:7890`（代码已内置网络错误自动代理重试一次）。中转站支持 Responses API + tools/function calling（已实测）。
 12. 测试产生的待办/笔记数据测完随手清掉（`wb todo rm`）。
-13. 用户正常使用的实例：wb-hook-poc.exe（保留单实例！他靠它按 Win）+ 正式 wb-panel（`--wv2`，无测试旗标）。测试完务必恢复这个状态。taskkill 面板不会动钩子。
+13. 用户正常使用的实例：wb-hook-poc.exe（保留单实例！他靠它按 Win）+ 正式 wb-panel（`--wv2`，无测试旗标）。hook 与 panel 都有 named mutex 单实例保护；只有基准或多窗口诊断才给 panel 传 `--allow-multiple`。测试完务必恢复正式状态，taskkill 面板不会动钩子。
 14. 回复用户用中文、简洁；结尾一条**加粗**的下一步建议。用户审美要求高——UI 改动要截图自审，对标 DeskBox（参考项目在 `E:\cctest\deskbox-ref`）。
 
 ## 4. 架构要点（新人 5 分钟版）
@@ -74,11 +74,11 @@ E:\cctest\wb\
 - M5 开发者工具：`wb plugin create <id> --kind command|widget|hybrid` 生成包含 Skill 的 Agent-ready 骨架且拒绝覆盖；`wb plugin validate <dir>` 与 `pack` 共用宿主完整性校验，缺 handler/widget/Skill、路径逃逸、大小或 UTF-8 不合规都会失败。`create -> validate -> pack -> install -> approve -> cmd.run -> remove` 真实闭环已通过，生成的 PowerShell handler 返回 `Hello, WB!`，卸载后授权记录清空。
 - M5 入口设置：`settings.get` / `settings.set` / `hook.status` 已接入 daemon，面板 ⚙ 弹层和 CLI `wb settings get|win|autostart` 可控制 Win 键接管及 HKCU Run 开机自启；daemon 按设置启动 hook，hook 通过 `Local\\WBHookSingleInstance` 保证单实例。真实测试已验证关闭/开启接管、注册表创建/删除。
 - Spotlight 搜索：daemon 启动后在后台广度优先索引 Desktop/Documents/Downloads/OneDrive，最多 50,000 项，与应用、剪贴板、笔记、待办、插件命令合并排序；`wb search ... --type file|plugin` 已真实验证。插件结果使用 `wb://cmd/<id>`，面板点击/回车统一进入 `cmd.run`；`#q=` 深链改为在 show/go 握手后消费，视觉验收截图 `docs-assets/m5-spotlight-plugin-search-fixed.png`。
+- 面板单实例：正常启动使用 `Local\WBPanelSingleInstance` mutex，次实例向 `WBPanelPoc` 发送 `WM_WB_SHOW` 后退出；8 路并发启动实测最终仅 1 个进程，稳定态重复启动日志为 `{"event":"already_running","awakened":true}`。`--bench` 和显式 `--allow-multiple` 绕过该限制供自动化诊断。
 - 2026-08-22 全量测试基线：wb-core 7 + wb-daemon 2 + wb-plugin-sdk 9 + wb-plugin-host 6 + wb-cli 1，共 25 个单测；workspace build/check 通过（wb-panel 仍有原有 11 条 warning）。本机后台索引实测 43,928 项，MCP 冷启动、文件类型过滤、插件类型过滤与插件命令执行均通过。
 
 ## 6. 已知瑕疵 / 未验证声明
 
-- 面板无单例保护（测试时记得杀干净，否则会起多个）。
 - Start-Process 不带重定向会出控制台黑窗——生产路径（daemon panelctl 拉起）已用 CREATE_NO_WINDOW，无此问题。
 - 插件挂件支持面板内自动热加载（3 秒轮询 revision）和插件页手动刷新；插件代码仍在 iframe 创建时加载，修改后等待下一轮检查或点刷新。
 - `process` 授权仍不是 OS 沙箱：获批 handler 以当前 Windows 用户权限运行。现有权限模型控制 WB 能力暴露和批准生命周期，不隔离任意本地代码。
