@@ -6,6 +6,7 @@
   </div>
 </div>
 <style>
+  html, body { background: transparent !important; color-scheme: dark; }
   .stopwatch { height: 100%; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 10px; padding: 4px 16px 13px; }
   .time { color: #f4f7ff; font-size: 29px; font-weight: 300; line-height: 1;
@@ -26,6 +27,12 @@
     .time { font-size: 21px; }
     .controls { gap: 4px; }
     button { width: 28px; height: 25px; }
+  }
+  @media (prefers-color-scheme: light) {
+    html, body { color-scheme: light; }
+    .time { color: #17202b; }
+    button { color: #17202b; background: rgba(21,32,43,.07); border-color: rgba(21,32,43,.14); }
+    button:hover { background: rgba(8,127,202,.12); border-color: rgba(8,127,202,.25); }
   }
 </style>
 <script>

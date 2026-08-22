@@ -40,14 +40,16 @@ pub fn create_panel_window(desktop: bool, settings: bool) -> windows::core::Resu
         RegisterClassExW(&wc);
 
         let ex = if desktop { WS_EX_TOOLWINDOW } else if settings { WS_EX_APPWINDOW } else { WS_EX_TOPMOST | WS_EX_TOOLWINDOW };
-        let style = WS_POPUP;
+        let style = if settings { WS_OVERLAPPEDWINDOW } else { WS_POPUP };
         // Full work-area overlay (Spotlight-style): the page paints a captured
         // wallpaper backdrop; the widget board docks on the right half and the
         // launcher box floats centered in the free half. 代替 Win 键搜索。
         let mut rc = std::mem::zeroed::<windows::Win32::Foundation::RECT>();
         SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut rc as *mut _ as *mut _), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0))?;
         let (w, h, x, y) = if settings {
-            (760.min(rc.right - rc.left - 48), 820.min(rc.bottom - rc.top - 48), rc.left + 24, rc.top + 24)
+            let w = 820.min(rc.right - rc.left - 48);
+            let h = 840.min(rc.bottom - rc.top - 48);
+            (w, h, rc.left + (rc.right - rc.left - w) / 2, rc.top + (rc.bottom - rc.top - h) / 2)
         } else {
             (rc.right - rc.left, rc.bottom - rc.top, rc.left, rc.top)
         };

@@ -4,6 +4,7 @@
   <button id="btn">刷 新</button>
 </div>
 <style>
+  html, body { background: transparent !important; color-scheme: dark; }
   .wrap { height: 100%; display: flex; flex-direction: column; padding: 10px 16px 14px; gap: 8px; }
   .big b { font-size: 30px; font-weight: 200; font-variant-numeric: tabular-nums; }
   .big span { color: #9aa4b8; font-size: 12px; margin-left: 6px; }
@@ -22,6 +23,13 @@
     .wrap { display: grid; grid-template-columns: auto 1fr auto; align-items: center; padding: 5px 8px; }
     .latest { -webkit-line-clamp: 1; }
     button { align-self: center; }
+  }
+  @media (prefers-color-scheme: light) {
+    html, body { color-scheme: light; }
+    .big { color: #17202b; }
+    .big span, .latest { color: #526273; }
+    button { color: #17202b; background: rgba(21,32,43,.07); border-color: rgba(21,32,43,.14); }
+    button:hover { background: rgba(21,32,43,.12); }
   }
 </style>
 <script>

@@ -199,7 +199,10 @@ pub fn on_web_message(text: &str) {
                          (w * scale).round() as i32, (h * scale).round() as i32)
                     })
                     .collect();
-                if desktop_mode() {
+                if settings_mode() {
+                    // Settings is a normal opaque, resizable window. It must
+                    // never inherit the panel's card-shaped native region.
+                } else if desktop_mode() {
                     // Desktop cards already render their own CSS glass. Keep
                     // the native window region stable while WebView2 is
                     // restoring; transient empty reports must not collapse

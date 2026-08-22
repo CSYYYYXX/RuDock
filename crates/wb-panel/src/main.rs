@@ -152,7 +152,7 @@ fn main() {
         }
     };
     let plain = args.iter().any(|a| a == "--plain-win");
-    let material = if plain { "none(ab-test)" } else { dwm::apply_material(hwnd) };
+    let material = if settings { "solid-settings" } else if plain { "none(ab-test)" } else { dwm::apply_material(hwnd) };
     host::set_host_hwnd(hwnd);
     if desktop {
         // Start click-through while WebView2 is booting. Later empty reports
@@ -314,6 +314,10 @@ pub(crate) unsafe extern "system" fn wnd_proc(
             let mut ps = PAINTSTRUCT::default();
             let _ = BeginPaint(hwnd, &mut ps);
             let _ = EndPaint(hwnd, &ps);
+            LRESULT(0)
+        }
+        WM_SIZE => {
+            webview2::resize(hwnd);
             LRESULT(0)
         }
         WM_DESTROY => {

@@ -496,7 +496,7 @@ html, body { height: 100%; overflow: hidden; background: transparent;
   background: rgba(76,194,255,.16); color: var(--accent); font-size: 12px; cursor: pointer; }
 #page-plugins.empty #plugin-installed .ph-empty { display: flex; }
 .w > .bd.pluginbd { padding: 0; display: flex; }
-iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: transparent;
+iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: dark;
   border-radius: 0 0 var(--r-card) var(--r-card); }
 
 #plugin-market .market-tools { position: absolute; left: 18px; right: 18px; top: 6px; height: 34px;
@@ -682,6 +682,9 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
 #cfgView .cfg-icon:hover { background: var(--hover); color: var(--fg); }
 #cfgView .cfg-icon:disabled { opacity: .5; cursor: wait; }
 #cfgView .cfg-icon[hidden] { display: none; }
+.cfg-shell { display: block; }
+.cfg-sidebar { display: none; }
+.cfg-pane { display: block; }
 
 /* 首次启动引导：保持轻量，完成后不再打扰已配置用户。 */
 #onboardingView { position: absolute; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center;
@@ -746,15 +749,43 @@ body.desktop-mode .w > .bd { padding: 8px 14px 14px; }
 body.desktop-mode .w.w-hidden { display: flex; }
 body.desktop-mode .w.desktop-hidden { display: none !important; }
 body.desktop-mode .resize-handle { opacity: .65; }
-body.settings-mode { background: var(--glass-strong); overflow: auto; }
-body.settings-mode .stage { position: relative; min-height: 100vh; background: transparent !important; }
+html:has(body.settings-mode), body.settings-mode { background: #151821; overflow: auto; }
+body.settings-mode .stage { position: relative; min-height: 100vh; background: #151821 !important; }
 body.settings-mode .spot-wrap, body.settings-mode .pages, body.settings-mode .dots,
 body.settings-mode #folderView, body.settings-mode #onboardingView, body.settings-mode #marketSourceView,
 body.settings-mode #toast { display: none !important; }
-body.settings-mode #cfgView { position: fixed; inset: 0; display: flex; background: transparent; overflow: auto; }
-body.settings-mode #cfgView .sheet { width: min(720px, calc(100% - 48px)); max-height: none; min-height: calc(100vh - 48px);
-  margin: 24px auto; padding: 28px 32px; border-radius: 14px; background: var(--glass); }
-body.settings-mode #cfgView h3 { font-size: 20px; margin-bottom: 14px; }
+body.settings-mode #cfgView { position: fixed; inset: 0; display: flex; align-items: stretch; background: #151821; overflow: auto; }
+body.settings-mode #cfgView .sheet { width: min(760px, 100%); max-height: none; min-height: 100vh;
+  margin: 0 auto; padding: 0; border: 0; border-radius: 0; background: #1b1f29; box-shadow: none; overflow: hidden; }
+body.settings-mode .cfg-shell { min-height: 100vh; display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+body.settings-mode .cfg-sidebar { display: flex; flex-direction: column; padding: 28px 18px 20px;
+  background: #171a23; border-right: 1px solid rgba(255,255,255,.08); }
+body.settings-mode .cfg-brand { padding: 0 10px 24px; color: var(--fg); font-size: 17px; font-weight: 650; }
+body.settings-mode .cfg-brand small { display: block; margin-top: 3px; color: var(--fg-4); font-size: 10px; font-weight: 400; }
+body.settings-mode .cfg-nav { display: grid; gap: 4px; }
+body.settings-mode .cfg-nav button { width: 100%; min-height: 38px; padding: 0 11px; display: flex; align-items: center; gap: 10px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--fg-3); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+body.settings-mode .cfg-nav button:hover { background: var(--hover); color: var(--fg); }
+body.settings-mode .cfg-nav button.on { background: rgba(76,194,255,.14); color: var(--fg); box-shadow: inset 2px 0 var(--accent); }
+body.settings-mode .cfg-version { margin-top: auto; padding: 12px 10px 0; color: var(--fg-4); font-size: 10px; }
+body.settings-mode .cfg-main { min-width: 0; height: 100vh; overflow-y: auto; padding: 34px 42px 50px; }
+body.settings-mode #cfgView h3 { font-size: 22px; margin-bottom: 6px; }
+body.settings-mode .cfg-lead { margin-bottom: 26px; color: var(--fg-3); font-size: 12px; }
+body.settings-mode .cfg-pane { display: none; }
+body.settings-mode .cfg-pane.on { display: block; }
+body.settings-mode #cfgView .cfgsection:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+body.settings-mode #cfgView .sysrow, body.settings-mode #cfgView .language-row,
+body.settings-mode #cfgView .cfgrow { min-height: 46px; padding: 8px 10px; border-bottom: 1px solid var(--stroke-soft); }
+body.settings-mode #cfgView .cfgrow { display: grid; grid-template-columns: 20px minmax(0, 1fr); }
+body.settings-mode #cfgList, body.settings-mode #cfgDesktopList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
+body.settings-mode #cfgClose { display: none; }
+@media (prefers-color-scheme: light) {
+  html:has(body.settings-mode), body.settings-mode, body.settings-mode .stage,
+  body.settings-mode #cfgView { background: #eef1f5 !important; }
+  body.settings-mode #cfgView .sheet { background: #ffffff; border-left: 1px solid rgba(21,32,43,.1);
+    border-right: 1px solid rgba(21,32,43,.1); }
+  body.settings-mode .cfg-sidebar { background: #f4f6f9; border-right-color: rgba(21,32,43,.1); }
+}
 
 /* ---------- 呼出/消失动效（DeskBox：opacity+translation 交错） ---------- */
 @keyframes wbIn  { from { opacity: 0; transform: translateY(26px) scale(.97); } to { opacity: 1; transform: none; } }
@@ -971,27 +1002,45 @@ body.settings-mode #cfgView h3 { font-size: 20px; margin-bottom: 14px; }
     <div class="fgrid" id="folderGrid"></div>
   </div></div>
 
-  <div id="cfgView"><div class="sheet">
-    <h3><span id="cfg-title">WB 设置</span><span class="x" id="cfgClose">✕</span></h3>
-    <div class="cfgsection" id="cfg-general-title">通用</div>
-    <label class="language-row"><span id="cfg-language-label">语言</span><select id="cfg-language">
-      <option value="auto">自动</option><option value="zh-CN">简体中文</option><option value="en">English</option>
-      <option value="ja">日本語</option><option value="ko">한국어</option>
-    </select></label>
-    <div class="sysrow update-row"><span id="cfg-update-label">检查更新</span><span class="cfg-update-state" id="cfg-update-state"></span><button class="cfg-icon" id="cfg-update-open" hidden title="打开发布页" aria-label="打开发布页">↗</button><button class="cfg-icon" id="cfg-update" title="检查更新" aria-label="检查更新">↻</button></div>
-    <label class="sysrow"><span id="cfg-win-label">接管 Windows 键</span><span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
-    <label class="sysrow"><span id="cfg-autostart-label">开机自启</span><input type="checkbox" id="cfg-autostart"></label>
-    <div class="sysrow"><span id="cfg-mcp-label">MCP 写操作</span><div class="policyseg" id="cfg-mcp-policy" role="group" aria-label="MCP 写操作策略">
-      <button data-policy="client" title="沿用 MCP 客户端的调用确认">客户端</button>
-      <button data-policy="ask" title="每次写操作使用 MCP elicitation 询问">询问</button>
-      <button data-policy="read-only" title="阻止所有 MCP 写操作">只读</button>
-    </div></div>
-    <div class="cfgsection" id="cfg-widgets-title">组件</div>
-    <div class="tip" id="cfg-widgets-tip">勾选要显示在组件页的内容；拖动卡片右下角可调整大小</div>
-    <div id="cfgList"></div>
-    <div class="cfgsection"><span id="cfg-desktop-title">桌面常驻</span><span class="state" id="desktop-state"></span></div>
-    <div id="cfgDesktopList"></div>
-  </div></div>
+  <div id="cfgView"><div class="sheet"><div class="cfg-shell">
+    <aside class="cfg-sidebar">
+      <div class="cfg-brand">RuDock<small>Desktop command center</small></div>
+      <nav class="cfg-nav">
+        <button class="on" data-cfg-pane="general"><span>⚙</span><span data-cfg-label="general">通用</span></button>
+        <button data-cfg-pane="widgets"><span>▦</span><span data-cfg-label="widgets">组件</span></button>
+        <button data-cfg-pane="desktop"><span>⌂</span><span data-cfg-label="desktop">桌面常驻</span></button>
+      </nav>
+      <div class="cfg-version">RuDock 0.1.0 Preview</div>
+    </aside>
+    <main class="cfg-main">
+      <h3><span id="cfg-title">WB 设置</span><span class="x" id="cfgClose">✕</span></h3>
+      <div class="cfg-lead" id="cfg-lead">管理 RuDock 的外观、入口和桌面组件。</div>
+      <section class="cfg-pane on" data-cfg-content="general">
+        <div class="cfgsection" id="cfg-general-title">通用</div>
+        <label class="language-row"><span id="cfg-language-label">语言</span><select id="cfg-language">
+          <option value="auto">自动</option><option value="zh-CN">简体中文</option><option value="en">English</option>
+          <option value="ja">日本語</option><option value="ko">한국어</option>
+        </select></label>
+        <div class="sysrow update-row"><span id="cfg-update-label">检查更新</span><span class="cfg-update-state" id="cfg-update-state"></span><button class="cfg-icon" id="cfg-update-open" hidden title="打开发布页" aria-label="打开发布页">↗</button><button class="cfg-icon" id="cfg-update" title="检查更新" aria-label="检查更新">↻</button></div>
+        <label class="sysrow"><span id="cfg-win-label">接管 Windows 键</span><span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
+        <label class="sysrow"><span id="cfg-autostart-label">开机自启</span><input type="checkbox" id="cfg-autostart"></label>
+        <div class="sysrow"><span id="cfg-mcp-label">MCP 写操作</span><div class="policyseg" id="cfg-mcp-policy" role="group" aria-label="MCP 写操作策略">
+          <button data-policy="client" title="沿用 MCP 客户端的调用确认">客户端</button>
+          <button data-policy="ask" title="每次写操作使用 MCP elicitation 询问">询问</button>
+          <button data-policy="read-only" title="阻止所有 MCP 写操作">只读</button>
+        </div></div>
+      </section>
+      <section class="cfg-pane" data-cfg-content="widgets">
+        <div class="cfgsection" id="cfg-widgets-title">组件</div>
+        <div class="tip" id="cfg-widgets-tip">勾选要显示在组件页的内容；拖动卡片右下角可调整大小</div>
+        <div id="cfgList"></div>
+      </section>
+      <section class="cfg-pane" data-cfg-content="desktop">
+        <div class="cfgsection"><span id="cfg-desktop-title">桌面常驻</span><span class="state" id="desktop-state"></span></div>
+        <div id="cfgDesktopList"></div>
+      </section>
+    </main>
+  </div></div></div>
 
   <div id="onboardingView" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
     <div class="sheet">
@@ -1052,7 +1101,7 @@ const I18N = {
     countdown:'倒数日', quote:'一言', ai:'AI', aiAsk:'问点什么…', send:'发送', apps:'应用', edit:'编辑', done:'完成',
     mergeFolder:'合并为文件夹', clearSelection:'取消选择', plugins:'插件', installed:'已安装', market:'市场',
     manageSources:'管理市场源', refresh:'刷新当前视图', noPlugins:'还没有已安装插件', openMarket:'打开市场',
-    notLoaded:'尚未加载', searchPlugins:'搜索插件', folder:'文件夹', settings:'WB 设置', general:'通用', language:'语言',
+    notLoaded:'尚未加载', searchPlugins:'搜索插件', folder:'文件夹', settings:'RuDock 设置', settingsLead:'管理 RuDock 的外观、入口和桌面组件。', general:'通用', language:'语言',
     languageAuto:'自动', takeoverWin:'接管 Windows 键', autostart:'开机自启', mcpWrites:'MCP 写操作', client:'客户端', ask:'询问', readOnly:'只读',
     widgets:'组件', widgetsTip:'勾选要显示在组件页的内容；拖动卡片右下角可调整大小', desktopPinned:'桌面常驻', marketSources:'市场源',
     addSource:'添加市场源', running:'运行中', starting:'启动中', disabled:'未启用', stopped:'未运行', saved:'设置已保存', saveFailed:'设置保存失败',
@@ -1088,7 +1137,7 @@ const I18N = {
     countdown:'Countdown', quote:'Quote', ai:'AI', aiAsk:'Ask anything…', send:'Send', apps:'Apps', edit:'Edit', done:'Done',
     mergeFolder:'Merge into folder', clearSelection:'Clear selection', plugins:'Plugins', installed:'Installed', market:'Market',
     manageSources:'Manage market sources', refresh:'Refresh current view', noPlugins:'No plugins installed', openMarket:'Open market',
-    notLoaded:'Not loaded', searchPlugins:'Search plugins', folder:'Folder', settings:'WB Settings', general:'General', language:'Language',
+    notLoaded:'Not loaded', searchPlugins:'Search plugins', folder:'Folder', settings:'RuDock Settings', settingsLead:'Manage RuDock appearance, entry points, and desktop widgets.', general:'General', language:'Language',
     languageAuto:'Automatic', takeoverWin:'Use the Windows key', autostart:'Start with Windows', mcpWrites:'MCP writes', client:'Client', ask:'Ask', readOnly:'Read only',
     widgets:'Widgets', widgetsTip:'Choose visible widgets; drag the lower-right handle to resize', desktopPinned:'Pinned to desktop', marketSources:'Market sources',
     addSource:'Add market source', running:'Running', starting:'Starting', disabled:'Disabled', stopped:'Stopped', saved:'Settings saved', saveFailed:'Could not save settings',
@@ -1124,7 +1173,7 @@ const I18N = {
     countdown:'カウントダウン', quote:'一言', ai:'AI', aiAsk:'何でも質問…', send:'送信', apps:'アプリ', edit:'編集', done:'完了',
     mergeFolder:'フォルダーにまとめる', clearSelection:'選択解除', plugins:'プラグイン', installed:'インストール済み', market:'マーケット',
     manageSources:'マーケットソース管理', refresh:'現在の表示を更新', noPlugins:'プラグインはありません', openMarket:'マーケットを開く',
-    notLoaded:'未読み込み', searchPlugins:'プラグインを検索', folder:'フォルダー', settings:'WB 設定', general:'一般', language:'言語',
+    notLoaded:'未読み込み', searchPlugins:'プラグインを検索', folder:'フォルダー', settings:'RuDock 設定', settingsLead:'外観、起動方法、デスクトップウィジェットを管理します。', general:'一般', language:'言語',
     languageAuto:'自動', takeoverWin:'Windows キーを使用', autostart:'自動起動', mcpWrites:'MCP 書き込み', client:'クライアント', ask:'確認', readOnly:'読み取り専用',
     widgets:'ウィジェット', widgetsTip:'表示項目を選択し、右下をドラッグしてサイズを変更', desktopPinned:'デスクトップ常駐', marketSources:'マーケットソース',
     addSource:'ソースを追加', running:'実行中', starting:'起動中', disabled:'無効', stopped:'停止中', saved:'設定を保存しました', saveFailed:'設定を保存できません',
@@ -1160,7 +1209,7 @@ const I18N = {
     countdown:'카운트다운', quote:'한마디', ai:'AI', aiAsk:'무엇이든 물어보세요…', send:'보내기', apps:'앱', edit:'편집', done:'완료',
     mergeFolder:'폴더로 묶기', clearSelection:'선택 해제', plugins:'플러그인', installed:'설치됨', market:'마켓',
     manageSources:'마켓 소스 관리', refresh:'현재 보기 새로고침', noPlugins:'설치된 플러그인이 없습니다', openMarket:'마켓 열기',
-    notLoaded:'불러오지 않음', searchPlugins:'플러그인 검색', folder:'폴더', settings:'WB 설정', general:'일반', language:'언어',
+    notLoaded:'불러오지 않음', searchPlugins:'플러그인 검색', folder:'폴더', settings:'RuDock 설정', settingsLead:'모양, 실행 방식 및 데스크톱 위젯을 관리합니다.', general:'일반', language:'언어',
     languageAuto:'자동', takeoverWin:'Windows 키 사용', autostart:'자동 시작', mcpWrites:'MCP 쓰기', client:'클라이언트', ask:'확인', readOnly:'읽기 전용',
     widgets:'위젯', widgetsTip:'표시할 위젯을 고르고 오른쪽 아래를 끌어 크기를 조절하세요', desktopPinned:'데스크톱 고정', marketSources:'마켓 소스',
     addSource:'소스 추가', running:'실행 중', starting:'시작 중', disabled:'사용 안 함', stopped:'중지됨', saved:'설정을 저장했습니다', saveFailed:'설정을 저장하지 못했습니다',
@@ -1236,7 +1285,8 @@ function applyLanguage(value) {
   $('#market-sources').title = t('manageSources'); $('#plugin-refresh').title = t('refresh');
   $('#plugin-installed .ph-empty').firstChild.nodeValue = t('noPlugins') + ' '; $('#plugin-empty-market').textContent = t('openMarket');
   $('#market-summary').textContent = marketLoaded ? $('#market-summary').textContent : t('notLoaded'); $('#market-search').placeholder = t('searchPlugins');
-  $('#folderName').textContent = t('folder'); $('#cfg-title').textContent = t('settings'); $('#cfg-general-title').textContent = t('general');
+  $('#folderName').textContent = t('folder'); $('#cfg-title').textContent = t('settings'); $('#cfg-lead').textContent = t('settingsLead'); $('#cfg-general-title').textContent = t('general');
+  $('[data-cfg-label="general"]').textContent = t('general'); $('[data-cfg-label="widgets"]').textContent = t('widgets'); $('[data-cfg-label="desktop"]').textContent = t('desktopPinned');
   $('#cfg-language-label').textContent = t('language'); $('#cfg-language option[value="auto"]').textContent = t('languageAuto');
   $('#cfg-win-label').textContent = t('takeoverWin'); $('#cfg-autostart-label').textContent = t('autostart'); $('#cfg-mcp-label').textContent = t('mcpWrites');
   $('#cfg-mcp-policy [data-policy="client"]').textContent = t('client'); $('#cfg-mcp-policy [data-policy="ask"]').textContent = t('ask');
@@ -1616,19 +1666,33 @@ function isNoiseApp(a) {
 }
 function isSystemApp(a) {
   if (isNoiseApp(a)) return false;
-  const text = `${a.title || ''} ${a.path || ''}`.toLowerCase();
-  return a.source === 'start-apps' && (
-    /microsoft\.|windows\.|immersivecontrolpanel|windowsapps/.test(text) ||
-    /设置|settings|计算器|calculator|记事本|notepad|终端|terminal|截图|snipping|照片|photos|画图|paint|文件资源管理器|file explorer/.test(text)
-  );
+  const path = `${a.path || ''}`.replace(/\//g, '\\').toLowerCase();
+  if (a.source === 'start-menu') {
+    return /\\programs\\(?:accessories(?:\\system tools)?|administrative tools|system tools|windows powershell|windows tools)(?:\\|\.lnk$)/.test(path);
+  }
+  if (a.source !== 'start-apps') return false;
+  const appId = path.replace(/^shell:appsfolder\\/, '');
+  return /^(?:\{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7\}|\{f38bf404-1d43-42f2-9305-67de0b28fc23\}|\{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27\})\\/.test(appId)
+    || /^(?:microsoft\.windows|microsoftwindows\.client|windows\.immersivecontrolpanel|microsoft\.autogenerated\.|microsoftcorporationii\.quickassist|microsoft\.sechealthui|microsoft\.screensketch|microsoft\.yourphone|microsoft\.gethelp|microsoft\.zune|microsoft\.bing|microsoft\.copilot|microsoft\.gamingapp|microsoft\.xbox|microsoft\.microsoftsolitairecollection|microsoft\.microsoftstickynotes|microsoft\.microsoftofficehub|microsoft\.todos|microsoft\.outlookforwindows|microsoft\.powerautomatedesktop|microsoft\.paint|microsoft\.windowscommunicationsapps|microsoft\.549981c3f5f10|clipchamp\.clipchamp)/.test(appId);
 }
-function isSystemOutside(a) {
-  const text = `${a.title || ''}`.toLowerCase();
-  return /设置|settings|计算器|calculator|记事本|notepad|终端|terminal|截图|snipping|文件资源管理器|file explorer/.test(text);
+function installAppsFixture() {
+  appsCache = [
+    { kind:'app', title:'设置', path:'shell:AppsFolder\\windows.immersivecontrolpanel_x', source:'start-apps' },
+    { kind:'app', title:'字符映射表', path:'shell:AppsFolder\\{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\charmap.exe', source:'start-apps' },
+    { kind:'app', title:'计算机管理', path:'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools\\Computer Management.lnk', source:'start-menu' },
+    { kind:'app', title:'Microsoft Store', path:'shell:AppsFolder\\Microsoft.WindowsStore_x', source:'start-apps' },
+    { kind:'app', title:'画图', path:'shell:AppsFolder\\Microsoft.Paint_x', source:'start-apps' },
+    { kind:'app', title:'Armoury Crate', path:'shell:AppsFolder\\B9ECED6F.ArmouryCrate_x!App', source:'start-apps' },
+    { kind:'app', title:'Visual Studio Code', path:'C:\\Users\\demo\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Visual Studio Code.lnk', source:'start-menu' },
+    { kind:'app', title:'Figma', path:'C:\\Users\\demo\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Figma.lnk', source:'start-menu' },
+    { kind:'app', title:'Example Uninstall', path:'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Example Uninstall.lnk', source:'start-menu' },
+  ];
+  appCfg = { hidden: [], folders: [], imported: [] };
 }
 
 async function renderDock() {
   dockRendered = true;
+  await getApps();
   const apps = allDockApps();
   $('#apps-n').textContent = t('appCount', { n:apps.filter(a => !isNoiseApp(a)).length });
   dockGrid.innerHTML = '';
@@ -1637,7 +1701,7 @@ async function renderDock() {
   let i = 0;
   const put = el => { el.style.setProperty('--i', Math.min(i++, 30)); dockGrid.appendChild(el); };
 
-  const systemItems = apps.filter(a => isSystemApp(a) && !isSystemOutside(a) && !hidden.has(a.path) && !inFolder.has(a.path));
+  const systemItems = apps.filter(a => isSystemApp(a) && !hidden.has(a.path) && !inFolder.has(a.path));
   if (systemItems.length) {
     const f = { id:'__system__', name:t('systemApps'), items:systemItems.map(a => a.path), system:true };
     const tile = document.createElement('div');
@@ -1742,7 +1806,7 @@ $('#mkfolder').addEventListener('click', () => {
 /* 文件夹展开层 */
 function openFolder(fid) {
   const f = fid === '__system__'
-    ? { id:'__system__', name:t('systemApps'), items:allDockApps().filter(a => isSystemApp(a) && !isSystemOutside(a) && !appCfg.hidden.includes(a.path)).map(a => a.path) }
+    ? { id:'__system__', name:t('systemApps'), items:allDockApps().filter(a => isSystemApp(a) && !appCfg.hidden.includes(a.path)).map(a => a.path) }
     : appCfg.folders.find(g => g.id === fid);
   if (!f) return;
   $('#folderName').textContent = f.name || t('folder');
@@ -2706,9 +2770,19 @@ function renderDesktopConfig(settings) {
   $('#desktop-state').textContent = settings.desktop_running ? t('running') : (desktopWidgets.length ? t('starting') : t('disabled'));
 }
 function setConfigOpen(open) {
+  if (SETTINGS_MODE && !open) {
+    send({ kind:'hide' });
+    return;
+  }
   $('#cfgView').classList.toggle('on', open);
   send({ kind: 'interaction', active: open });
 }
+function setConfigPane(name) {
+  name = ['general','widgets','desktop'].includes(name) ? name : 'general';
+  $$('.cfg-nav button').forEach(button => button.classList.toggle('on', button.dataset.cfgPane === name));
+  $$('.cfg-pane').forEach(pane => pane.classList.toggle('on', pane.dataset.cfgContent === name));
+}
+$$('.cfg-nav button').forEach(button => button.addEventListener('click', () => setConfigPane(button.dataset.cfgPane)));
 function openConfig() {
   const list = $('#cfgList'); list.innerHTML = '';
   WIDGETS.forEach(([id, name, plugin]) => {
@@ -2734,6 +2808,7 @@ function openConfig() {
     renderDesktopConfig(s);
   });
   setConfigOpen(true);
+  if (SETTINGS_MODE && !$('.cfg-nav button.on')) setConfigPane('general');
 }
 $('#cfg-open').addEventListener('click', ev => { ev.stopPropagation(); openConfig(); });
 async function saveSystemSetting(key, value) {
@@ -2810,7 +2885,7 @@ const PLUGIN_SHIM = '<' + 'script>(function(){var seq=0;var pend=new Map();'
   + 'document.documentElement.style.setProperty("--wb-widget-height",d.height+"px");'
   + 'if(d.locale)document.documentElement.lang=d.locale;'
   + 'window.dispatchEvent(new CustomEvent("wbresize",{detail:{width:d.width,height:d.height,locale:d.locale}}));}});})();<' + '/script>'
-  + '<' + 'style>html,body{margin:0;padding:0;height:100%;background:transparent;color:#eaf0ff;'
+  + '<' + 'style>html,body{margin:0;padding:0;height:100%;background:transparent!important;color:#eaf0ff;color-scheme:dark;'
   + 'font:13px "Segoe UI Variable Text","Segoe UI",sans-serif;overflow:hidden;container-type:size;}'
   + '*{box-sizing:border-box;}::-webkit-scrollbar{width:0;height:0;}<' + '/style>';
 
@@ -3191,6 +3266,7 @@ async function boot() {
   document.querySelectorAll('.board .w').forEach((el, i) => el.style.setProperty('--i', i));
   const m0 = location.hash.match(/^#q=(.*)$/);
   initialQuery = m0 ? decodeURIComponent(m0[1]) : '';
+  if (!hasBridge && (location.hash === '#test-apps' || location.hash === '#test-apps-edit')) installAppsFixture();
   if (DESKTOP_MODE) await syncDesktopWidgets(true);
   else if (SETTINGS_MODE) {
     const response = hasBridge ? await rpc('settings.get', {}, 1800) : null;
@@ -3206,6 +3282,10 @@ async function boot() {
   }
   loadTodos(); loadNotes(); loadClips(); loadRecent();
   if (!hasBridge && location.hash === '#test-search') setTimeout(showSearchFixture, 50);
+  if (!hasBridge && (location.hash === '#test-apps' || location.hash === '#test-apps-edit')) setTimeout(() => {
+    setPage(1, { instant:true });
+    if (location.hash === '#test-apps-edit' && !editMode) $('#apps-edit').click();
+  }, 50);
 }
 boot();
 })();

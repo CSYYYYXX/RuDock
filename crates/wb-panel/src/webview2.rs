@@ -10,7 +10,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::GetCurrentThreadId;
-use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, PeekMessageW, MSG, PM_REMOVE};
+use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, GetClientRect, PeekMessageW, MSG, PM_REMOVE};
 
 use crate::{WINDOW_H, WINDOW_W};
 
@@ -597,12 +597,18 @@ pub fn embed(hwnd: HWND) -> Result<(), String> {
             return Err(format!("QI ICoreWebView2Controller2: 0x{:08x}", hr.0));
         }
         let ctrl2_vt = *(ctrl2 as *const *const Controller2Vtbl);
-        let opaque = std::env::args().any(|a| a == "--opaque");
+        let opaque = std::env::args().any(|a| a == "--opaque") || crate::host::settings_mode();
         if !opaque {
             let hr = ((*ctrl2_vt).put_bg_color)(ctrl2, CoreWebView2Color { a: 0, r: 0, g: 0, b: 0 });
             if hr.is_err() {
                 return Err(format!("put_DefaultBackgroundColor: 0x{:08x}", hr.0));
             }
+        } else if crate::host::settings_mode() {
+            let hr = ((*ctrl2_vt).put_bg_color)(ctrl2, CoreWebView2Color { a: 255, r: 21, g: 24, b: 33 });
+            if hr.is_err() {
+                return Err(format!("put settings background color: 0x{:08x}", hr.0));
+            }
+            println!("{}", serde_json::json!({"event":"debug","bg":"opaque-settings"}));
         } else {
             println!("{}", serde_json::json!({"event":"debug","bg":"opaque(ab-test)"}));
         }
@@ -669,6 +675,22 @@ fn file_url(path: &std::path::Path) -> String {
         format!("file:{encoded}")
     } else {
         format!("file:///{}", encoded.trim_start_matches('/'))
+    }
+}
+
+/// Keep the WebView client bounds synchronized with a resizable settings window.
+pub fn resize(hwnd: HWND) {
+    let ctrl = CTRL_PTR.load(Ordering::SeqCst) as *mut c_void;
+    if ctrl.is_null() {
+        return;
+    }
+    unsafe {
+        let mut bounds = RECT::default();
+        if GetClientRect(hwnd, &mut bounds).is_err() {
+            return;
+        }
+        let ctrl_vt = *(ctrl as *const *const Controller2Vtbl);
+        let _ = ((*ctrl_vt).put_bounds)(ctrl, bounds);
     }
 }
 
