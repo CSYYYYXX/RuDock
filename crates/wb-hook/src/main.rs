@@ -17,7 +17,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use windows::core::w;
-use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HMODULE, HWND, LPARAM, LRESULT, WPARAM, ERROR_ALREADY_EXISTS};
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LWIN, VK_RWIN,
 };
@@ -203,6 +204,23 @@ fn main() {
         return;
     }
     let self_test = args.iter().any(|a| a == "--self-test");
+    let single_instance = if self_test {
+        None
+    } else {
+        let mutex = unsafe { CreateMutexW(None, true, w!("Local\\WBHookSingleInstance")) };
+        match mutex {
+            Ok(handle) if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS => {
+                log_event("already_running", "another WB hook instance owns the keyboard hook");
+                unsafe { let _ = CloseHandle(handle); }
+                return;
+            }
+            Ok(handle) => Some(handle),
+            Err(e) => {
+                log_event("fatal", &format!("single-instance mutex failed: {e}"));
+                std::process::exit(1);
+            }
+        }
+    };
     let log_only = args.iter().any(|a| a == "--log-only") || self_test;
     let duration: Option<u64> = args
         .windows(2)
@@ -244,6 +262,9 @@ fn main() {
     }
     unsafe {
         let _ = UnhookWindowsHookEx(hook);
+    }
+    if let Some(handle) = single_instance {
+        unsafe { let _ = CloseHandle(handle); }
     }
     log_event("hook_removed", "clean exit");
     std::process::exit(result);

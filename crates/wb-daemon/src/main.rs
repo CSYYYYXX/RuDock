@@ -207,6 +207,68 @@ fn plugin_revision(p: &LoadedPlugin) -> u128 {
     revision
 }
 
+fn default_settings() -> serde_json::Value {
+    serde_json::json!({"takeover_win": true, "autostart": false})
+}
+
+fn read_settings() -> serde_json::Value {
+    let path = wb_core::paths::settings_path();
+    let Ok(text) = std::fs::read_to_string(path) else { return default_settings(); };
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) else { return default_settings(); };
+    let Some(obj) = value.as_object_mut() else { return default_settings(); };
+    let defaults = default_settings();
+    for (k, v) in defaults.as_object().unwrap() {
+        obj.entry(k.clone()).or_insert_with(|| v.clone());
+    }
+    value
+}
+
+fn write_settings(value: &serde_json::Value) -> Result<(), String> {
+    let path = wb_core::paths::settings_path();
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).map_err(|e| format!("创建设置目录失败: {e}"))?; }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("写设置失败: {e}"))?;
+    if path.exists() { std::fs::remove_file(&path).map_err(|e| format!("替换旧设置失败: {e}"))?; }
+    std::fs::rename(&tmp, &path).map_err(|e| format!("提交设置失败: {e}"))
+}
+
+fn hook_exe() -> Option<PathBuf> {
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("wb-hook-poc.exe"))).filter(|p| p.is_file())
+}
+
+fn hook_running() -> bool {
+    std::process::Command::new("tasklist").args(["/FI", "IMAGENAME eq wb-hook-poc.exe", "/FO", "CSV", "/NH"])
+        .output().ok().map(|o| String::from_utf8_lossy(&o.stdout).contains("wb-hook-poc.exe")).unwrap_or(false)
+}
+
+fn set_hook_running(enabled: bool) -> Result<(), String> {
+    if enabled {
+        if hook_running() { return Ok(()); }
+        let Some(exe) = hook_exe() else { return Err("wb-hook-poc.exe 不在当前产物目录".into()); };
+        let mut cmd = std::process::Command::new(exe);
+        cmd.arg("--panel").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+        #[cfg(windows)] cmd.creation_flags(CREATE_NO_WINDOW | 0x0000_0008);
+        cmd.spawn().map_err(|e| format!("启动 Win 键钩子失败: {e}"))?;
+    } else if hook_running() {
+        let status = std::process::Command::new("taskkill").args(["/F", "/IM", "wb-hook-poc.exe"]).status().map_err(|e| format!("停止 Win 键钩子失败: {e}"))?;
+        if !status.success() { return Err("停止 Win 键钩子失败".into()); }
+    }
+    Ok(())
+}
+
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    let Some(exe) = hook_exe() else { return Err("wb-hook-poc.exe 不在当前产物目录".into()); };
+    let command = format!("\"{}\" --panel", exe.display());
+    let status = if enabled {
+        std::process::Command::new("reg").args(["ADD", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/V", "WB", "/T", "REG_SZ", "/D", &command, "/F"]).status()
+    } else {
+        std::process::Command::new("reg").args(["DELETE", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/V", "WB", "/F"]).status()
+    }.map_err(|e| format!("设置开机自启失败: {e}"))?;
+    if !status.success() && enabled { return Err("设置开机自启失败".into()); }
+    Ok(())
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("wb-daemon fatal: {e}");
@@ -224,6 +286,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         storage: Arc::clone(&storage),
         plugins: RwLock::new(plugins),
     });
+    let settings = read_settings();
+    if settings.get("takeover_win").and_then(|v| v.as_bool()).unwrap_or(true) {
+        if let Err(e) = set_hook_running(true) { eprintln!("wb-daemon: Win 键接管启动失败: {e}"); }
+    }
     ctx.storage.audit("daemon", "daemon.start", env!("CARGO_PKG_VERSION"))?;
     clipboard::start(storage);
     log_everything_presence();
@@ -315,6 +381,38 @@ fn call(ctx: &Ctx, method: &str, params: &serde_json::Value) -> wb_core::Result<
         })),
 
         "schema" => Ok(wb_core::protocol::schema()),
+
+        "settings.get" => {
+            let mut settings = read_settings();
+            if let Some(obj) = settings.as_object_mut() { obj.insert("hook_running".into(), serde_json::json!(hook_running())); }
+            Ok(settings)
+        }
+
+        "settings.set" => {
+            let mut settings = read_settings();
+            let obj = settings.as_object_mut().unwrap();
+            if let Some(value) = params.get("takeover_win").and_then(|v| v.as_bool()) {
+                set_hook_running(value).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+                obj.insert("takeover_win".into(), serde_json::json!(value));
+                if !value {
+                    let _ = set_autostart(false);
+                    obj.insert("autostart".into(), serde_json::json!(false));
+                }
+            }
+            if let Some(value) = params.get("autostart").and_then(|v| v.as_bool()) {
+                set_autostart(value).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+                obj.insert("autostart".into(), serde_json::json!(value));
+                if value {
+                    set_hook_running(true).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+                    obj.insert("takeover_win".into(), serde_json::json!(true));
+                }
+            }
+            write_settings(&settings).map_err(|e| CoreError::new(ErrorCode::Internal, e))?;
+            if let Some(obj) = settings.as_object_mut() { obj.insert("hook_running".into(), serde_json::json!(hook_running())); }
+            Ok(settings)
+        }
+
+        "hook.status" => Ok(serde_json::json!({"running":hook_running(),"exe":hook_exe()})),
 
         "search" => {
             let query = str_param(params, "query")?;

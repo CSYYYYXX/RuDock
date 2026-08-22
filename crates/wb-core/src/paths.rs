@@ -24,6 +24,10 @@ pub fn db_path() -> PathBuf {
     app_data_dir().join("wb.db")
 }
 
+pub fn settings_path() -> PathBuf {
+    app_data_dir().join("settings.json")
+}
+
 /// Named-pipe endpoint shared by daemon and clients.
 pub fn pipe_name() -> &'static str {
     "wb-daemon"

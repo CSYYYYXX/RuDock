@@ -41,6 +41,9 @@ pub fn schema() -> Value {
         "version": 1,
         "methods": [
             {"name": "daemon.ping", "params": {}, "returns": {"type": "object"}},
+            {"name": "settings.get", "params": {}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "settings.set", "params": {"takeover_win": "boolean?", "autostart": "boolean?"}, "returns": {"type": "object"}, "status": "M5"},
+            {"name": "hook.status", "params": {}, "returns": {"type": "object"}, "status": "M5"},
             {"name": "search", "params": {"query": "string", "limit": "number?"}, "returns": {"type": "array"}},
             {"name": "note.add", "params": {"content": "string", "tags": "string[]?"}, "returns": {"type": "object"}},
             {"name": "note.list", "params": {"limit": "number?"}, "returns": {"type": "array"}},

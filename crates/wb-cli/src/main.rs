@@ -56,6 +56,11 @@ enum Cmd {
         #[command(subcommand)]
         op: PanelOp,
     },
+    /// WB settings
+    Settings {
+        #[command(subcommand)]
+        op: SettingsOp,
+    },
     /// Ask AI
     Agent {
         #[command(subcommand)]
@@ -123,6 +128,13 @@ enum PanelOp {
     Show { #[arg(long)] query: Option<String> },
     Hide,
     Toggle,
+}
+
+#[derive(Subcommand)]
+enum SettingsOp {
+    Get,
+    Win { #[arg(action = clap::ArgAction::Set)] enabled: bool },
+    Autostart { #[arg(action = clap::ArgAction::Set)] enabled: bool },
 }
 
 #[derive(Subcommand)]
@@ -408,6 +420,11 @@ fn main() {
             PanelOp::Show { query } => ("panel.show", serde_json::json!({"query": query})),
             PanelOp::Hide => ("panel.hide", serde_json::json!({})),
             PanelOp::Toggle => ("panel.toggle", serde_json::json!({})),
+        },
+        Cmd::Settings { op } => match op {
+            SettingsOp::Get => ("settings.get", serde_json::json!({})),
+            SettingsOp::Win { enabled } => ("settings.set", serde_json::json!({"takeover_win":enabled})),
+            SettingsOp::Autostart { enabled } => ("settings.set", serde_json::json!({"autostart":enabled})),
         },
         Cmd::Agent { op } => match op {
             AgentOp::Ask { prompt, provider } => ("agent.ask", serde_json::json!({"prompt": prompt, "provider": provider})),

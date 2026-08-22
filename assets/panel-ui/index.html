@@ -339,6 +339,11 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   cursor: pointer; font-size: 13px; color: var(--fg-2); }
 #cfgView .cfgrow:hover { background: var(--hover); }
 #cfgView .cfgrow input { accent-color: var(--accent); width: 15px; height: 15px; }
+#cfgView .cfgsection { margin: 10px 0 4px; padding-top: 10px; border-top: 1px solid var(--stroke-soft);
+  color: var(--fg-4); font-size: 10.5px; text-transform: uppercase; }
+#cfgView .sysrow { display: flex; align-items: center; min-height: 38px; padding: 6px 4px; color: var(--fg-2); font-size: 13px; }
+#cfgView .sysrow .state { margin-left: 8px; color: var(--fg-4); font-size: 11px; }
+#cfgView .sysrow input { margin-left: auto; width: 34px; height: 18px; accent-color: var(--accent); }
 
 /* Spotlight 里的定制入口 */
 .spot-box .gear { flex: none; font-size: 15px; color: var(--fg-3); cursor: pointer; padding: 2px 4px;
@@ -533,8 +538,12 @@ iframe.pluginw { flex: 1; width: 100%; height: 100%; border: 0; background: tran
   </div></div>
 
   <div id="cfgView"><div class="sheet">
-    <h3>定制组件<span class="x" id="cfgClose">✕</span></h3>
-    <div class="tip">勾选要在第一页显示的组件，其他组件随时能加回来</div>
+    <h3>WB 设置<span class="x" id="cfgClose">✕</span></h3>
+    <div class="cfgsection">通用</div>
+    <label class="sysrow">接管 Windows 键<span class="state" id="hook-state"></span><input type="checkbox" id="cfg-win"></label>
+    <label class="sysrow">开机自启<input type="checkbox" id="cfg-autostart"></label>
+    <div class="cfgsection">组件</div>
+    <div class="tip">勾选要显示在组件页的内容</div>
     <div id="cfgList"></div>
   </div></div>
 </div>
@@ -1370,8 +1379,25 @@ $('#cfg-open').addEventListener('click', () => {
     row.appendChild(cb); row.insertAdjacentHTML('beforeend', esc(name));
     list.appendChild(row);
   });
+  rpc('settings.get', {}).then(m => {
+    const s = m && m.result; if (!s) return;
+    $('#cfg-win').checked = !!s.takeover_win;
+    $('#cfg-autostart').checked = !!s.autostart;
+    $('#hook-state').textContent = s.hook_running ? '运行中' : '未运行';
+  });
   $('#cfgView').classList.add('on');
 });
+async function saveSystemSetting(key, value) {
+  const params = {}; params[key] = value;
+  const m = await rpc('settings.set', params);
+  if (!m || m.error || !m.result) { showToast('设置保存失败'); return; }
+  $('#cfg-win').checked = !!m.result.takeover_win;
+  $('#cfg-autostart').checked = !!m.result.autostart;
+  $('#hook-state').textContent = m.result.hook_running ? '运行中' : '未运行';
+  showToast('设置已保存');
+}
+$('#cfg-win').addEventListener('change', ev => saveSystemSetting('takeover_win', ev.target.checked));
+$('#cfg-autostart').addEventListener('change', ev => saveSystemSetting('autostart', ev.target.checked));
 $('#cfgClose').addEventListener('click', () => $('#cfgView').classList.remove('on'));
 $('#cfgView').addEventListener('click', ev => { if (ev.target.id === 'cfgView') ev.currentTarget.classList.remove('on'); });
 
